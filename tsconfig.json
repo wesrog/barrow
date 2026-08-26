@@ -9,8 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "isolatedModules": true,
-    "types": ["bun"]
+    "isolatedModules": true
   },
-  "include": ["sim", "client"]
+  "include": ["sim", "client"],
+  "exclude": ["**/*.test.ts"]
 }

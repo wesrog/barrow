@@ -2,6 +2,7 @@ import type { Rng } from "./rng";
 import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
 import type { Item, Rarity } from "./items/generate";
+import type { Equipment, EquipSlot, Inventory } from "./character";
 
 export interface Player {
   pos: Vec;
@@ -23,6 +24,12 @@ export interface Player {
   swingCooldown: number;
   /** Monster id currently being attacked, if any. */
   attackTarget: number | null;
+  /** Ground item id being walked to for pickup, if any. */
+  pickupTarget: number | null;
+  level: number;
+  inventory: Inventory;
+  equipment: Equipment;
+  magicFind: number;
 }
 
 export interface GroundItem {
@@ -35,7 +42,11 @@ export type SimEvent =
   | { type: "player_hit"; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec }
   | { type: "monster_died"; id: number; typeId: string; pos: Vec }
-  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec };
+  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
+  | { type: "item_picked"; id: number; name: string }
+  | { type: "item_equipped"; slot: EquipSlot }
+  | { type: "item_unequipped"; slot: EquipSlot }
+  | { type: "inventory_full" };
 
 export interface GameState {
   tick: number;
@@ -55,4 +66,10 @@ export interface PlayerInput {
   moveTo?: Vec;
   /** Monster id the player clicked to attack. */
   attack?: number;
+  /** Ground item id the player clicked to pick up. */
+  pickup?: number;
+  /** Inventory entry id to equip. */
+  equip?: number;
+  /** Equipment slot to unequip back into the inventory. */
+  unequip?: EquipSlot;
 }

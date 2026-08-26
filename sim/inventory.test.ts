@@ -1,0 +1,160 @@
+import { describe, expect, test } from "bun:test";
+import { mapFromStrings } from "./map";
+import { createGame, step } from "./tick";
+import { BASE_STATS, INV_H, INV_W, placeItem } from "./character";
+import { recomputePlayerStats } from "./systems/inventory";
+import type { Item } from "./items/generate";
+import type { GameState } from "./state";
+
+/** New game, but bare-handed: these tests reason about an empty weapon slot. */
+function bareGame(seed: number): GameState {
+  const state = createGame(seed, openMap());
+  state.player.equipment.weapon = null;
+  recomputePlayerStats(state);
+  return state;
+}
+
+const openMap = () =>
+  mapFromStrings([
+    "##########",
+    "#@.......#",
+    "#........#",
+    "#........#",
+    "##########",
+  ]);
+
+const plain = (baseId: string, name = baseId): Item => ({
+  baseId,
+  rarity: "normal",
+  name,
+  affixIds: [],
+  mods: [],
+  ilvl: 1,
+});
+
+function dropAt(state: GameState, item: Item, x: number, y: number): number {
+  const id = state.nextId++;
+  state.groundItems.set(id, { id, item, pos: { x, y } });
+  return id;
+}
+
+function run(state: GameState, ticks: number): void {
+  for (let i = 0; i < ticks; i++) step(state, {});
+}
+
+describe("pickup", () => {
+  test("pickup input walks the player to the item and moves it into the inventory", () => {
+    const state = createGame(42, openMap());
+    const id = dropAt(state, plain("rusted_blade"), 7.5, 3.5);
+    step(state, { pickup: id });
+    run(state, 120);
+    expect(state.groundItems.size).toBe(0);
+    expect(state.player.inventory.entries).toHaveLength(1);
+    expect(state.player.inventory.entries[0]!.item.baseId).toBe("rusted_blade");
+  });
+
+  test("item stays on the ground when the inventory is full", () => {
+    const state = createGame(42, openMap());
+    for (let i = 0; i < INV_W * INV_H; i++) {
+      placeItem(state.player.inventory, state.nextId++, plain("bone_ring"));
+    }
+    const id = dropAt(state, plain("rusted_blade"), 2.5, 1.5);
+    step(state, { pickup: id });
+    run(state, 120);
+    expect(state.groundItems.size).toBe(1);
+    expect(state.groundItems.get(id)).toBeDefined();
+  });
+
+  test("a move click cancels a pending pickup", () => {
+    const state = createGame(42, openMap());
+    const id = dropAt(state, plain("rusted_blade"), 7.5, 3.5);
+    step(state, { pickup: id });
+    step(state, { moveTo: { x: 1.5, y: 3.5 } });
+    run(state, 120);
+    expect(state.groundItems.size).toBe(1);
+  });
+});
+
+describe("equip", () => {
+  test("equipping from the inventory applies weapon stats", () => {
+    const state = bareGame(1);
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("rusted_blade"));
+    step(state, { equip: id });
+    expect(state.player.equipment.weapon?.baseId).toBe("rusted_blade");
+    expect(state.player.inventory.entries).toHaveLength(0);
+    expect(state.player.dmgMin).toBe(1);
+    expect(state.player.dmgMax).toBe(6);
+  });
+
+  test("equipping over an existing item swaps the old one into the inventory", () => {
+    const state = bareGame(1);
+    state.player.level = 5; // hatchet needs level 3
+    const blade = state.nextId++;
+    placeItem(state.player.inventory, blade, plain("rusted_blade"));
+    step(state, { equip: blade });
+    const hatchet = state.nextId++;
+    placeItem(state.player.inventory, hatchet, plain("hatchet"));
+    step(state, { equip: hatchet });
+    expect(state.player.equipment.weapon?.baseId).toBe("hatchet");
+    expect(state.player.inventory.entries).toHaveLength(1);
+    expect(state.player.inventory.entries[0]!.item.baseId).toBe("rusted_blade");
+  });
+
+  test("equip and unequip emit events for the HUD", () => {
+    const state = createGame(1, openMap());
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("rusted_blade"));
+    step(state, { equip: id });
+    expect(state.events.some((e) => e.type === "item_equipped")).toBe(true);
+    step(state, { unequip: "weapon" });
+    expect(state.events.some((e) => e.type === "item_unequipped")).toBe(true);
+  });
+
+  test("equip is rejected below the base's level requirement", () => {
+    const state = bareGame(1);
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("war_maul")); // levelReq 8
+    step(state, { equip: id });
+    expect(state.player.equipment.weapon).toBeNull();
+    expect(state.player.inventory.entries).toHaveLength(1);
+  });
+
+  test("a +life mod raises max life without healing", () => {
+    const state = createGame(1, openMap());
+    state.player.life = 30;
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, {
+      ...plain("worn_boots"), // levelReq 1
+      mods: [{ stat: "life", value: 15 }],
+    });
+    step(state, { equip: id });
+    expect(state.player.maxLife).toBe(BASE_STATS.maxLife + 15);
+    expect(state.player.life).toBe(30);
+  });
+});
+
+describe("unequip", () => {
+  test("unequip returns the item to the inventory and stats revert", () => {
+    const state = bareGame(1);
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("rusted_blade"));
+    step(state, { equip: id });
+    step(state, { unequip: "weapon" });
+    expect(state.player.equipment.weapon).toBeNull();
+    expect(state.player.inventory.entries).toHaveLength(1);
+    expect(state.player.dmgMin).toBe(BASE_STATS.dmgMin);
+  });
+
+  test("unequip is refused when the inventory has no room", () => {
+    const state = createGame(1, openMap());
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("rusted_blade"));
+    step(state, { equip: id });
+    for (let i = 0; i < INV_W * INV_H; i++) {
+      placeItem(state.player.inventory, state.nextId++, plain("bone_ring"));
+    }
+    step(state, { unequip: "weapon" });
+    expect(state.player.equipment.weapon?.baseId).toBe("rusted_blade");
+  });
+});

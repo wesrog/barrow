@@ -34,6 +34,7 @@ export function applyAttackInput(state: GameState, input: PlayerInput): void {
   if (input.attack === undefined) return;
   if (state.monsters.has(input.attack)) {
     state.player.attackTarget = input.attack;
+    state.player.pickupTarget = null;
     state.player.path = [];
   }
 }

@@ -1,22 +1,32 @@
-import { StrictMode, useEffect, useRef } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createGame, step, TICK_RATE } from "../sim/tick";
 import { starterZone } from "../sim/zone";
 import { spawnMonster } from "../sim/monsters";
-import type { PlayerInput } from "../sim/state";
+import type { GameState, PlayerInput } from "../sim/state";
+import type { EquipSlot } from "../sim/character";
 import { createScene } from "./render/scene";
+import { InventoryPanel } from "./ui/InventoryPanel";
 
 const TICK_MS = 1000 / TICK_RATE;
 
 function Game() {
   const mountRef = useRef<HTMLDivElement>(null);
   const lifeRef = useRef<HTMLDivElement>(null);
+  const gameRef = useRef<GameState | null>(null);
+  // Inputs queued by the HUD (equip/unequip clicks), merged into the next tick.
+  const uiInputRef = useRef<PlayerInput>({});
+  const [invOpen, setInvOpen] = useState(false);
+  const [, setVersion] = useState(0);
 
   useEffect(() => {
     const mount = mountRef.current!;
     const map = starterZone();
     const game = createGame(Date.now() >>> 0, map);
-    const scene = createScene(mount, map);
+    gameRef.current = game;
+    const scene = createScene(mount, map, (itemId) => {
+      uiInputRef.current.pickup = itemId;
+    });
 
     // Placeholder spawns until the zone milestone authors them in the map.
     spawnMonster(game, "shambler", { x: 8.5, y: 4.5 });
@@ -37,12 +47,17 @@ function Game() {
       if (picked.kind === "monster" && allowAttack) {
         pending.attack = picked.id;
         delete pending.moveTo;
+      } else if (picked.kind === "item" && allowAttack) {
+        pending.pickup = picked.id;
+        delete pending.moveTo;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
       }
     };
     const onPointerDown = (e: PointerEvent) => {
       if (e.button !== 0) return;
+      // Only canvas clicks are world clicks — HUD panels handle their own.
+      if (!(e.target instanceof HTMLCanvasElement)) return;
       mouseDown = true;
       lastPointer = { x: e.clientX, y: e.clientY };
       aimFromPointer(true);
@@ -53,9 +68,13 @@ function Game() {
     const onPointerUp = () => {
       mouseDown = false;
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "i") setInvOpen((open) => !open);
+    };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("keydown", onKeyDown);
 
     let raf = 0;
     let last = performance.now();
@@ -64,8 +83,11 @@ function Game() {
       raf = requestAnimationFrame(frame);
       acc += Math.min(now - last, 250);
       last = now;
+      let sawEvents = false;
       while (acc >= TICK_MS) {
         if (mouseDown && pending.attack === undefined) aimFromPointer(false);
+        Object.assign(pending, uiInputRef.current);
+        uiInputRef.current = {};
         prevPlayerPos = { ...game.player.pos };
         step(game, pending);
         pending = {};
@@ -76,8 +98,10 @@ function Game() {
             scene.addDamageNumber(game.player.pos, String(e.amount), "#e05252");
           }
         }
+        if (game.events.length > 0) sawEvents = true;
         acc -= TICK_MS;
       }
+      if (sawEvents) setVersion((v) => v + 1);
       if (lifeRef.current) {
         lifeRef.current.textContent = game.player.dead
           ? "you have died"
@@ -93,7 +117,9 @@ function Game() {
       mount.removeEventListener("pointerdown", onPointerDown);
       mount.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("keydown", onKeyDown);
       scene.dispose();
+      gameRef.current = null;
     };
   }, []);
 
@@ -114,6 +140,17 @@ function Game() {
           pointerEvents: "none",
         }}
       />
+      {invOpen && gameRef.current && (
+        <InventoryPanel
+          game={gameRef.current}
+          onEquip={(entryId) => {
+            uiInputRef.current.equip = entryId;
+          }}
+          onUnequip={(slot: EquipSlot) => {
+            uiInputRef.current.unequip = slot;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -123,3 +160,9 @@ createRoot(document.getElementById("root")!).render(
     <Game />
   </StrictMode>,
 );
+
+// A live game can't hot-swap its module graph — take the full reload instead
+// of stacking a second sim + renderer on top of the running one.
+if (import.meta.hot) {
+  import.meta.hot.accept(() => window.location.reload());
+}

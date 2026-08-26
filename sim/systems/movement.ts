@@ -14,6 +14,7 @@ export function applyMoveInput(state: GameState, input: PlayerInput): void {
   const cells = findPath(state.map, start, goal);
   if (cells === null) return;
   state.player.attackTarget = null;
+  state.player.pickupTarget = null;
   state.player.path = cells.map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
 }
 

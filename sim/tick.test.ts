@@ -11,6 +11,15 @@ const openMap = () =>
     "##########",
   ]);
 
+describe("new game", () => {
+  test("starts with a rusted blade equipped and stats derived from it", () => {
+    const game = createGame(1, openMap());
+    expect(game.player.equipment.weapon?.baseId).toBe("rusted_blade");
+    expect(game.player.dmgMin).toBe(1);
+    expect(game.player.dmgMax).toBe(6);
+  });
+});
+
 describe("player movement", () => {
   test("game starts with the player at the map spawn", () => {
     const game = createGame(1, openMap());

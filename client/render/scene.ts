@@ -6,6 +6,7 @@ const VIEW_HEIGHT = 16; // world units visible vertically
 
 export type PickResult =
   | { kind: "monster"; id: number }
+  | { kind: "item"; id: number }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -52,7 +53,11 @@ function makeMonsterMesh(typeId: string): THREE.Group {
   return g;
 }
 
-export function createScene(mount: HTMLElement, map: ZoneMap): SceneHandle {
+export function createScene(
+  mount: HTMLElement,
+  map: ZoneMap,
+  onItemClick?: (id: number) => void,
+): SceneHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -250,7 +255,12 @@ export function createScene(mount: HTMLElement, map: ZoneMap): SceneHandle {
           scene.add(mesh);
           const label = document.createElement("div");
           label.textContent = gi.item.name;
-          label.style.cssText = `position:absolute;color:${colors.css};font-size:11.5px;transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:1px 5px;white-space:nowrap;text-shadow:0 1px 2px #000;`;
+          label.style.cssText = `position:absolute;color:${colors.css};font-size:11.5px;transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:1px 5px;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:auto;cursor:pointer;`;
+          const id = gi.id;
+          label.addEventListener("pointerdown", (e) => {
+            e.stopPropagation();
+            onItemClick?.(id);
+          });
           overlay.appendChild(label);
           v = { mesh, label };
           groundItemVisuals.set(gi.id, v);
@@ -293,6 +303,14 @@ export function createScene(mount: HTMLElement, map: ZoneMap): SceneHandle {
         while (obj && obj.parent !== scene) obj = obj.parent;
         for (const [id, mesh] of monsterMeshes) {
           if (mesh === obj) return { kind: "monster", id };
+        }
+      }
+      const itemMeshes: THREE.Object3D[] = [];
+      for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
+      const itemHits = raycaster.intersectObjects(itemMeshes, false);
+      if (itemHits.length > 0) {
+        for (const [id, v] of groundItemVisuals) {
+          if (v.mesh === itemHits[0]!.object) return { kind: "item", id };
         }
       }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;

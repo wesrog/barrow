@@ -1,4 +1,6 @@
 import * as THREE from "three";
+import type { Equipment } from "../../sim/character";
+import type { Item, Rarity } from "../../sim/items/generate";
 
 /**
  * Articulated character rigs. Animators only touch named child parts —
@@ -13,6 +15,27 @@ export interface Rig {
 
 export interface HeroRig extends Rig {
   weaponPivot: THREE.Group;
+  /** Rebuild visible gear (weapon model, helm, armor, boots) from equipment. */
+  setEquipment(eq: Equipment): void;
+}
+
+const RARITY_GLOW: Record<Rarity, number | null> = {
+  normal: null,
+  magic: 0x3a5adf,
+  rare: 0xc9a83c,
+  unique: 0xc97a2c,
+};
+
+/** Faint colored glow on magic-or-better gear so good loot reads on the body. */
+function applyRarityGlow(obj: THREE.Object3D, item: Item | null): void {
+  const glow = item ? RARITY_GLOW[item.rarity] : null;
+  if (glow === null) return;
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+      child.material.emissive.setHex(glow);
+      child.material.emissiveIntensity = 0.28;
+    }
+  });
 }
 
 function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
@@ -30,58 +53,218 @@ function limb(w: number, h: number, d: number, color: number, pivotY: number): T
   return pivot;
 }
 
+/** Weapon models by base id, hanging from the fist along -y. Oversized on purpose. */
+function makeWeaponModel(baseId: string): THREE.Group {
+  const g = new THREE.Group();
+  const add = (mesh: THREE.Mesh) => {
+    mesh.castShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  const haft = (len: number, color = 0x4a3520) => {
+    const mesh = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, len, 0.06), flatMat(color, 0.8)));
+    mesh.position.y = -len / 2;
+    return mesh;
+  };
+  switch (baseId) {
+    case "hatchet": {
+      haft(0.75);
+      const head = add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.07), flatMat(0x9aa0ac, 0.4)));
+      head.position.set(0.13, -0.6, 0);
+      const edge = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.24, 0.08), flatMat(0xc9ced9, 0.3)));
+      edge.position.set(0.29, -0.6, 0);
+      break;
+    }
+    case "war_maul": {
+      haft(1.0);
+      const head = add(new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.26, 0.3), flatMat(0x6a7076, 0.6)));
+      head.position.y = -0.92;
+      const band = add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.06, 0.32), flatMat(0x3a3226, 0.8)));
+      band.position.y = -0.92;
+      break;
+    }
+    case "twin_fang": {
+      for (const side of [-1, 1]) {
+        const blade = add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.55, 0.1), flatMat(0xd9d2c4, 0.35)));
+        blade.position.set(side * 0.06, -0.42, 0);
+      }
+      const guard = add(new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.05, 0.14), flatMat(0x6e5a32, 0.6)));
+      guard.position.y = -0.16;
+      break;
+    }
+    case "grave_scythe": {
+      haft(1.15, 0x3a3226);
+      const blade = add(new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.09, 0.12), flatMat(0xb9c4c9, 0.35)));
+      blade.position.set(0.24, -1.08, 0);
+      const tip = add(new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.08, 0.1), flatMat(0xd9e0e4, 0.3)));
+      tip.position.set(0.52, -1.14, 0);
+      tip.rotation.z = -0.5;
+      break;
+    }
+    default: {
+      // rusted_blade and anything unknown: a straight sword
+      const steel = baseId === "rusted_blade" ? 0x9a8a72 : 0xb9bec9;
+      const blade = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.8, 0.16), flatMat(steel, 0.4)));
+      blade.position.y = -0.6;
+      const guard = add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.2), flatMat(0x6e5a32, 0.6)));
+      guard.position.y = -0.2;
+      break;
+    }
+  }
+  return g;
+}
+
+/** Helm models by base id, sitting over the head. */
+function makeHelmModel(baseId: string): THREE.Group {
+  const g = new THREE.Group();
+  if (baseId === "bone_visage") {
+    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.24, 0), flatMat(0xd9d4c4, 0.6));
+    skull.scale.y = 0.85;
+    skull.castShadow = true;
+    g.add(skull);
+    for (const side of [-1, 1]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.22, 4), flatMat(0xc4bca8, 0.7));
+      horn.position.set(side * 0.2, 0.12, 0);
+      horn.rotation.z = -side * 0.7;
+      g.add(horn);
+    }
+  } else {
+    // cracked_helm: a dented iron dome with a brim
+    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(0.23, 0), flatMat(0x7a8086, 0.55));
+    dome.scale.y = 0.8;
+    dome.castShadow = true;
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.42), flatMat(0x5a6066, 0.6));
+    brim.position.y = -0.1;
+    g.add(dome, brim);
+  }
+  return g;
+}
+
+const SKIN = 0xd9b08c;
+const CLOTH = 0x8a4a2c;
+const PANTS = 0x4a3524;
+
+const CHEST_LOOKS: Record<string, { torso: number; pauldron: number | null; metal: boolean }> = {
+  rag_tunic: { torso: 0x6a5a44, pauldron: null, metal: false },
+  studded_jerkin: { torso: 0x4a3a2c, pauldron: 0x3a2e22, metal: false },
+  grave_plate: { torso: 0x707a88, pauldron: 0x848e9c, metal: true },
+};
+
+const BOOT_LOOKS: Record<string, number> = {
+  worn_boots: 0x5a4530,
+  chain_greaves: 0x6a7076,
+};
+
 export function makeHeroRig(): HeroRig {
   const group = new THREE.Group();
 
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.28), flatMat(0x8a4a2c, 0.8));
-  torso.position.y = 0.78;
+  // Chunky heroic proportions: broad chest, short legs, big fists.
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.16, 0.3), flatMat(0x3a2e22, 0.8));
+  hips.position.y = 0.44;
+  hips.castShadow = true;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.52, 0.36), flatMat(CLOTH, 0.8));
+  torso.position.y = 0.8;
   torso.castShadow = true;
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 0), flatMat(0xd9b08c, 0.7));
-  head.position.y = 1.2;
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.19, 0), flatMat(SKIN, 0.7));
+  head.position.y = 1.28;
   head.castShadow = true;
 
-  const legL = limb(0.13, 0.5, 0.16, 0x4a3524, 0.52);
-  legL.position.x = -0.11;
-  const legR = limb(0.13, 0.5, 0.16, 0x4a3524, 0.52);
-  legR.position.x = 0.11;
+  const legL = limb(0.19, 0.34, 0.22, PANTS, 0.36);
+  legL.position.x = -0.14;
+  const legR = limb(0.19, 0.34, 0.22, PANTS, 0.36);
+  legR.position.x = 0.14;
+  const footL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.26), flatMat(0x2c2218, 0.8));
+  footL.position.set(0, -0.32, 0.03);
+  footL.castShadow = true;
+  legL.add(footL);
+  const footR = footL.clone();
+  legR.add(footR);
 
-  const armL = limb(0.1, 0.42, 0.12, 0x7a4226, 1.0);
-  armL.position.x = -0.27;
+  const pauldronL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.24), flatMat(CLOTH, 0.75));
+  pauldronL.position.set(-0.38, 1.06, 0);
+  pauldronL.castShadow = true;
+  const pauldronR = pauldronL.clone();
+  pauldronR.position.x = 0.38;
 
-  // Weapon arm: pivot at the shoulder, blade in the fist.
+  const armL = limb(0.14, 0.42, 0.16, CLOTH, 1.02);
+  armL.position.x = -0.42;
+  const fistL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.14, 0.16), flatMat(SKIN, 0.7));
+  fistL.position.y = -0.46;
+  fistL.castShadow = true;
+  armL.add(fistL);
+
+  // Weapon arm: shoulder pivot, big fist, weapon socket in the fist.
   const weaponPivot = new THREE.Group();
-  weaponPivot.position.set(0.28, 1.0, 0);
-  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.38, 0.12), flatMat(0x7a4226));
-  armR.position.y = -0.19;
+  weaponPivot.position.set(0.42, 1.06, 0);
+  const armR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.4, 0.17), flatMat(CLOTH, 0.75));
+  armR.position.y = -0.2;
   armR.castShadow = true;
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.72, 0.14), flatMat(0xb9bec9, 0.35));
-  blade.position.y = -0.62;
-  blade.rotation.x = Math.PI; // point away from the arm
-  blade.castShadow = true;
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.2), flatMat(0x6e5a32, 0.6));
-  guard.position.y = -0.38;
-  weaponPivot.add(armR, guard, blade);
-  weaponPivot.rotation.z = -0.35;
+  const fistR = new THREE.Mesh(new THREE.BoxGeometry(0.17, 0.15, 0.17), flatMat(SKIN, 0.7));
+  fistR.position.y = -0.44;
+  fistR.castShadow = true;
+  const weaponSocket = new THREE.Group();
+  weaponSocket.position.y = -0.44;
+  weaponPivot.add(armR, fistR, weaponSocket);
+  weaponPivot.rotation.z = -0.3;
 
-  group.add(torso, head, legL, legR, armL, weaponPivot);
+  const helmSocket = new THREE.Group();
+  helmSocket.position.y = 1.32;
+
+  group.add(hips, torso, head, legL, legR, pauldronL, pauldronR, armL, weaponPivot, helmSocket);
+
+  const torsoMat = torso.material as THREE.MeshStandardMaterial;
+  const pauldronMatL = pauldronL.material as THREE.MeshStandardMaterial;
+  const footMat = footL.material as THREE.MeshStandardMaterial;
 
   return {
     group,
     weaponPivot,
+    setEquipment(eq) {
+      // Weapon
+      weaponSocket.clear();
+      if (eq.weapon) {
+        // Models are built hanging along -y, matching the resting arm.
+        const model = makeWeaponModel(eq.weapon.baseId);
+        applyRarityGlow(model, eq.weapon);
+        weaponSocket.add(model);
+      }
+      // Helm
+      helmSocket.clear();
+      if (eq.helm) {
+        const model = makeHelmModel(eq.helm.baseId);
+        applyRarityGlow(model, eq.helm);
+        helmSocket.add(model);
+      }
+      // Chest: recolor torso + pauldrons
+      const look = eq.chest ? CHEST_LOOKS[eq.chest.baseId] : undefined;
+      torsoMat.color.setHex(look?.torso ?? CLOTH);
+      torsoMat.roughness = look?.metal ? 0.45 : 0.8;
+      pauldronMatL.color.setHex(look?.pauldron ?? look?.torso ?? CLOTH);
+      pauldronMatL.roughness = look?.metal ? 0.45 : 0.75;
+      (pauldronR.material as THREE.MeshStandardMaterial).copy(pauldronMatL);
+      const scale = look?.metal ? 1.35 : look?.pauldron ? 1.15 : 1;
+      pauldronL.scale.setScalar(scale);
+      pauldronR.scale.setScalar(scale);
+      torsoMat.emissive.setHex(0x000000);
+      applyRarityGlow(torso, eq.chest);
+      // Boots
+      footMat.color.setHex(eq.boots ? BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530 : 0x2c2218);
+      (footR.material as THREE.MeshStandardMaterial).copy(footMat);
+    },
     animate(now, phase, speed) {
       const stride = Math.min(1, speed / 4);
-      const swing = Math.sin(phase) * 0.7 * stride;
+      const swing = Math.sin(phase) * 0.65 * stride;
       legL.rotation.x = swing;
       legR.rotation.x = -swing;
       armL.rotation.x = -swing * 0.7;
       torso.rotation.z = Math.sin(phase) * 0.04 * stride;
-      torso.rotation.x = 0.06 * stride; // lean into the run
+      torso.rotation.x = 0.07 * stride; // lean into the run
+      head.rotation.x = 0.05 * stride;
       if (stride < 0.05) {
-        // Idle: breathe
-        torso.position.y = 0.78 + Math.sin(now / 700) * 0.012;
+        torso.position.y = 0.8 + Math.sin(now / 700) * 0.012;
         armL.rotation.x = Math.sin(now / 700) * 0.05;
       } else {
-        torso.position.y = 0.78 + Math.abs(Math.sin(phase)) * 0.03;
+        torso.position.y = 0.8 + Math.abs(Math.sin(phase)) * 0.035;
       }
     },
   };

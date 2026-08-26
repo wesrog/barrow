@@ -173,6 +173,7 @@ export function createScene(
   const heroFxOffset = new THREE.Vector3();
   let heroPhase = 0;
   let lastHeroPos: { x: number; y: number } | null = null;
+  let equipSignature = "";
 
   // --- Ground items ---
   const RARITY_COLORS: Record<string, { hex: number; css: string }> = {
@@ -276,6 +277,16 @@ export function createScene(
         hero.rotation.y = Math.atan2(facing.x, facing.z);
       }
       hero.rotation.x = state.player.dead ? Math.PI / 2 : 0;
+
+      // Rebuild visible gear when equipment changes.
+      const eq = state.player.equipment;
+      const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
+        .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
+        .join("|");
+      if (signature !== equipSignature) {
+        equipSignature = signature;
+        heroRig.setEquipment(eq);
+      }
 
       // Drive the walk cycle from actual movement so feet never slide.
       const frameNow = performance.now();

@@ -214,6 +214,20 @@ export function createScene(
   const monsterRigs = new Map<number, Rig>();
   const monsterFxOffsets = new Map<number, THREE.Vector3>();
   const monsterAnim = new Map<number, { phase: number; last: { x: number; y: number } }>();
+  // Per-monster tick interpolation and eased facing.
+  const monsterLerp = new Map<number, { px: number; py: number; cx: number; cy: number; yaw: number }>();
+  let lastSimTick = -1;
+  let lastFrameNow = performance.now();
+  let heroTargetYaw = 0;
+
+  /** Ease an angle toward a target along the shortest arc. */
+  const approachAngle = (current: number, target: number, maxStep: number): number => {
+    let delta = target - current;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    if (Math.abs(delta) <= maxStep) return target;
+    return current + Math.sign(delta) * maxStep;
+  };
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
   // --- Hover highlight: brighten the rig under the cursor ---
@@ -296,12 +310,16 @@ export function createScene(
       hero.position.set(px + heroFxOffset.x, 0, py + heroFxOffset.z);
       heroLight.position.set(px, 1.6, py);
 
+      const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);
+      lastFrameNow = performance.now();
+
       const dx = state.player.pos.x - prevPlayerPos.x;
       const dy = state.player.pos.y - prevPlayerPos.y;
       if (dx * dx + dy * dy > 1e-6) {
         facing.set(dx, 0, dy).normalize();
-        hero.rotation.y = Math.atan2(facing.x, facing.z);
+        heroTargetYaw = Math.atan2(facing.x, facing.z);
       }
+      hero.rotation.y = approachAngle(hero.rotation.y, heroTargetYaw, frameDt * 14);
       // Death and revival play through animation clips, not a rotation hack.
       if (state.player.dead && !heroWasDead) {
         heroRig.oneShot("Death_A", { hold: true });
@@ -335,25 +353,46 @@ export function createScene(
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
+          monsterLerp.delete(id);
         }
       }
+      const tickAdvanced = state.tick !== lastSimTick;
+      lastSimTick = state.tick;
       for (const monster of state.monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
           rig = makeMonsterModelRig(assets, monster.typeId);
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
+          monsterLerp.set(monster.id, {
+            px: monster.pos.x,
+            py: monster.pos.y,
+            cx: monster.pos.x,
+            cy: monster.pos.y,
+            yaw: 0,
+          });
           scene.add(rig.group);
         }
+        const lerp = monsterLerp.get(monster.id)!;
+        if (tickAdvanced) {
+          lerp.px = lerp.cx;
+          lerp.py = lerp.cy;
+          lerp.cx = monster.pos.x;
+          lerp.cy = monster.pos.y;
+        }
+        const mx = lerp.px + (lerp.cx - lerp.px) * alpha;
+        const my = lerp.py + (lerp.cy - lerp.py) * alpha;
         const off = monsterFxOffsets.get(monster.id);
-        rig.group.position.set(
-          monster.pos.x + (off?.x ?? 0),
-          0,
-          monster.pos.y + (off?.z ?? 0),
-        );
-        const mdx = state.player.pos.x - monster.pos.x;
-        const mdy = state.player.pos.y - monster.pos.y;
-        if (monster.ai === "chasing") rig.group.rotation.y = Math.atan2(mdx, mdy);
+        rig.group.position.set(mx + (off?.x ?? 0), 0, my + (off?.z ?? 0));
+        // Face movement when moving, the player when engaged.
+        const vx = lerp.cx - lerp.px;
+        const vy = lerp.cy - lerp.py;
+        if (vx * vx + vy * vy > 1e-5) {
+          lerp.yaw = Math.atan2(vx, vy);
+        } else if (monster.ai === "chasing") {
+          lerp.yaw = Math.atan2(state.player.pos.x - monster.pos.x, state.player.pos.y - monster.pos.y);
+        }
+        rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 9);
         const anim = monsterAnim.get(monster.id)!;
         const step = Math.hypot(monster.pos.x - anim.last.x, monster.pos.y - anim.last.y);
         anim.phase += step * 8;
@@ -375,7 +414,7 @@ export function createScene(
             healthBars.set(monster.id, bar);
           }
           const height = monster.typeId === "barrow_lord" ? 2.2 : 1.25;
-          const at = worldToScreen(monster.pos, height);
+          const at = worldToScreen({ x: mx, y: my }, height);
           bar.wrap.style.left = `${at.x}px`;
           bar.wrap.style.top = `${at.y}px`;
           bar.fill.style.width = `${Math.max(0, (monster.life / monster.maxLife) * 100)}%`;
@@ -548,7 +587,7 @@ export function createScene(
           const p = state.player.pos;
           const dx = event.to.x - p.x;
           const dy = event.to.y - p.y;
-          if (dx * dx + dy * dy > 1e-6) hero.rotation.y = Math.atan2(dx, dy);
+          if (dx * dx + dy * dy > 1e-6) heroTargetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
           heroRig.oneShot(heroRig.attackClip(), { timeScale: 1.6 });
           fx.tween(200, (t) => {

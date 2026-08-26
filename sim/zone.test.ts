@@ -12,6 +12,40 @@ const markedMap = () =>
     "#########",
   ]);
 
+describe("crypt reachability", () => {
+  test("every floor cell and every marker can be walked to from the spawn", () => {
+    const map = cryptZone();
+    const seen = new Set<number>();
+    const start = { x: Math.floor(map.spawn.x), y: Math.floor(map.spawn.y) };
+    const queue = [start];
+    seen.add(start.y * map.width + start.x);
+    while (queue.length > 0) {
+      const { x, y } = queue.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        const key = ny * map.width + nx;
+        if (!seen.has(key) && nx >= 0 && ny >= 0 && nx < map.width && ny < map.height) {
+          if (map.cells[key] === 1) {
+            seen.add(key);
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (map.cells[y * map.width + x] === 1) {
+          expect(seen.has(y * map.width + x)).toBe(true);
+        }
+      }
+    }
+    for (const marker of map.markers) {
+      expect(seen.has(Math.floor(marker.y) * map.width + Math.floor(marker.x))).toBe(true);
+    }
+  });
+});
+
 describe("marker spawns", () => {
   test("createGame populates monsters from map markers", () => {
     const state = createGame(1, markedMap());

@@ -1,6 +1,6 @@
 import type { Rng } from "../rng";
 import { hasLineOfSight, type Vec } from "../map";
-import { findPath } from "../path";
+import { findPath, smoothPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 import type { Monster } from "../monsters";
 import { rollDrop } from "../items/treasure";
@@ -25,7 +25,7 @@ function pathToward(state: GameState, from: Vec, to: Vec): Vec[] {
     { x: Math.floor(to.x), y: Math.floor(to.y) },
   );
   if (cells === null) return [];
-  const waypoints = cells.map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+  const waypoints = smoothPath(state.map, from, cells);
   // Walk to the target's actual position, not just its cell center.
   waypoints.push({ ...to });
   return waypoints;

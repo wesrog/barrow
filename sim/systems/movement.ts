@@ -1,5 +1,5 @@
 import { isWalkable, type Vec } from "../map";
-import { findPath } from "../path";
+import { findPath, smoothPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 
 export function applyMoveInput(state: GameState, input: PlayerInput): void {
@@ -15,7 +15,7 @@ export function applyMoveInput(state: GameState, input: PlayerInput): void {
   if (cells === null) return;
   state.player.attackTarget = null;
   state.player.pickupTarget = null;
-  state.player.path = cells.map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+  state.player.path = smoothPath(state.map, state.player.pos, cells);
 }
 
 /** Advance a position along waypoints by `budget` distance. Mutates `path`. */

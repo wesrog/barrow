@@ -1,8 +1,51 @@
-import { isWalkable, type ZoneMap } from "./map";
+import { isWalkable, type Vec, type ZoneMap } from "./map";
 
 export interface Cell {
   x: number;
   y: number;
+}
+
+/** A corridor wide enough for a body: the line plus two offset rails must be clear. */
+function walkableLine(map: ZoneMap, a: Vec, b: Vec): boolean {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  if (dist < 1e-6) return true;
+  const nx = (-(b.y - a.y) / dist) * 0.3;
+  const ny = ((b.x - a.x) / dist) * 0.3;
+  const steps = Math.max(1, Math.ceil(dist * 5));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    if (
+      !isWalkable(map, Math.floor(x), Math.floor(y)) ||
+      !isWalkable(map, Math.floor(x + nx), Math.floor(y + ny)) ||
+      !isWalkable(map, Math.floor(x - nx), Math.floor(y - ny))
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * String-pulling: drop every waypoint that can be skipped in a straight,
+ * body-wide line. Turns A*'s staircase into a few clean legs.
+ */
+export function smoothPath(map: ZoneMap, start: Vec, cells: Cell[]): Vec[] {
+  const pts = cells.map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+  const out: Vec[] = [];
+  let cur = start;
+  let i = 0;
+  while (i < pts.length) {
+    let j = pts.length - 1;
+    for (; j > i; j--) {
+      if (walkableLine(map, cur, pts[j]!)) break;
+    }
+    out.push(pts[j]!);
+    cur = pts[j]!;
+    i = j + 1;
+  }
+  return out;
 }
 
 /**

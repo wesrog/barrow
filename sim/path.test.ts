@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings, isWalkable } from "./map";
-import { findPath } from "./path";
+import { findPath, smoothPath } from "./path";
 
 describe("findPath", () => {
   test("finds a path across open ground ending at the goal cell", () => {
@@ -62,5 +62,42 @@ describe("findPath", () => {
       ".#.",
     ]);
     expect(findPath(map, { x: 0, y: 0 }, { x: 2, y: 1 })).toBeNull();
+  });
+});
+
+describe("smoothPath", () => {
+  test("open ground collapses to a straight shot", () => {
+    const map = mapFromStrings([
+      "@....",
+      ".....",
+      ".....",
+    ]);
+    const cells = findPath(map, { x: 0, y: 0 }, { x: 4, y: 2 })!;
+    const smooth = smoothPath(map, { x: 0.5, y: 0.5 }, cells);
+    expect(smooth.length).toBe(1);
+    expect(smooth[0]).toEqual({ x: 4.5, y: 2.5 });
+  });
+
+  test("keeps a bend when a wall blocks the straight line", () => {
+    const map = mapFromStrings([
+      "@.#..",
+      "..#..",
+      ".....",
+    ]);
+    const cells = findPath(map, { x: 0, y: 0 }, { x: 4, y: 0 })!;
+    const smooth = smoothPath(map, { x: 0.5, y: 0.5 }, cells);
+    expect(smooth.length).toBeGreaterThanOrEqual(2);
+    expect(smooth[smooth.length - 1]).toEqual({ x: 4.5, y: 0.5 });
+    // No leg of the smoothed path may cross the wall column x=2 above y=2
+    let prev = { x: 0.5, y: 0.5 };
+    for (const wp of smooth) {
+      const steps = 20;
+      for (let i = 1; i <= steps; i++) {
+        const x = prev.x + ((wp.x - prev.x) * i) / steps;
+        const y = prev.y + ((wp.y - prev.y) * i) / steps;
+        expect(isWalkable(map, Math.floor(x), Math.floor(y))).toBe(true);
+      }
+      prev = wp;
+    }
   });
 });

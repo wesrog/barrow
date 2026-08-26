@@ -8,7 +8,7 @@ import {
   slotForItem,
 } from "../character";
 import { BASES } from "../items/bases";
-import { findPath } from "../path";
+import { findPath, smoothPath } from "../path";
 
 const PICKUP_RANGE = 1.0;
 
@@ -94,7 +94,7 @@ export function pickupSystem(state: GameState): void {
       p.pickupTarget = null;
       return;
     }
-    p.path = cells.map((c) => ({ x: c.x + 0.5, y: c.y + 0.5 }));
+    p.path = smoothPath(state.map, p.pos, cells);
     p.path.push({ ...target.pos });
   }
 }

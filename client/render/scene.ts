@@ -99,54 +99,82 @@ export function createScene(
   heroLight.position.set(0, 1.6, 0);
   scene.add(heroLight);
 
-  // --- Ground + walls from the walk grid, in a few tones so rooms read as stone ---
-  const floorGeo = new THREE.BoxGeometry(1, 0.1, 1);
-  const wallGeo = new THREE.BoxGeometry(1, 1.4, 1);
-  const tallWallGeo = new THREE.BoxGeometry(1, 1.75, 1);
+  // --- Environment from the KayKit dungeon set: brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
-  const floorBuckets: THREE.Matrix4[][] = [[], [], []];
-  const wallBuckets: { geo: THREE.BufferGeometry; color: number; mats: THREE.Matrix4[] }[] = [
-    { geo: wallGeo, color: 0x35303c, mats: [] },
-    { geo: wallGeo, color: 0x2e2a36, mats: [] },
-    { geo: tallWallGeo, color: 0x3a3546, mats: [] },
-  ];
-  const m = new THREE.Matrix4();
   const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      const h = hash(x, y);
-      m.makeTranslation(x + 0.5, 0, y + 0.5);
-      if (isWalkable(map, x, y)) {
-        const jitter = (h % 5) * 0.008;
-        floorBuckets[h % 3]!.push(
-          m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.05 + jitter, 0)),
-        );
-      } else {
-        const bucket = h % 7 === 0 ? 2 : h % 2;
-        const lift = bucket === 2 ? 0.87 : 0.7;
-        wallBuckets[bucket]!.mats.push(
-          m.clone().multiply(new THREE.Matrix4().makeTranslation(0, lift, 0)),
-        );
-        // Torch candidates: wall with open floor to its south, sparse
-        if (isWalkable(map, x, y + 1) && h % 17 === 0) {
-          torchSpots.push({ x: x + 0.5, y: y + 0.72, fx: x + 0.5, fy: y + 1 });
+
+  // Dark cores fill wall regions (occlusion + silhouette); facades add the brick.
+  {
+    const coreGeo = new THREE.BoxGeometry(1, 1.5, 1);
+    const cores: THREE.Matrix4[] = [];
+    const m = new THREE.Matrix4();
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (!isWalkable(map, x, y)) {
+          cores.push(m.makeTranslation(x + 0.5, 0.72, y + 0.5).clone());
+          if (isWalkable(map, x, y + 1) && hash(x, y) % 17 === 0) {
+            torchSpots.push({ x: x + 0.5, y: 0.72, fx: x + 0.5, fy: y + 1 });
+          }
         }
       }
     }
+    const coreMesh = new THREE.InstancedMesh(coreGeo, flatMat(0x191722, 1), cores.length);
+    cores.forEach((mat, i) => coreMesh.setMatrixAt(i, mat));
+    coreMesh.receiveShadow = true;
+    scene.add(coreMesh);
   }
-  const floorTones = [0x232028, 0x201d25, 0x26222c];
-  floorBuckets.forEach((mats, i) => {
-    const mesh = new THREE.InstancedMesh(floorGeo, flatMat(floorTones[i]!, 1), mats.length);
-    mats.forEach((mat, j) => mesh.setMatrixAt(j, mat));
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-  });
-  for (const bucket of wallBuckets) {
-    const mesh = new THREE.InstancedMesh(bucket.geo, flatMat(bucket.color, 0.95), bucket.mats.length);
-    bucket.mats.forEach((mat, j) => mesh.setMatrixAt(j, mat));
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
+
+  const env = new THREE.Group();
+  scene.add(env);
+  const placePiece = (
+    piece: THREE.Group,
+    x: number,
+    z: number,
+    ry: number,
+    scale: { x: number; y: number; z: number },
+  ) => {
+    const clone = piece.clone(true);
+    clone.position.set(x, 0, z);
+    clone.rotation.y = ry;
+    clone.scale.set(scale.x, scale.y, scale.z);
+    clone.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+    env.add(clone);
+    return clone;
+  };
+
+  const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
+  const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
+  for (let y = 0; y < map.height; y++) {
+    for (let x = 0; x < map.width; x++) {
+      const h = hash(x, y);
+      if (isWalkable(map, x, y)) {
+        // Stone floor tile, occasionally broken or weedy
+        const roll = h % 23;
+        const floorPiece =
+          roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
+        placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE);
+        // Sparse clutter against walls
+        const clutterRoll = h % 89;
+        if ((clutterRoll === 3 || clutterRoll === 7) && !isWalkable(map, x, y - 1)) {
+          const prop = clutterRoll === 3 ? assets.dungeon.barrel : assets.dungeon.crates;
+          placePiece(prop, x + 0.5, y + 0.35, ((h >> 5) % 4) * (Math.PI / 2), { x: 0.28, y: 0.28, z: 0.28 });
+        }
+      } else {
+        // Brick facades on every edge that faces open floor
+        const wallRoll = h % 10;
+        const piece =
+          wallRoll < 7 ? assets.dungeon.wall : wallRoll < 9 ? assets.dungeon.wall_cracked : assets.dungeon.wall_broken;
+        if (isWalkable(map, x, y + 1)) placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE);
+        if (isWalkable(map, x, y - 1)) placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE);
+        if (isWalkable(map, x + 1, y)) placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE);
+        if (isWalkable(map, x - 1, y)) placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE);
+      }
+    }
   }
 
   // --- Stairs down: a dark pit with a pale glowing rim ---
@@ -171,6 +199,11 @@ export function createScene(
   const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number }[] = [];
   for (let i = 0; i < torchSpots.length && i < 14; i++) {
     const spot = torchSpots[i]!;
+    // Mounted sconce on the wall face, flame burning above it
+    const sconce = assets.dungeon.torch_mounted.clone(true);
+    sconce.position.set(spot.x, 0.75, spot.fy + 0.02);
+    sconce.scale.setScalar(0.5);
+    scene.add(sconce);
     const flame = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.09, 0),
       new THREE.MeshStandardMaterial({

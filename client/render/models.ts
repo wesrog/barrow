@@ -27,12 +27,29 @@ const WEAPON_URLS = {
   skeleton_staff: "/models/weapons/Skeleton_Staff.gltf",
 } as const;
 
+const DUNGEON_URLS = {
+  wall: "/models/dungeon/wall.glb",
+  wall_cracked: "/models/dungeon/wall_cracked.glb",
+  wall_broken: "/models/dungeon/wall_broken.glb",
+  floor: "/models/dungeon/floor_tile_small.glb",
+  floor_broken: "/models/dungeon/floor_tile_small_broken_A.glb",
+  floor_weeds: "/models/dungeon/floor_tile_small_weeds_A.glb",
+  pillar: "/models/dungeon/pillar.glb",
+  column: "/models/dungeon/column.glb",
+  torch_mounted: "/models/dungeon/torch_mounted.glb",
+  barrel: "/models/dungeon/barrel_large.glb",
+  crates: "/models/dungeon/crates_stacked.glb",
+  chest: "/models/dungeon/chest.glb",
+} as const;
+
 export type CharacterName = keyof typeof CHARACTER_URLS;
 export type WeaponName = keyof typeof WEAPON_URLS;
+export type DungeonName = keyof typeof DUNGEON_URLS;
 
 export interface GameAssets {
   characters: Record<CharacterName, GLTF>;
   weapons: Record<WeaponName, THREE.Group>;
+  dungeon: Record<DungeonName, THREE.Group>;
 }
 
 export async function loadAssets(): Promise<GameAssets> {
@@ -41,9 +58,11 @@ export async function loadAssets(): Promise<GameAssets> {
 
   const characterEntries = Object.entries(CHARACTER_URLS) as [CharacterName, string][];
   const weaponEntries = Object.entries(WEAPON_URLS) as [WeaponName, string][];
-  const [characterGltfs, weaponGltfs] = await Promise.all([
+  const dungeonEntries = Object.entries(DUNGEON_URLS) as [DungeonName, string][];
+  const [characterGltfs, weaponGltfs, dungeonGltfs] = await Promise.all([
     Promise.all(characterEntries.map(([, url]) => load(url))),
     Promise.all(weaponEntries.map(([, url]) => load(url))),
+    Promise.all(dungeonEntries.map(([, url]) => load(url))),
   ]);
 
   const characters = {} as Record<CharacterName, GLTF>;
@@ -58,7 +77,11 @@ export async function loadAssets(): Promise<GameAssets> {
     });
     weapons[name] = scene;
   });
-  return { characters, weapons };
+  const dungeon = {} as Record<DungeonName, THREE.Group>;
+  dungeonEntries.forEach(([name], i) => {
+    dungeon[name] = dungeonGltfs[i]!.scene;
+  });
+  return { characters, weapons, dungeon };
 }
 
 export interface CharacterInstance {

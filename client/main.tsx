@@ -6,6 +6,7 @@ import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { createScene } from "./render/scene";
+import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 
@@ -25,6 +26,7 @@ function Game() {
     const mount = mountRef.current!;
     const map = cryptZone();
     const game = createGame(Date.now() >>> 0, map);
+    loadFromStorage(game);
     gameRef.current = game;
     const scene = createScene(mount, map, (itemId) => {
       uiInputRef.current.pickup = itemId;
@@ -82,6 +84,11 @@ function Game() {
       else if (e.key === "s") setSkillsOpen((open) => !open);
       else if (e.key === "q") uiInputRef.current.drink = true;
       else if (e.key === "n") uiInputRef.current.newGame = true;
+      else if (e.key === "N") {
+        // Bury this character and start fresh.
+        wipeStorage();
+        window.location.reload();
+      }
       else if (e.key === "1") castAtCursor("cleave");
       else if (e.key === "2") castAtCursor("crush");
       else if (e.key === "3") castAtCursor("warcry");
@@ -91,6 +98,9 @@ function Game() {
     mount.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
+    const saveTimer = setInterval(() => saveToStorage(game), 5000);
+    const onUnload = () => saveToStorage(game);
+    window.addEventListener("beforeunload", onUnload);
 
     let raf = 0;
     let last = performance.now();
@@ -144,6 +154,8 @@ function Game() {
       mount.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
+      clearInterval(saveTimer);
+      window.removeEventListener("beforeunload", onUnload);
       scene.dispose();
       gameRef.current = null;
     };

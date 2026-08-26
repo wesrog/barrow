@@ -189,11 +189,15 @@ export function monsterAiSystem(state: GameState): void {
         if (m.ranged !== undefined) m.strikeTo = { ...p.pos };
       }
     } else {
-      if (m.repathIn <= 0 || m.path.length === 0) {
-        m.path = pathToward(state, m.pos, p.pos);
-        m.repathIn = 6;
-      }
+      // Repath only when the current route has gone stale — constant
+      // re-planning around corners makes chasers jitter between routes.
       m.repathIn--;
+      const goal = m.path[m.path.length - 1];
+      const stale = !goal || dist(goal, p.pos) > 1.2;
+      if (m.path.length === 0 || (m.repathIn <= 0 && stale)) {
+        m.path = pathToward(state, m.pos, p.pos);
+        m.repathIn = 10;
+      }
       moveAlongPath(m.pos, m.path, m.speed);
     }
   }

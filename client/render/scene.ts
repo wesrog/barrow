@@ -639,10 +639,12 @@ export function createScene(
           const mesh = monsterRigs.get(event.id)?.group;
           if (mesh) {
             fx.flash(mesh, 0xffffff);
+            // Squash-pop around the rig's own base scale, not scale 1.
+            const base = mesh.scale.x;
             fx.tween(120, (t) => {
               const s = 1 + Math.sin(t * Math.PI) * 0.14;
-              mesh.scale.set(s, 2 - s, s);
-            }, () => mesh.scale.set(1, 1, 1));
+              mesh.scale.set(base * s, base * (2 - s), base * s);
+            }, () => mesh.scale.setScalar(base));
           }
           fx.burst(event.pos.x, 0.55, event.pos.y, 0x8a2a2a, 6, 1.8);
           break;

@@ -47,14 +47,15 @@ class AnimRig implements ModelRig {
     this.play(idleName);
   }
 
-  private play(name: string, fade = 0.18, loop = true): THREE.AnimationAction | null {
+  private play(name: string, fade = 0.18, loop = true, force = false): THREE.AnimationAction | null {
     const action = this.inst.actions.get(name);
     if (!action) return null;
-    if (this.current === action) return action;
+    const restarting = this.current === action;
+    if (restarting && !force) return action;
     action.reset();
     action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
     action.clampWhenFinished = !loop;
-    if (this.current) {
+    if (this.current && !restarting) {
       action.crossFadeFrom(this.current, fade, false);
     }
     action.play();
@@ -63,7 +64,8 @@ class AnimRig implements ModelRig {
   }
 
   oneShot(name: string, opts: { hold?: boolean; timeScale?: number } = {}): void {
-    const action = this.play(name, 0.08, false);
+    // Force a restart so back-to-back identical attacks replay from the top.
+    const action = this.play(name, 0.08, false, true);
     if (!action) return;
     action.timeScale = opts.timeScale ?? 1;
     const dur = (action.getClip().duration / action.timeScale) * 1000;

@@ -171,6 +171,10 @@ export interface Monster {
   windup?: number;
   /** Tick when a telegraphed strike lands, or null when not winding up. */
   windingUntil: number | null;
+  /** A swing in flight: damage resolves at this tick (contact frame). */
+  strikeAt: number | null;
+  /** Where a ranged shot was aimed; dodging away from it makes it whiff. */
+  strikeTo: Vec | null;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
 }
@@ -212,6 +216,8 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth =
     guaranteedDrop: t.guaranteedDrop,
     windup: t.windup,
     windingUntil: null,
+    strikeAt: null,
+    strikeTo: null,
     stunnedUntil: 0,
   };
   state.monsters.set(monster.id, monster);

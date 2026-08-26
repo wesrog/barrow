@@ -111,6 +111,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
       swingEvery: BASE_STATS.swingEvery,
       swingCooldown: 0,
       attackTarget: null,
+      pendingStrike: null,
       pickupTarget: null,
       level: 1,
       xp: 0,

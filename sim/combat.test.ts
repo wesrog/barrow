@@ -197,3 +197,58 @@ describe("attack in place (shift-click)", () => {
     expect(game.player.path).toHaveLength(0);
   });
 });
+
+describe("contact frames", () => {
+  test("player damage lands a few ticks after the swing starts, not instantly", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    let swingTick = -1;
+    let hitTick = -1;
+    for (let i = 0; i < 60 && hitTick === -1; i++) {
+      step(game, i === 0 ? { attack: m.id } : {});
+      for (const e of game.events) {
+        if (e.type === "player_swing" && swingTick === -1) swingTick = game.tick;
+        if (e.type === "monster_hit" && hitTick === -1) hitTick = game.tick;
+      }
+      if (swingTick === game.tick && hitTick === game.tick) {
+        throw new Error("hit landed on the same tick as the swing");
+      }
+    }
+    expect(swingTick).toBeGreaterThan(-1);
+    expect(hitTick).toBeGreaterThan(swingTick);
+    expect(hitTick - swingTick).toBeLessThanOrEqual(8);
+  });
+
+  test("the strike whiffs when the target escapes mid-swing", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    let swung = false;
+    for (let i = 0; i < 30 && !swung; i++) {
+      step(game, i === 0 ? { attack: m.id } : {});
+      if (game.events.some((e) => e.type === "player_swing")) swung = true;
+    }
+    expect(swung).toBe(true);
+    m.pos = { x: 9.5, y: 3.5 }; // yanked away mid-swing
+    for (let i = 0; i < 10; i++) {
+      step(game, {});
+      expect(game.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
+    }
+  });
+
+  test("monster melee damage trails its swing animation cue", () => {
+    const game = createGame(1, arena());
+    spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    let swingTick = -1;
+    let hurtTick = -1;
+    for (let i = 0; i < 120 && hurtTick === -1; i++) {
+      step(game, {});
+      for (const e of game.events) {
+        if (e.type === "monster_swing" && swingTick === -1) swingTick = game.tick;
+        if (e.type === "player_hit" && hurtTick === -1) hurtTick = game.tick;
+      }
+    }
+    expect(swingTick).toBeGreaterThan(-1);
+    expect(hurtTick).toBeGreaterThan(swingTick);
+    expect(hurtTick - swingTick).toBeLessThanOrEqual(8);
+  });
+});

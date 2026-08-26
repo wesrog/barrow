@@ -25,6 +25,8 @@ export interface Player {
   swingCooldown: number;
   /** Monster id currently being attacked, if any. */
   attackTarget: number | null;
+  /** A swing in flight: damage resolves at this tick (contact frame). */
+  pendingStrike: { at: number; target: number | null } | null;
   /** Ground item id being walked to for pickup, if any. */
   pickupTarget: number | null;
   level: number;

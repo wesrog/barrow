@@ -12,6 +12,43 @@ export function computeHitChance(attackRating: number, defense: number): number 
   return Math.min(0.95, Math.max(0.05, raw));
 }
 
+/** Ticks between the swing starting (animation cue) and the blade connecting. */
+export const PLAYER_STRIKE_TICKS = 5;
+export const MONSTER_STRIKE_TICKS = 4;
+
+/** Resolve the player's in-flight swing at its contact frame. */
+function resolvePlayerStrike(state: GameState): void {
+  const p = state.player;
+  if (!p.pendingStrike || state.tick < p.pendingStrike.at) return;
+  const strike = p.pendingStrike;
+  p.pendingStrike = null;
+  if (p.dead) return;
+  let target: Monster | null = null;
+  if (strike.target !== null) {
+    const m = state.monsters.get(strike.target);
+    if (m && dist(p.pos, m.pos) <= p.range * 1.35) target = m;
+  } else {
+    // Swing-in-place: whatever is nearest within reach when the blade lands.
+    let bestD = Infinity;
+    for (const m of state.monsters.values()) {
+      const d = dist(m.pos, p.pos);
+      if (d <= p.range && d < bestD) {
+        target = m;
+        bestD = d;
+      }
+    }
+  }
+  if (!target) return;
+  if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
+    const amount = Math.max(
+      1,
+      Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state)),
+    );
+    target.life -= amount;
+    state.events.push({ type: "monster_hit", id: target.id, amount, pos: { ...target.pos } });
+  }
+}
+
 export function rollDamage(rng: Rng, min: number, max: number): number {
   return rng.int(min, max);
 }
@@ -50,26 +87,13 @@ export function applySwingInPlaceInput(state: GameState, input: PlayerInput): vo
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
   state.events.push({ type: "player_swing", to: { ...input.swingAt } });
-  // Hit the nearest monster within melee reach, if any.
-  let best: Monster | null = null;
-  let bestD = Infinity;
-  for (const m of state.monsters.values()) {
-    const d = dist(m.pos, p.pos);
-    if (d <= p.range && d < bestD) {
-      best = m;
-      bestD = d;
-    }
-  }
-  if (best && state.rng.next() < computeHitChance(p.attackRating, best.defense)) {
-    const amount = rollDamage(state.rng, p.dmgMin, p.dmgMax);
-    best.life -= amount;
-    state.events.push({ type: "monster_hit", id: best.id, amount, pos: { ...best.pos } });
-  }
+  p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: null };
 }
 
 export function playerCombatSystem(state: GameState): void {
   const p = state.player;
   if (p.swingCooldown > 0) p.swingCooldown--;
+  resolvePlayerStrike(state);
   if (p.dead || p.attackTarget === null) return;
   const target = state.monsters.get(p.attackTarget);
   if (!target) {
@@ -81,14 +105,7 @@ export function playerCombatSystem(state: GameState): void {
     if (p.swingCooldown === 0) {
       p.swingCooldown = p.swingEvery;
       state.events.push({ type: "player_swing", to: { ...target.pos } });
-      if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
-        const amount = Math.max(
-          1,
-          Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state)),
-        );
-        target.life -= amount;
-        state.events.push({ type: "monster_hit", id: target.id, amount, pos: { ...target.pos } });
-      }
+      p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
     }
   } else {
     p.path = pathToward(state, p.pos, target.pos);
@@ -101,20 +118,36 @@ export function monsterAiSystem(state: GameState): void {
     if (m.swingCooldown > 0) m.swingCooldown--;
     if (m.stunnedUntil > state.tick) {
       m.windingUntil = null; // a stun breaks the windup
+      m.strikeAt = null;
       continue;
     }
     if (p.dead) {
       m.ai = "idle";
       m.path = [];
       m.windingUntil = null;
+      m.strikeAt = null;
       continue;
     }
-    // A telegraphed strike in progress: hold position until it lands.
+    // A swing in flight: damage lands at the contact frame.
+    if (m.strikeAt !== null) {
+      if (state.tick < m.strikeAt) continue;
+      m.strikeAt = null;
+      const connects = m.strikeTo
+        ? dist(p.pos, m.strikeTo) <= 1.2 // ranged shot: dodge the impact point
+        : dist(m.pos, p.pos) <= m.range * 1.4;
+      m.strikeTo = null;
+      if (connects && state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
+        const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
+        p.life -= amount;
+        state.events.push({ type: "player_hit", amount });
+      }
+      continue;
+    }
+    // A telegraphed strike in progress: hold position until the swing begins.
     if (m.windingUntil !== null) {
       if (state.tick < m.windingUntil) continue;
       m.windingUntil = null;
-      const reach = dist(m.pos, p.pos);
-      if (reach <= m.range * 1.4) {
+      if (dist(m.pos, p.pos) <= m.range * 1.4) {
         state.events.push({
           type: "monster_swing",
           id: m.id,
@@ -122,11 +155,7 @@ export function monsterAiSystem(state: GameState): void {
           to: { ...p.pos },
           ranged: false,
         });
-        if (state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
-          const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
-          p.life -= amount;
-          state.events.push({ type: "player_hit", amount });
-        }
+        m.strikeAt = state.tick + MONSTER_STRIKE_TICKS;
       }
       continue;
     }
@@ -156,11 +185,8 @@ export function monsterAiSystem(state: GameState): void {
           to: { ...p.pos },
           ranged: m.ranged !== undefined,
         });
-        if (state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
-          const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
-          p.life -= amount;
-          state.events.push({ type: "player_hit", amount });
-        }
+        m.strikeAt = state.tick + MONSTER_STRIKE_TICKS;
+        if (m.ranged !== undefined) m.strikeTo = { ...p.pos };
       }
     } else {
       if (m.repathIn <= 0 || m.path.length === 0) {

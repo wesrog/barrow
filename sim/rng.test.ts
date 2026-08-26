@@ -38,4 +38,13 @@ describe("createRng", () => {
     }
     expect(seen).toEqual(new Set([3, 4, 5, 6]));
   });
+
+  test("state() lets a new rng resume the exact stream", () => {
+    const a = createRng(12345);
+    for (let i = 0; i < 7; i++) a.next();
+    const b = createRng(a.state());
+    const tailA = [a.next(), a.int(1, 100), a.next()];
+    const tailB = [b.next(), b.int(1, 100), b.next()];
+    expect(tailB).toEqual(tailA);
+  });
 });

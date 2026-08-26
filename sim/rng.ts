@@ -3,6 +3,8 @@ export interface Rng {
   next(): number;
   /** Uniform integer in [min, max], inclusive. */
   int(min: number, max: number): number;
+  /** Internal state word; `createRng(state())` resumes the stream. */
+  state(): number;
 }
 
 // mulberry32 — small, fast, deterministic across platforms.
@@ -18,5 +20,6 @@ export function createRng(seed: number): Rng {
   return {
     next,
     int: (min, max) => min + Math.floor(next() * (max - min + 1)),
+    state: () => s,
   };
 }

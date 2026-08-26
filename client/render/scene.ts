@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import type { GameState, SimEvent } from "../../sim/state";
 import { Effects } from "./fx";
+import { makeHeroRig, makeMonsterRig, type Rig } from "./rigs";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -27,73 +28,6 @@ export interface SceneHandle {
 
 function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
-}
-
-function makeMonsterMesh(typeId: string): THREE.Group {
-  const g = new THREE.Group();
-  if (typeId === "gravespit") {
-    // Hunched spitter: thin cone body, glowing maw
-    const body = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.8, 6), flatMat(0x5a4a6e));
-    body.position.y = 0.4;
-    body.rotation.x = 0.25;
-    body.castShadow = true;
-    const maw = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.09, 0),
-      new THREE.MeshStandardMaterial({ color: 0x9be07a, emissive: 0x6fbf4a, emissiveIntensity: 1.6 }),
-    );
-    maw.position.set(0, 0.62, 0.2);
-    g.add(body, maw);
-  } else if (typeId === "tomb_bloat") {
-    // Swollen and about to pop
-    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.38, 0), flatMat(0x7a6a3a, 0.7));
-    body.position.y = 0.4;
-    body.scale.set(1, 0.85, 1);
-    body.castShadow = true;
-    const boil = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.1, 0),
-      new THREE.MeshStandardMaterial({ color: 0xd9b04c, emissive: 0xb9842c, emissiveIntensity: 1.1 }),
-    );
-    boil.position.set(0.18, 0.62, 0.12);
-    g.add(body, boil);
-  } else if (typeId === "barrow_lord") {
-    // The boss: tall, crowned, wrong
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.25, 0.5), flatMat(0x3a3f52, 0.9));
-    body.position.y = 0.72;
-    body.castShadow = true;
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), flatMat(0xb8b4c9, 0.6));
-    head.position.y = 1.55;
-    head.castShadow = true;
-    const crown = new THREE.Mesh(
-      new THREE.ConeGeometry(0.16, 0.28, 5),
-      new THREE.MeshStandardMaterial({ color: 0xc9a84c, emissive: 0x8a6a1c, emissiveIntensity: 0.8 }),
-    );
-    crown.position.y = 1.82;
-    g.add(body, head, crown);
-  } else if (typeId === "skitter") {
-    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), flatMat(0x7a2f2f));
-    body.position.y = 0.24;
-    body.castShadow = true;
-    const eye = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.05, 0),
-      new THREE.MeshStandardMaterial({
-        color: 0xffcf6a,
-        emissive: 0xffb340,
-        emissiveIntensity: 1.4,
-      }),
-    );
-    eye.position.set(0, 0.3, 0.18);
-    g.add(body, eye);
-  } else {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.75, 0.38), flatMat(0x4d5a44));
-    body.position.y = 0.45;
-    body.rotation.z = 0.06;
-    body.castShadow = true;
-    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 0), flatMat(0x66735a));
-    head.position.set(0.05, 0.95, 0.08);
-    head.castShadow = true;
-    g.add(body, head);
-  }
-  return g;
 }
 
 export function createScene(
@@ -228,28 +162,15 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
-  // --- Hero: body, head, and a blade on a swinging shoulder pivot ---
-  const hero = new THREE.Group();
-  const heroBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.5, 3, 8), flatMat(0x8a4a2c, 0.8));
-  heroBody.position.y = 0.55;
-  heroBody.castShadow = true;
-  const heroHead = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18, 0), flatMat(0xd9b08c, 0.7));
-  heroHead.position.y = 1.12;
-  heroHead.castShadow = true;
-  const weaponPivot = new THREE.Group();
-  weaponPivot.position.set(0.3, 0.85, 0);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.72, 0.14), flatMat(0xb9bec9, 0.35));
-  blade.position.y = 0.42;
-  blade.castShadow = true;
-  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.2), flatMat(0x6e5a32, 0.6));
-  guard.position.y = 0.1;
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.05), flatMat(0x4a3520, 0.8));
-  weaponPivot.add(blade, guard, grip);
-  weaponPivot.rotation.z = -0.5; // resting at the side
-  hero.add(heroBody, heroHead, weaponPivot);
+  // --- Hero: articulated rig with a blade on the weapon arm ---
+  const heroRig = makeHeroRig();
+  const hero = heroRig.group;
+  const weaponPivot = heroRig.weaponPivot;
   scene.add(hero);
   // Renderer-side displacement for lunges; sim position stays authoritative.
   const heroFxOffset = new THREE.Vector3();
+  let heroPhase = 0;
+  let lastHeroPos: { x: number; y: number } | null = null;
 
   // --- Ground items ---
   const RARITY_COLORS: Record<string, { hex: number; css: string }> = {
@@ -261,8 +182,10 @@ export function createScene(
   const groundItemVisuals = new Map<number, { mesh: THREE.Mesh; label: HTMLDivElement }>();
 
   // --- Monsters & corpses ---
-  const monsterMeshes = new Map<number, THREE.Group>();
+  const monsterRigs = new Map<number, Rig>();
   const monsterFxOffsets = new Map<number, THREE.Vector3>();
+  const monsterAnim = new Map<number, { phase: number; last: { x: number; y: number } }>();
+  const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
   const corpseMeshes: THREE.Mesh[] = [];
   let corpseCount = 0;
   const corpseMatByType: Record<string, THREE.MeshStandardMaterial> = {
@@ -334,35 +257,74 @@ export function createScene(
         facing.set(dx, 0, dy).normalize();
         hero.rotation.y = Math.atan2(facing.x, facing.z);
       }
-      const moving = state.player.path.length > 0;
-      hero.position.y = moving
-        ? Math.abs(Math.sin(performance.now() / 90)) * 0.06
-        : Math.sin(performance.now() / 700) * 0.015; // idle breath
       hero.rotation.x = state.player.dead ? Math.PI / 2 : 0;
 
-      // Sync monster meshes with sim state
-      for (const [id, mesh] of monsterMeshes) {
+      // Drive the walk cycle from actual movement so feet never slide.
+      const frameNow = performance.now();
+      if (lastHeroPos) {
+        const step = Math.hypot(px - lastHeroPos.x, py - lastHeroPos.y);
+        heroPhase += step * 7;
+        heroRig.animate(frameNow, heroPhase, step * 60);
+      }
+      lastHeroPos = { x: px, y: py };
+
+      // Sync monster rigs with sim state
+      for (const [id, rig] of monsterRigs) {
         if (!state.monsters.has(id)) {
-          scene.remove(mesh);
-          monsterMeshes.delete(id);
+          scene.remove(rig.group);
+          monsterRigs.delete(id);
+          monsterAnim.delete(id);
         }
       }
       for (const monster of state.monsters.values()) {
-        let mesh = monsterMeshes.get(monster.id);
-        if (!mesh) {
-          mesh = makeMonsterMesh(monster.typeId);
-          monsterMeshes.set(monster.id, mesh);
-          scene.add(mesh);
+        let rig = monsterRigs.get(monster.id);
+        if (!rig) {
+          rig = makeMonsterRig(monster.typeId);
+          monsterRigs.set(monster.id, rig);
+          monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
+          scene.add(rig.group);
         }
         const off = monsterFxOffsets.get(monster.id);
-        mesh.position.set(
+        rig.group.position.set(
           monster.pos.x + (off?.x ?? 0),
-          Math.sin((performance.now() + monster.id * 331) / 500) * 0.02,
+          0,
           monster.pos.y + (off?.z ?? 0),
         );
         const mdx = state.player.pos.x - monster.pos.x;
         const mdy = state.player.pos.y - monster.pos.y;
-        if (monster.ai === "chasing") mesh.rotation.y = Math.atan2(mdx, mdy);
+        if (monster.ai === "chasing") rig.group.rotation.y = Math.atan2(mdx, mdy);
+        const anim = monsterAnim.get(monster.id)!;
+        const step = Math.hypot(monster.pos.x - anim.last.x, monster.pos.y - anim.last.y);
+        anim.phase += step * 8;
+        anim.last = { ...monster.pos };
+        rig.animate(frameNow, anim.phase, step * 60);
+
+        // Overhead health bar once wounded
+        if (monster.life < monster.maxLife) {
+          let bar = healthBars.get(monster.id);
+          if (!bar) {
+            const wrap = document.createElement("div");
+            const boss = monster.typeId === "barrow_lord";
+            wrap.style.cssText = `position:absolute;width:${boss ? 60 : 34}px;height:4px;background:rgba(10,8,10,.85);border:1px solid #000;transform:translate(-50%,-50%);`;
+            const fill = document.createElement("div");
+            fill.style.cssText = "height:100%;background:linear-gradient(to right,#8a1e1e,#c04040);width:100%;";
+            wrap.appendChild(fill);
+            overlay.appendChild(wrap);
+            bar = { wrap, fill };
+            healthBars.set(monster.id, bar);
+          }
+          const height = monster.typeId === "barrow_lord" ? 2.2 : 1.25;
+          const at = worldToScreen(monster.pos, height);
+          bar.wrap.style.left = `${at.x}px`;
+          bar.wrap.style.top = `${at.y}px`;
+          bar.fill.style.width = `${Math.max(0, (monster.life / monster.maxLife) * 100)}%`;
+        }
+      }
+      for (const [id, bar] of healthBars) {
+        if (!state.monsters.has(id)) {
+          bar.wrap.remove();
+          healthBars.delete(id);
+        }
       }
 
       // Sync ground items
@@ -453,13 +415,13 @@ export function createScene(
       setNdc(clientX, clientY);
       raycaster.setFromCamera(ndc, camera);
       const targets: THREE.Object3D[] = [];
-      for (const mesh of monsterMeshes.values()) targets.push(mesh);
+      for (const rig of monsterRigs.values()) targets.push(rig.group);
       const hits = raycaster.intersectObjects(targets, true);
       if (hits.length > 0) {
         let obj: THREE.Object3D | null = hits[0]!.object;
         while (obj && obj.parent !== scene) obj = obj.parent;
-        for (const [id, mesh] of monsterMeshes) {
-          if (mesh === obj) return { kind: "monster", id };
+        for (const [id, rig] of monsterRigs) {
+          if (rig.group === obj) return { kind: "monster", id };
         }
       }
       const itemMeshes: THREE.Object3D[] = [];
@@ -488,15 +450,21 @@ export function createScene(
           const dy = event.to.y - p.y;
           if (dx * dx + dy * dy > 1e-6) hero.rotation.y = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
-          fx.tween(180, (t) => {
-            // Wind up, slash through, settle back to rest
-            weaponPivot.rotation.z =
-              t < 0.55
-                ? -1.7 + (1.0 - -1.7) * (1 - (1 - t / 0.55) ** 2)
-                : 1.0 + (-0.5 - 1.0) * ((t - 0.55) / 0.45);
+          fx.tween(200, (t) => {
+            // Raise the arm behind, chop through, settle back to rest
+            const rot =
+              t < 0.25
+                ? (t / 0.25) * 0.9
+                : t < 0.6
+                  ? 0.9 + ((t - 0.25) / 0.35) * (-2.1 - 0.9)
+                  : -2.1 + ((t - 0.6) / 0.4) * (0 - -2.1);
+            weaponPivot.rotation.x = rot;
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
             heroFxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
-          }, () => heroFxOffset.set(0, 0, 0));
+          }, () => {
+            weaponPivot.rotation.x = 0;
+            heroFxOffset.set(0, 0, 0);
+          });
           break;
         }
         case "monster_swing": {
@@ -536,7 +504,7 @@ export function createScene(
           break;
         }
         case "monster_hit": {
-          const mesh = monsterMeshes.get(event.id);
+          const mesh = monsterRigs.get(event.id)?.group;
           if (mesh) {
             fx.flash(mesh, 0xffffff);
             fx.tween(120, (t) => {
@@ -554,9 +522,10 @@ export function createScene(
           break;
         }
         case "monster_died": {
-          const mesh = monsterMeshes.get(event.id);
+          const mesh = monsterRigs.get(event.id)?.group;
           if (mesh) {
-            monsterMeshes.delete(event.id);
+            monsterRigs.delete(event.id);
+            monsterAnim.delete(event.id);
             const dir = ((event.id * 61) % 2) * 2 - 1;
             fx.tween(300, (t) => {
               mesh.rotation.z = dir * t * (Math.PI / 2);

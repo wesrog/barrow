@@ -7,6 +7,7 @@ import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { createScene } from "./render/scene";
 import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
+import { BottomBar } from "./ui/BottomBar";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 
@@ -14,7 +15,6 @@ const TICK_MS = 1000 / TICK_RATE;
 
 function Game() {
   const mountRef = useRef<HTMLDivElement>(null);
-  const lifeRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<GameState | null>(null);
   // Inputs queued by the HUD (equip/unequip clicks), merged into the next tick.
   const uiInputRef = useRef<PlayerInput>({});
@@ -99,6 +99,8 @@ function Game() {
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
     const saveTimer = setInterval(() => saveToStorage(game), 5000);
+    // The bottom bar re-reads game state on a light heartbeat.
+    const hudTimer = setInterval(() => setVersion((v) => v + 1), 100);
     const onUnload = () => saveToStorage(game);
     window.addEventListener("beforeunload", onUnload);
 
@@ -137,14 +139,6 @@ function Game() {
         acc -= TICK_MS;
       }
       if (sawEvents) setVersion((v) => v + 1);
-      if (lifeRef.current) {
-        const p = game.player;
-        lifeRef.current.textContent = p.dead
-          ? "you have died — press n to rise again"
-          : `life ${p.life}/${p.maxLife} · mana ${Math.floor(p.mana)}/${p.maxMana} · potions ${p.belt} (q) · lvl ${p.level}` +
-            (p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : "");
-        lifeRef.current.style.color = p.dead ? "#e05252" : "#c9b896";
-      }
       scene.render(game, prevPlayerPos, acc / TICK_MS);
     };
     raf = requestAnimationFrame(frame);
@@ -156,6 +150,7 @@ function Game() {
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
       clearInterval(saveTimer);
+      clearInterval(hudTimer);
       window.removeEventListener("beforeunload", onUnload);
       scene.dispose();
       gameRef.current = null;
@@ -164,21 +159,7 @@ function Game() {
 
   return (
     <div ref={mountRef} style={{ width: "100%", height: "100%" }}>
-      <div
-        ref={lifeRef}
-        style={{
-          position: "absolute",
-          bottom: 14,
-          left: "50%",
-          transform: "translateX(-50%)",
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 13,
-          color: "#c9b896",
-          textShadow: "0 1px 3px #000",
-          zIndex: 2,
-          pointerEvents: "none",
-        }}
-      />
+      {gameRef.current && <BottomBar game={gameRef.current} />}
       {skillsOpen && gameRef.current && (
         <SkillPanel
           game={gameRef.current}

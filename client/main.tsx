@@ -1,8 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createGame, step, TICK_RATE } from "../sim/tick";
-import { starterZone } from "../sim/zone";
-import { spawnMonster } from "../sim/monsters";
+import { cryptZone } from "../sim/zone";
 import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
@@ -24,21 +23,12 @@ function Game() {
 
   useEffect(() => {
     const mount = mountRef.current!;
-    const map = starterZone();
+    const map = cryptZone();
     const game = createGame(Date.now() >>> 0, map);
     gameRef.current = game;
     const scene = createScene(mount, map, (itemId) => {
       uiInputRef.current.pickup = itemId;
     });
-
-    // Placeholder spawns until the zone milestone authors them in the map.
-    spawnMonster(game, "shambler", { x: 8.5, y: 4.5 });
-    spawnMonster(game, "shambler", { x: 16.5, y: 8.5 });
-    spawnMonster(game, "skitter", { x: 12.5, y: 2.5 });
-    spawnMonster(game, "skitter", { x: 13.5, y: 3.5 });
-    spawnMonster(game, "skitter", { x: 22.5, y: 10.5 });
-    spawnMonster(game, "skitter", { x: 20.5, y: 4.5 });
-    spawnMonster(game, "shambler", { x: 24.5, y: 6.5 });
 
     let pending: PlayerInput = {};
     let prevPlayerPos = { ...game.player.pos };
@@ -90,6 +80,8 @@ function Game() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
+      else if (e.key === "q") uiInputRef.current.drink = true;
+      else if (e.key === "n") uiInputRef.current.newGame = true;
       else if (e.key === "1") castAtCursor("cleave");
       else if (e.key === "2") castAtCursor("crush");
       else if (e.key === "3") castAtCursor("warcry");
@@ -124,6 +116,10 @@ function Game() {
             scene.addDamageNumber(game.player.pos, `level ${e.level}!`, "#f0c96a");
           } else if (e.type === "skill_cast" && e.skill === "warcry") {
             scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
+          } else if (e.type === "potion_drunk") {
+            scene.addDamageNumber(game.player.pos, `+${e.healed}`, "#7fd97f");
+          } else if (e.type === "exploded") {
+            scene.addExplosion(e.pos, e.radius);
           }
         }
         if (game.events.length > 0) sawEvents = true;
@@ -133,8 +129,8 @@ function Game() {
       if (lifeRef.current) {
         const p = game.player;
         lifeRef.current.textContent = p.dead
-          ? "you have died"
-          : `life ${p.life}/${p.maxLife} · mana ${Math.floor(p.mana)}/${p.maxMana} · lvl ${p.level}` +
+          ? "you have died — press n to rise again"
+          : `life ${p.life}/${p.maxLife} · mana ${Math.floor(p.mana)}/${p.maxMana} · potions ${p.belt} (q) · lvl ${p.level}` +
             (p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : "");
         lifeRef.current.style.color = p.dead ? "#e05252" : "#c9b896";
       }

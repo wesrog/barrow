@@ -3,6 +3,8 @@ import type { Item } from "./items/generate";
 
 export const INV_W = 10;
 export const INV_H = 4;
+export const BELT_SIZE = 4;
+export const POTION_HEAL = 35;
 
 export interface InvEntry {
   id: number;
@@ -80,6 +82,7 @@ export function removeEntry(inv: Inventory, id: number): InvEntry | null {
 /** Equip slot this item goes to; rings prefer an empty ring slot, else ring1. */
 export function slotForItem(item: Item, eq: Equipment): EquipSlot {
   const slot = BASES[item.baseId]!.slot;
+  if (slot === "potion") throw new Error("potions go to the belt, not equipment");
   if (slot === "ring") {
     if (!eq.ring1) return "ring1";
     if (!eq.ring2) return "ring2";

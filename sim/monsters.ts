@@ -22,6 +22,12 @@ export interface MonsterType {
   tc: string;
   /** Monster level: caps droppable bases and affix levels. */
   mlvl: number;
+  /** Ranged attacker: preferred firing distance (needs line of sight). */
+  ranged?: number;
+  /** Detonates on death. */
+  explode?: { radius: number; dmgMin: number; dmgMax: number };
+  /** Always drops, magic or better (boss packs). */
+  guaranteedDrop?: boolean;
 }
 
 export const MONSTER_TYPES: Record<string, MonsterType> = {
@@ -57,6 +63,57 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     tc: "trash",
     mlvl: 2,
   },
+  gravespit: {
+    id: "gravespit",
+    name: "Gravespit",
+    maxLife: 16,
+    speed: 3.0 / 25,
+    dmgMin: 2,
+    dmgMax: 4,
+    attackRating: 45,
+    defense: 10,
+    aggro: 9,
+    range: 1.0,
+    swingEvery: 40,
+    xp: 10,
+    tc: "standard",
+    mlvl: 4,
+    ranged: 5.5,
+  },
+  tomb_bloat: {
+    id: "tomb_bloat",
+    name: "Tomb Bloat",
+    maxLife: 20,
+    speed: 1.8 / 25,
+    dmgMin: 1,
+    dmgMax: 2,
+    attackRating: 30,
+    defense: 8,
+    aggro: 7,
+    range: 1.0,
+    swingEvery: 30,
+    xp: 8,
+    tc: "trash",
+    mlvl: 3,
+    explode: { radius: 1.8, dmgMin: 6, dmgMax: 12 },
+  },
+  barrow_lord: {
+    id: "barrow_lord",
+    name: "The Barrow Lord",
+    maxLife: 120,
+    speed: 2.6 / 25,
+    dmgMin: 4,
+    dmgMax: 9,
+    attackRating: 70,
+    defense: 30,
+    aggro: 8,
+    range: 1.3,
+    swingEvery: 20,
+    xp: 60,
+    tc: "boss",
+    mlvl: 8,
+    guaranteedDrop: true,
+  },
 };
 
 export type MonsterAi = "idle" | "chasing";
@@ -82,6 +139,9 @@ export interface Monster {
   xp: number;
   tc: string;
   mlvl: number;
+  ranged?: number;
+  explode?: { radius: number; dmgMin: number; dmgMax: number };
+  guaranteedDrop?: boolean;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
 }
@@ -117,6 +177,9 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec): Monste
     xp: t.xp,
     tc: t.tc,
     mlvl: t.mlvl,
+    ranged: t.ranged,
+    explode: t.explode,
+    guaranteedDrop: t.guaranteedDrop,
     stunnedUntil: 0,
   };
   state.monsters.set(monster.id, monster);

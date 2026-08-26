@@ -44,6 +44,11 @@ export function rollItem(rng: Rng, baseId: string, ilvl: number, rarity: Rarity)
   const base = BASES[baseId];
   if (!base) throw new Error(`unknown base: ${baseId}`);
 
+  // Potions are consumables: always plain, whatever the rarity roll said.
+  if (base.slot === "potion") {
+    return { baseId, rarity: "normal", name: base.name, affixIds: [], mods: [], ilvl };
+  }
+
   if (rarity === "unique") {
     const candidates = Object.values(UNIQUES).filter((u) => u.baseId === baseId && u.lvl <= ilvl);
     if (candidates.length === 0) return rollItem(rng, baseId, ilvl, "rare"); // D2-style fallback

@@ -17,6 +17,8 @@ export interface SceneHandle {
   pick(state: GameState, clientX: number, clientY: number): PickResult;
   /** Spawn a floating damage number at a world position. */
   addDamageNumber(pos: Vec, text: string, color: string): void;
+  /** Flash an expanding blast ring at a world position. */
+  addExplosion(pos: Vec, radius: number): void;
   dispose(): void;
 }
 
@@ -26,7 +28,45 @@ function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
 
 function makeMonsterMesh(typeId: string): THREE.Group {
   const g = new THREE.Group();
-  if (typeId === "skitter") {
+  if (typeId === "gravespit") {
+    // Hunched spitter: thin cone body, glowing maw
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.8, 6), flatMat(0x5a4a6e));
+    body.position.y = 0.4;
+    body.rotation.x = 0.25;
+    body.castShadow = true;
+    const maw = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.09, 0),
+      new THREE.MeshStandardMaterial({ color: 0x9be07a, emissive: 0x6fbf4a, emissiveIntensity: 1.6 }),
+    );
+    maw.position.set(0, 0.62, 0.2);
+    g.add(body, maw);
+  } else if (typeId === "tomb_bloat") {
+    // Swollen and about to pop
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.38, 0), flatMat(0x7a6a3a, 0.7));
+    body.position.y = 0.4;
+    body.scale.set(1, 0.85, 1);
+    body.castShadow = true;
+    const boil = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.1, 0),
+      new THREE.MeshStandardMaterial({ color: 0xd9b04c, emissive: 0xb9842c, emissiveIntensity: 1.1 }),
+    );
+    boil.position.set(0.18, 0.62, 0.12);
+    g.add(body, boil);
+  } else if (typeId === "barrow_lord") {
+    // The boss: tall, crowned, wrong
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.25, 0.5), flatMat(0x3a3f52, 0.9));
+    body.position.y = 0.72;
+    body.castShadow = true;
+    const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), flatMat(0xb8b4c9, 0.6));
+    head.position.y = 1.55;
+    head.castShadow = true;
+    const crown = new THREE.Mesh(
+      new THREE.ConeGeometry(0.16, 0.28, 5),
+      new THREE.MeshStandardMaterial({ color: 0xc9a84c, emissive: 0x8a6a1c, emissiveIntensity: 0.8 }),
+    );
+    crown.position.y = 1.82;
+    g.add(body, head, crown);
+  } else if (typeId === "skitter") {
     const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.22, 0), flatMat(0x7a2f2f));
     body.position.y = 0.24;
     body.castShadow = true;
@@ -165,7 +205,13 @@ export function createScene(
   const corpseMatByType: Record<string, THREE.MeshStandardMaterial> = {
     skitter: flatMat(0x3d1d1d),
     shambler: flatMat(0x2c3327),
+    gravespit: flatMat(0x352b40),
+    tomb_bloat: flatMat(0x4a4028),
+    barrow_lord: flatMat(0x272a38),
   };
+
+  // --- Explosions (expanding, fading rings) ---
+  const explosions: { mesh: THREE.Mesh; born: number; radius: number }[] = [];
 
   // --- Picking ---
   const raycaster = new THREE.Raycaster();
@@ -241,12 +287,15 @@ export function createScene(
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
+          const isPotion = gi.item.baseId === "minor_potion";
           const mesh = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.14, 0),
+            isPotion
+              ? new THREE.IcosahedronGeometry(0.11, 0)
+              : new THREE.OctahedronGeometry(0.14, 0),
             new THREE.MeshStandardMaterial({
-              color: colors.hex,
-              emissive: colors.hex,
-              emissiveIntensity: 0.55,
+              color: isPotion ? 0xc93a3a : colors.hex,
+              emissive: isPotion ? 0xa02828 : colors.hex,
+              emissiveIntensity: isPotion ? 0.8 : 0.55,
               roughness: 0.4,
               flatShading: true,
             }),
@@ -271,6 +320,12 @@ export function createScene(
         v.label.style.top = `${at.y}px`;
       }
 
+      // Corpses: a run reset empties the sim's list — clear our meshes too
+      if (state.corpses.length < corpseCount) {
+        for (const mesh of corpseMeshes) scene.remove(mesh);
+        corpseMeshes.length = 0;
+        corpseCount = 0;
+      }
       // Corpses: add newly dead
       while (corpseCount < state.corpses.length) {
         const c = state.corpses[corpseCount++]!;
@@ -282,6 +337,20 @@ export function createScene(
         scene.add(mesh);
         corpseMeshes.push(mesh);
         if (corpseMeshes.length > 40) scene.remove(corpseMeshes.shift()!);
+      }
+
+      // Animate explosion rings
+      for (let i = explosions.length - 1; i >= 0; i--) {
+        const ex = explosions[i]!;
+        const age = (performance.now() - ex.born) / 400;
+        if (age >= 1) {
+          scene.remove(ex.mesh);
+          explosions.splice(i, 1);
+          continue;
+        }
+        const s = 0.2 + age * ex.radius;
+        ex.mesh.scale.set(s, 1, s);
+        (ex.mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - age);
       }
 
       camera.position.set(px + camOffset.x, camOffset.y, py + camOffset.z);
@@ -315,6 +384,22 @@ export function createScene(
       }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
+    },
+
+    addExplosion(pos, radius) {
+      const mesh = new THREE.Mesh(
+        new THREE.RingGeometry(0.7, 1, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0xe8a44c,
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide,
+        }),
+      );
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(pos.x, 0.1, pos.y);
+      scene.add(mesh);
+      explosions.push({ mesh, born: performance.now(), radius });
     },
 
     addDamageNumber(pos, text, color) {

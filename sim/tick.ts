@@ -9,17 +9,44 @@ import {
   playerCombatSystem,
 } from "./systems/combat";
 import {
+  applyDrinkInput,
   applyEquipInput,
   applyPickupInput,
   pickupSystem,
 } from "./systems/inventory";
 import { applyCastInput, applySpendSkillInput, manaRegenSystem } from "./systems/skills";
 import { xpSystem } from "./systems/xp";
+import { spawnMonster } from "./monsters";
+import { MARKER_TYPES } from "./zone";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 
 export const TICK_RATE = 25;
 
 const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
+
+function spawnFromMarkers(state: GameState): void {
+  for (const marker of state.map.markers) {
+    const typeId = MARKER_TYPES[marker.ch];
+    if (typeId) spawnMonster(state, typeId, { x: marker.x, y: marker.y });
+  }
+}
+
+/** Fresh run on the same map: revive, repopulate, keep the character. */
+export function resetRun(state: GameState): void {
+  const p = state.player;
+  state.monsters.clear();
+  state.groundItems.clear();
+  state.corpses.length = 0;
+  p.dead = false;
+  p.life = p.maxLife;
+  p.mana = p.maxMana;
+  p.pos = { ...state.map.spawn };
+  p.path = [];
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.warcryUntil = 0;
+  spawnFromMarkers(state);
+}
 
 export function createGame(seed: number, map: ZoneMap): GameState {
   const equipment = createEquipment();
@@ -33,7 +60,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     ilvl: 1,
   };
   const stats = computeStats(equipment);
-  return {
+  const state: GameState = {
     tick: 0,
     rng: createRng(seed),
     map,
@@ -60,6 +87,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
       mana: stats.maxMana,
       maxMana: stats.maxMana,
       warcryUntil: 0,
+      belt: 0,
       inventory: createInventory(),
       equipment,
       magicFind: 0,
@@ -70,16 +98,24 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     events: [],
     nextId: 1,
   };
+  spawnFromMarkers(state);
+  return state;
 }
 
 /** Advance the simulation one tick. Systems run in fixed order. */
 export function step(state: GameState, input: PlayerInput): void {
   state.events = [];
+  if (input.newGame) {
+    resetRun(state);
+    state.tick++;
+    return;
+  }
   if (!state.player.dead) {
     applyMoveInput(state, input);
     applyAttackInput(state, input);
     applyPickupInput(state, input);
     applyEquipInput(state, input);
+    applyDrinkInput(state, input);
     applySpendSkillInput(state, input);
     manaRegenSystem(state);
     applyCastInput(state, input);

@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import type { Vec } from "../map";
+import { hasLineOfSight, type Vec } from "../map";
 import { findPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 import type { Monster } from "../monsters";
@@ -82,7 +82,11 @@ export function monsterAiSystem(state: GameState): void {
       if (d <= m.aggro) m.ai = "chasing";
       else continue;
     }
-    if (d <= m.range) {
+    const inReach =
+      m.ranged !== undefined
+        ? d <= m.ranged && hasLineOfSight(state.map, m.pos, p.pos)
+        : d <= m.range;
+    if (inReach) {
       m.path = [];
       if (m.swingCooldown === 0) {
         m.swingCooldown = m.swingEvery;
@@ -105,21 +109,42 @@ export function monsterAiSystem(state: GameState): void {
 
 export function deathSystem(state: GameState): void {
   const p = state.player;
-  if (!p.dead && p.life <= 0) {
-    p.life = 0;
-    p.dead = true;
-    p.path = [];
-    p.attackTarget = null;
-  }
+  // Queue-process deaths so explosions can chain into more deaths.
   const dead: Monster[] = [];
-  for (const m of state.monsters.values()) {
-    if (m.life <= 0) dead.push(m);
-  }
-  for (const m of dead) {
+  const collectDead = () => {
+    for (const m of state.monsters.values()) {
+      if (m.life <= 0 && !dead.includes(m)) dead.push(m);
+    }
+  };
+  collectDead();
+  for (let i = 0; i < dead.length; i++) {
+    const m = dead[i]!;
     state.monsters.delete(m.id);
+    if (m.explode) {
+      const { radius, dmgMin, dmgMax } = m.explode;
+      state.events.push({ type: "exploded", pos: { ...m.pos }, radius });
+      if (!p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) <= radius) {
+        const amount = rollDamage(state.rng, dmgMin, dmgMax);
+        p.life -= amount;
+        state.events.push({ type: "player_hit", amount });
+      }
+      for (const other of state.monsters.values()) {
+        if (Math.hypot(other.pos.x - m.pos.x, other.pos.y - m.pos.y) <= radius) {
+          const amount = rollDamage(state.rng, dmgMin, dmgMax);
+          other.life -= amount;
+          state.events.push({ type: "monster_hit", id: other.id, amount, pos: { ...other.pos } });
+        }
+      }
+      collectDead();
+    }
     state.corpses.push({ typeId: m.typeId, pos: { ...m.pos }, diedAt: state.tick });
     state.events.push({ type: "monster_died", id: m.id, typeId: m.typeId, pos: { ...m.pos }, xp: m.xp });
-    const item = rollDrop(state.rng, m.tc, m.mlvl);
+    const item = rollDrop(
+      state.rng,
+      m.tc,
+      m.mlvl,
+      m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" } : {},
+    );
     if (item) {
       const pos = {
         x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
@@ -129,5 +154,13 @@ export function deathSystem(state: GameState): void {
       state.groundItems.set(id, { id, item, pos });
       state.events.push({ type: "item_dropped", id, name: item.name, rarity: item.rarity, pos });
     }
+  }
+  // After explosions have resolved: did the player fall?
+  if (!p.dead && p.life <= 0) {
+    p.life = 0;
+    p.dead = true;
+    p.path = [];
+    p.attackTarget = null;
+    p.pickupTarget = null;
   }
 }

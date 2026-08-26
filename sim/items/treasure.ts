@@ -25,6 +25,7 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
       { baseIds: LOW_WEAPONS, weight: 12 },
       { baseIds: LOW_ARMOR, weight: 14 },
       { baseIds: JEWELRY, weight: 4 },
+      { baseIds: ["minor_potion"], weight: 14 },
     ],
     rarityBonus: 1,
   },
@@ -37,6 +38,7 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
       { baseIds: LOW_ARMOR, weight: 10 },
       { baseIds: MID_ARMOR, weight: 8 },
       { baseIds: JEWELRY, weight: 5 },
+      { baseIds: ["minor_potion"], weight: 12 },
     ],
     rarityBonus: 1.5,
   },
@@ -75,8 +77,17 @@ function rollRarity(rng: Rng, bonus: number): Rarity {
   return "normal";
 }
 
+export interface DropOpts {
+  /** Skip the NoDrop roll — something always falls. */
+  guaranteed?: boolean;
+  /** Floor for the rarity roll (boss packs drop magic or better). */
+  minRarity?: Rarity;
+}
+
+const RARITY_ORDER: Rarity[] = ["normal", "magic", "rare", "unique"];
+
 /** Roll a monster's drop: an item, or null (NoDrop). mlvl caps base levelReq and affix alvl. */
-export function rollDrop(rng: Rng, tcId: string, mlvl: number): Item | null {
+export function rollDrop(rng: Rng, tcId: string, mlvl: number, opts: DropOpts = {}): Item | null {
   const tc = TREASURE_CLASSES[tcId];
   if (!tc) throw new Error(`unknown treasure class: ${tcId}`);
 
@@ -89,8 +100,11 @@ export function rollDrop(rng: Rng, tcId: string, mlvl: number): Item | null {
     .filter((e) => e.baseIds.length > 0);
 
   const totalEntryWeight = tc.entries.reduce((s, e) => s + e.weight, 0);
-  const roll = rng.next() * (totalEntryWeight + tc.nodrop);
-  if (roll < tc.nodrop || entries.length === 0) return null;
+  if (entries.length === 0) return null;
+  if (!opts.guaranteed) {
+    const roll = rng.next() * (totalEntryWeight + tc.nodrop);
+    if (roll < tc.nodrop) return null;
+  }
 
   let pick = rng.next() * entries.reduce((s, e) => s + e.weight, 0);
   let chosen = entries[entries.length - 1]!;
@@ -102,5 +116,9 @@ export function rollDrop(rng: Rng, tcId: string, mlvl: number): Item | null {
     }
   }
   const baseId = chosen.baseIds[rng.int(0, chosen.baseIds.length - 1)]!;
-  return rollItem(rng, baseId, mlvl, rollRarity(rng, tc.rarityBonus));
+  let rarity = rollRarity(rng, tc.rarityBonus);
+  if (opts.minRarity && RARITY_ORDER.indexOf(rarity) < RARITY_ORDER.indexOf(opts.minRarity)) {
+    rarity = opts.minRarity;
+  }
+  return rollItem(rng, baseId, mlvl, rarity);
 }

@@ -1,4 +1,4 @@
-export type Slot = "weapon" | "helm" | "chest" | "boots" | "ring" | "amulet";
+export type Slot = "weapon" | "helm" | "chest" | "boots" | "ring" | "amulet" | "potion";
 
 export interface ItemBase {
   id: string;
@@ -11,6 +11,8 @@ export interface ItemBase {
   dmgMin?: number;
   dmgMax?: number;
   defense?: number;
+  /** Life restored on drinking (potions). */
+  heals?: number;
 }
 
 const base = (b: ItemBase) => b;
@@ -35,4 +37,6 @@ export const BASES: Record<string, ItemBase> = {
   // --- jewelry ---
   bone_ring: base({ id: "bone_ring", name: "Bone Ring", slot: "ring", w: 1, h: 1, levelReq: 4 }),
   grave_amulet: base({ id: "grave_amulet", name: "Grave Amulet", slot: "amulet", w: 1, h: 1, levelReq: 5 }),
+  // --- potions ---
+  minor_potion: base({ id: "minor_potion", name: "Minor Healing Potion", slot: "potion", w: 1, h: 1, levelReq: 1, heals: 35 }),
 };

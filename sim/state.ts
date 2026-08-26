@@ -35,6 +35,8 @@ export interface Player {
   maxMana: number;
   /** Tick until which the Warcry buff is active. */
   warcryUntil: number;
+  /** Healing potions on the belt. */
+  belt: number;
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
@@ -52,6 +54,8 @@ export type SimEvent =
   | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }
   | { type: "level_up"; level: number }
   | { type: "skill_cast"; skill: SkillId; pos: Vec }
+  | { type: "exploded"; pos: Vec; radius: number }
+  | { type: "potion_drunk"; healed: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
   | { type: "item_picked"; id: number; name: string }
   | { type: "item_equipped"; slot: EquipSlot }
@@ -86,4 +90,8 @@ export interface PlayerInput {
   spendSkill?: SkillId;
   /** Cast a skill, optionally at a ground position or monster target. */
   cast?: { skill: SkillId; at?: Vec; target?: number };
+  /** Drink a healing potion from the belt. */
+  drink?: boolean;
+  /** Start a fresh run: respawn the zone, revive, keep the character. */
+  newGame?: boolean;
 }

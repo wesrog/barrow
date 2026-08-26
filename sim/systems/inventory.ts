@@ -1,5 +1,7 @@
 import type { GameState, PlayerInput } from "../state";
 import {
+  BELT_SIZE,
+  POTION_HEAL,
   computeStats,
   placeItem,
   removeEntry,
@@ -27,6 +29,16 @@ export function recomputePlayerStats(state: GameState): void {
   if (p.mana > p.maxMana) p.mana = p.maxMana;
 }
 
+export function applyDrinkInput(state: GameState, input: PlayerInput): void {
+  if (!input.drink) return;
+  const p = state.player;
+  if (p.belt <= 0 || p.life >= p.maxLife) return;
+  p.belt--;
+  const healed = Math.min(POTION_HEAL, p.maxLife - p.life);
+  p.life += healed;
+  state.events.push({ type: "potion_drunk", healed });
+}
+
 export function applyPickupInput(state: GameState, input: PlayerInput): void {
   if (input.pickup === undefined) return;
   if (!state.groundItems.has(input.pickup)) return;
@@ -47,7 +59,12 @@ export function pickupSystem(state: GameState): void {
   if (d <= PICKUP_RANGE) {
     p.pickupTarget = null;
     p.path = [];
-    if (placeItem(p.inventory, target.id, target.item)) {
+    const isPotion = BASES[target.item.baseId]!.slot === "potion";
+    if (isPotion && p.belt < BELT_SIZE) {
+      p.belt++;
+      state.groundItems.delete(target.id);
+      state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
+    } else if (placeItem(p.inventory, target.id, target.item)) {
       state.groundItems.delete(target.id);
       state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
     } else {
@@ -74,6 +91,11 @@ export function applyEquipInput(state: GameState, input: PlayerInput): void {
     const entry = removeEntry(p.inventory, input.equip);
     if (!entry) return;
     const base = BASES[entry.item.baseId]!;
+    if (base.slot === "potion") {
+      if (p.belt < BELT_SIZE) p.belt++;
+      else placeItem(p.inventory, entry.id, entry.item);
+      return;
+    }
     if (base.levelReq > p.level) {
       placeItem(p.inventory, entry.id, entry.item);
       return;

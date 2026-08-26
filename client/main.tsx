@@ -303,7 +303,18 @@ function Game() {
         </div>
       )}
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
-      {gameRef.current && <BottomBar game={gameRef.current} />}
+      {gameRef.current && (
+        <BottomBar
+          game={gameRef.current}
+          onAction={(action) => {
+            if (action === "inventory") setInvOpen((open) => !open);
+            else if (action === "skills") setSkillsOpen((open) => !open);
+            else if (action === "drink") uiInputRef.current.drink = true;
+            else if (action === "portal") uiInputRef.current.townPortal = true;
+            else if (action === "vendor") setShopOpen((open) => !open);
+          }}
+        />
+      )}
       {gameRef.current && <MiniMap game={gameRef.current} />}
       {shopOpen && gameRef.current && gameRef.current.town !== null && (
         <ShopPanel

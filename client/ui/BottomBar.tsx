@@ -84,6 +84,16 @@ const SKILL_KEYS: { id: SkillId; key: string; short: string }[] = [
   { id: "leap", key: "4", short: "leap" },
 ];
 
+export type HudAction = "inventory" | "skills" | "drink" | "portal" | "vendor";
+
+const ACTION_BUTTONS: { action: HudAction; key: string; label: string; townOnly?: boolean }[] = [
+  { action: "drink", key: "q", label: "drink" },
+  { action: "inventory", key: "i", label: "inv" },
+  { action: "skills", key: "s", label: "skills" },
+  { action: "portal", key: "t", label: "portal" },
+  { action: "vendor", key: "v", label: "trade", townOnly: true },
+];
+
 const barStyle: CSSProperties = {
   position: "absolute",
   bottom: 10,
@@ -97,7 +107,13 @@ const barStyle: CSSProperties = {
   fontFamily: mono,
 };
 
-export function BottomBar({ game }: { game: GameState }) {
+export function BottomBar({
+  game,
+  onAction,
+}: {
+  game: GameState;
+  onAction: (action: HudAction) => void;
+}) {
   const p = game.player;
   const xpFloor = xpForLevel(p.level);
   const xpNext = xpForLevel(p.level + 1);
@@ -145,24 +161,54 @@ export function BottomBar({ game }: { game: GameState }) {
           })}
         </div>
 
-        {/* Belt */}
-        <div style={{ display: "flex", gap: 4 }}>
-          {Array.from({ length: BELT_SIZE }, (_, i) => (
-            <div
-              key={i}
-              style={{
-                width: 24,
-                height: 28,
-                border: "1px solid #3a3442",
-                borderRadius: "3px 3px 6px 6px",
-                background:
-                  i < p.belt
-                    ? "linear-gradient(to top, #a32222 75%, #4a1010 75%)"
-                    : "rgba(12,11,15,.8)",
-                boxShadow: i < p.belt ? "0 0 6px rgba(163,34,34,.5)" : "none",
-              }}
-            />
-          ))}
+        {/* Belt + action buttons */}
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {Array.from({ length: BELT_SIZE }, (_, i) => (
+              <div
+                key={i}
+                style={{
+                  width: 24,
+                  height: 28,
+                  border: "1px solid #3a3442",
+                  borderRadius: "3px 3px 6px 6px",
+                  background:
+                    i < p.belt
+                      ? "linear-gradient(to top, #a32222 75%, #4a1010 75%)"
+                      : "rgba(12,11,15,.8)",
+                  boxShadow: i < p.belt ? "0 0 6px rgba(163,34,34,.5)" : "none",
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
+            {ACTION_BUTTONS.filter((b) => !b.townOnly || game.town !== null).map(
+              ({ action, key, label }) => (
+                <button
+                  key={action}
+                  onClick={() => onAction(action)}
+                  title={`${label} (${key})`}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    padding: "2px 6px",
+                    border: "1px solid #3a3442",
+                    borderRadius: 4,
+                    background: "rgba(12,11,15,.88)",
+                    color: "#8f8778",
+                    fontFamily: mono,
+                    fontSize: 9.5,
+                    lineHeight: 1.3,
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ color: "#c9a84c" }}>{key}</span>
+                  <span>{label}</span>
+                </button>
+              ),
+            )}
+          </div>
         </div>
 
         {/* XP bar */}

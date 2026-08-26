@@ -59,6 +59,7 @@ export type SimEvent =
   | { type: "skill_cast"; skill: SkillId; pos: Vec }
   | { type: "exploded"; pos: Vec; radius: number }
   | { type: "potion_drunk"; healed: number }
+  | { type: "descended"; depth: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
   | { type: "item_picked"; id: number; name: string }
   | { type: "item_equipped"; slot: EquipSlot }
@@ -69,6 +70,8 @@ export interface GameState {
   tick: number;
   rng: Rng;
   map: ZoneMap;
+  /** Crypt floor, 1-based; deeper floors scale monsters and loot. */
+  depth: number;
   player: Player;
   monsters: Map<number, Monster>;
   corpses: Corpse[];

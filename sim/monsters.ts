@@ -119,6 +119,29 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
   },
 };
 
+/** Depth 1 uses the table stats; each floor below multiplies threat and reward. */
+export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
+  const d = depth - 1;
+  const pow = (b: number) => Math.pow(b, d);
+  return {
+    ...t,
+    maxLife: Math.round(t.maxLife * pow(1.35)),
+    dmgMin: Math.round(t.dmgMin * pow(1.22)),
+    dmgMax: Math.round(t.dmgMax * pow(1.22)),
+    attackRating: Math.round(t.attackRating * pow(1.15)),
+    defense: Math.round(t.defense * pow(1.15)),
+    xp: Math.round(t.xp * pow(1.4)),
+    mlvl: t.mlvl + d * 3,
+    explode: t.explode
+      ? {
+          radius: t.explode.radius,
+          dmgMin: Math.round(t.explode.dmgMin * pow(1.22)),
+          dmgMax: Math.round(t.explode.dmgMax * pow(1.22)),
+        }
+      : undefined,
+  };
+}
+
 export type MonsterAi = "idle" | "chasing";
 
 export interface Monster {
@@ -159,9 +182,10 @@ export interface Corpse {
   diedAt: number;
 }
 
-export function spawnMonster(state: GameState, typeId: string, pos: Vec): Monster {
-  const t = MONSTER_TYPES[typeId];
-  if (!t) throw new Error(`unknown monster type: ${typeId}`);
+export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth = 1): Monster {
+  const table = MONSTER_TYPES[typeId];
+  if (!table) throw new Error(`unknown monster type: ${typeId}`);
+  const t = depth > 1 ? scaledMonsterStats(table, depth) : table;
   const monster: Monster = {
     id: state.nextId++,
     typeId,

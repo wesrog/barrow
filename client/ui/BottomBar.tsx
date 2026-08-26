@@ -187,7 +187,7 @@ export function BottomBar({ game }: { game: GameState }) {
           />
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
-          lvl {p.level}
+          lvl {p.level} · depth {game.depth}
           {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}
         </div>
       </div>

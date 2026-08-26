@@ -35,6 +35,12 @@ export function MiniMap({ game }: { game: GameState }) {
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(base, 0, 0);
+      for (const marker of game.map.markers) {
+        if (marker.ch === ">") {
+          ctx.fillStyle = "#7fb8c9";
+          ctx.fillRect(marker.x * SCALE - 2, marker.y * SCALE - 2, 4, 4);
+        }
+      }
       for (const gi of game.groundItems.values()) {
         ctx.fillStyle = RARITY_CSS[gi.item.rarity] ?? "#d6d6d6";
         ctx.fillRect(gi.pos.x * SCALE - 1, gi.pos.y * SCALE - 1, 2, 2);

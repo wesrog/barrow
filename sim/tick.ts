@@ -29,13 +29,42 @@ const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 function spawnFromMarkers(state: GameState): void {
   for (const marker of state.map.markers) {
     const typeId = MARKER_TYPES[marker.ch];
-    if (typeId) spawnMonster(state, typeId, { x: marker.x, y: marker.y });
+    if (typeId) spawnMonster(state, typeId, { x: marker.x, y: marker.y }, state.depth);
+  }
+}
+
+/** Take the stairs: next floor down, same bones, meaner tenants. */
+export function descend(state: GameState): void {
+  state.depth++;
+  state.monsters.clear();
+  state.groundItems.clear();
+  state.corpses.length = 0;
+  const p = state.player;
+  p.pos = { ...state.map.spawn };
+  p.path = [];
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  spawnFromMarkers(state);
+  state.events.push({ type: "descended", depth: state.depth });
+}
+
+/** Player standing on a '>' marker heads downstairs. Runs after movement. */
+export function stairsSystem(state: GameState): void {
+  const p = state.player;
+  if (p.dead) return;
+  for (const marker of state.map.markers) {
+    if (marker.ch !== ">") continue;
+    if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
+      descend(state);
+      return;
+    }
   }
 }
 
 /** Fresh run on the same map: revive, repopulate, keep the character. */
 export function resetRun(state: GameState): void {
   const p = state.player;
+  state.depth = 1;
   state.monsters.clear();
   state.groundItems.clear();
   state.corpses.length = 0;
@@ -66,6 +95,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     tick: 0,
     rng: createRng(seed),
     map,
+    depth: 1,
     player: {
       pos: { ...map.spawn },
       speed: PLAYER_SPEED,
@@ -126,6 +156,7 @@ export function step(state: GameState, input: PlayerInput): void {
     playerCombatSystem(state);
     pickupSystem(state);
     movementSystem(state);
+    stairsSystem(state);
   }
   monsterAiSystem(state);
   deathSystem(state);

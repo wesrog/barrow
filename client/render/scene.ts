@@ -141,6 +141,24 @@ export function createScene(
     scene.add(mesh);
   }
 
+  // --- Stairs down: a dark pit with a pale glowing rim ---
+  for (const marker of map.markers) {
+    if (marker.ch !== ">") continue;
+    const pit = new THREE.Mesh(
+      new THREE.BoxGeometry(0.85, 0.02, 0.85),
+      new THREE.MeshBasicMaterial({ color: 0x020204 }),
+    );
+    pit.position.set(marker.x, 0.02, marker.y);
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.42, 0.5, 4),
+      new THREE.MeshBasicMaterial({ color: 0x7fb8c9, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.rotation.z = Math.PI / 4;
+    rim.position.set(marker.x, 0.06, marker.y);
+    scene.add(pit, rim);
+  }
+
   // --- Torches: emissive flames, the first few carrying real light ---
   const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number }[] = [];
   for (let i = 0; i < torchSpots.length && i < 14; i++) {

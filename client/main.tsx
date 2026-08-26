@@ -180,6 +180,10 @@ function Game() {
               scene.addExplosion(e.pos, e.radius);
               play("explode");
               break;
+            case "descended":
+              scene.addDamageNumber(game.player.pos, `depth ${e.depth} — the barrow deepens`, "#7fb8c9");
+              play("windup");
+              break;
             case "skill_cast":
               if (e.skill === "warcry") {
                 scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");

@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Equipment } from "../../sim/character";
+import type { Item } from "../../sim/items/generate";
 import { instantiate, type CharacterInstance, type GameAssets, type WeaponName } from "./models";
 import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
@@ -27,6 +28,17 @@ const RARITY_GLOW: Record<string, number> = {
   rare: 0x8a7420,
   unique: 0x8a5010,
 };
+
+function applyRarityGlow(obj: THREE.Object3D, item: Item): void {
+  const glow = RARITY_GLOW[item.rarity];
+  if (glow === undefined) return;
+  obj.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+      child.material.emissive.setHex(glow);
+      child.material.emissiveIntensity = 0.35;
+    }
+  });
+}
 
 class AnimRig implements ModelRig {
   group: THREE.Group;
@@ -108,14 +120,111 @@ const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = 
   grave_scythe: { model: "sword_2handed", twoHanded: true },
 };
 
+function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
+  return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+}
+
+/** Armor meshes sized for the KayKit skeleton, attached straight to bones. */
+function helmMesh(baseId: string): THREE.Group {
+  const g = new THREE.Group();
+  if (baseId === "bone_visage") {
+    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), flatMat(0xd9d4c4, 0.6));
+    skull.scale.y = 0.8;
+    skull.position.y = 0.16;
+    skull.castShadow = true;
+    g.add(skull);
+    for (const side of [-1, 1]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 4), flatMat(0xc4bca8, 0.7));
+      horn.position.set(side * 0.3, 0.3, 0);
+      horn.rotation.z = -side * 0.8;
+      g.add(horn);
+    }
+  } else {
+    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(0.33, 0), flatMat(0x7a8086, 0.5));
+    dome.scale.y = 0.75;
+    dome.position.y = 0.18;
+    dome.castShadow = true;
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.07, 0.6), flatMat(0x5a6066, 0.6));
+    brim.position.y = 0.02;
+    g.add(dome, brim);
+  }
+  return g;
+}
+
+const CHEST_LOOKS: Record<string, { color: number; metal: boolean; big: boolean }> = {
+  rag_tunic: { color: 0x6a5a44, metal: false, big: false },
+  studded_jerkin: { color: 0x4a3a2c, metal: false, big: false },
+  grave_plate: { color: 0x8a94a4, metal: true, big: true },
+};
+
+const BOOT_LOOKS: Record<string, number> = {
+  worn_boots: 0x5a4530,
+  chain_greaves: 0x7a8086,
+};
+
 export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
   const inst = instantiate(assets.characters.barbarian);
   const rig = new AnimRig(inst, "Idle", "Running_A", 4.2);
   rig.group.scale.setScalar(0.72);
   let twoHanded = false;
 
+  // The model ships with prop meshes (axes, shield, a beer mug) — hide them,
+  // our equipment drives what shows.
+  for (const prop of ["1H_Axe", "2H_Axe", "Mug", "Barbarian_Round_Shield"]) {
+    const node = rig.group.getObjectByName(prop);
+    if (node) node.visible = false;
+  }
+  const hat = rig.group.getObjectByName("Barbarian_Hat");
+  const boneOf = (name: string) => rig.group.getObjectByName(name);
+  const gear: THREE.Object3D[] = [];
+  const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
+    const bone = boneOf(boneName);
+    if (!bone) return;
+    applyRarityGlow(mesh, item);
+    bone.add(mesh);
+    gear.push(mesh);
+  };
+
   const hero = rig as unknown as HeroModelRig;
   hero.setEquipment = (eq: Equipment) => {
+    for (const g of gear) g.parent?.remove(g);
+    gear.length = 0;
+
+    // Helm replaces the hair/hat
+    if (hat) hat.visible = !eq.helm;
+    if (eq.helm) addGear("head", helmMesh(eq.helm.baseId), eq.helm);
+
+    // Chest: pauldrons on the shoulders, a plate over the chest bone
+    if (eq.chest) {
+      const look = CHEST_LOOKS[eq.chest.baseId] ?? CHEST_LOOKS.rag_tunic!;
+      const size = look.big ? 0.34 : 0.26;
+      for (const side of ["l", "r"] as const) {
+        const pauldron = new THREE.Mesh(
+          new THREE.BoxGeometry(size, size * 0.7, size),
+          flatMat(look.color, look.metal ? 0.45 : 0.75),
+        );
+        pauldron.castShadow = true;
+        pauldron.position.y = 0.06;
+        addGear(`upperarm.${side}`, pauldron, eq.chest);
+      }
+      const plate = new THREE.Mesh(
+        new THREE.BoxGeometry(0.52, 0.4, 0.34),
+        flatMat(look.color, look.metal ? 0.45 : 0.75),
+      );
+      plate.position.set(0, 0.1, 0.05);
+      addGear("chest", plate, eq.chest);
+    }
+
+    // Boots: greaves on the lower legs
+    if (eq.boots) {
+      const color = BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530;
+      for (const side of ["l", "r"] as const) {
+        const greave = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.22), flatMat(color, 0.7));
+        greave.castShadow = true;
+        greave.position.y = -0.12;
+        addGear(`lowerleg.${side}`, greave, eq.boots);
+      }
+    }
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;

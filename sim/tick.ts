@@ -13,6 +13,8 @@ import {
   applyPickupInput,
   pickupSystem,
 } from "./systems/inventory";
+import { applyCastInput, applySpendSkillInput, manaRegenSystem } from "./systems/skills";
+import { xpSystem } from "./systems/xp";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 
 export const TICK_RATE = 25;
@@ -52,6 +54,12 @@ export function createGame(seed: number, map: ZoneMap): GameState {
       attackTarget: null,
       pickupTarget: null,
       level: 1,
+      xp: 0,
+      skillPoints: 0,
+      skills: { cleave: 0, crush: 0, warcry: 0, leap: 0 },
+      mana: stats.maxMana,
+      maxMana: stats.maxMana,
+      warcryUntil: 0,
       inventory: createInventory(),
       equipment,
       magicFind: 0,
@@ -72,11 +80,15 @@ export function step(state: GameState, input: PlayerInput): void {
     applyAttackInput(state, input);
     applyPickupInput(state, input);
     applyEquipInput(state, input);
+    applySpendSkillInput(state, input);
+    manaRegenSystem(state);
+    applyCastInput(state, input);
     playerCombatSystem(state);
     pickupSystem(state);
     movementSystem(state);
   }
   monsterAiSystem(state);
   deathSystem(state);
+  xpSystem(state);
   state.tick++;
 }

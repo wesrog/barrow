@@ -4,6 +4,7 @@ import { findPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 import type { Monster } from "../monsters";
 import { rollDrop } from "../items/treasure";
+import { damageMultiplier } from "../skills";
 import { moveAlongPath } from "./movement";
 
 export function computeHitChance(attackRating: number, defense: number): number {
@@ -53,7 +54,10 @@ export function playerCombatSystem(state: GameState): void {
     if (p.swingCooldown === 0) {
       p.swingCooldown = p.swingEvery;
       if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
-        const amount = rollDamage(state.rng, p.dmgMin, p.dmgMax);
+        const amount = Math.max(
+          1,
+          Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state)),
+        );
         target.life -= amount;
         state.events.push({ type: "monster_hit", id: target.id, amount, pos: { ...target.pos } });
       }
@@ -67,6 +71,7 @@ export function monsterAiSystem(state: GameState): void {
   const p = state.player;
   for (const m of state.monsters.values()) {
     if (m.swingCooldown > 0) m.swingCooldown--;
+    if (m.stunnedUntil > state.tick) continue;
     if (p.dead) {
       m.ai = "idle";
       m.path = [];
@@ -113,7 +118,7 @@ export function deathSystem(state: GameState): void {
   for (const m of dead) {
     state.monsters.delete(m.id);
     state.corpses.push({ typeId: m.typeId, pos: { ...m.pos }, diedAt: state.tick });
-    state.events.push({ type: "monster_died", id: m.id, typeId: m.typeId, pos: { ...m.pos } });
+    state.events.push({ type: "monster_died", id: m.id, typeId: m.typeId, pos: { ...m.pos }, xp: m.xp });
     const item = rollDrop(state.rng, m.tc, m.mlvl);
     if (item) {
       const pos = {

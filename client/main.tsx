@@ -5,8 +5,10 @@ import { starterZone } from "../sim/zone";
 import { spawnMonster } from "../sim/monsters";
 import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
+import type { SkillId } from "../sim/skills";
 import { createScene } from "./render/scene";
 import { InventoryPanel } from "./ui/InventoryPanel";
+import { SkillPanel } from "./ui/SkillPanel";
 
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -17,6 +19,7 @@ function Game() {
   // Inputs queued by the HUD (equip/unequip clicks), merged into the next tick.
   const uiInputRef = useRef<PlayerInput>({});
   const [invOpen, setInvOpen] = useState(false);
+  const [skillsOpen, setSkillsOpen] = useState(false);
   const [, setVersion] = useState(0);
 
   useEffect(() => {
@@ -34,6 +37,8 @@ function Game() {
     spawnMonster(game, "skitter", { x: 12.5, y: 2.5 });
     spawnMonster(game, "skitter", { x: 13.5, y: 3.5 });
     spawnMonster(game, "skitter", { x: 22.5, y: 10.5 });
+    spawnMonster(game, "skitter", { x: 20.5, y: 4.5 });
+    spawnMonster(game, "shambler", { x: 24.5, y: 6.5 });
 
     let pending: PlayerInput = {};
     let prevPlayerPos = { ...game.player.pos };
@@ -68,8 +73,27 @@ function Game() {
     const onPointerUp = () => {
       mouseDown = false;
     };
+    const castAtCursor = (skill: SkillId) => {
+      const input = uiInputRef.current;
+      if (skill === "warcry" || skill === "cleave") {
+        input.cast = { skill };
+        return;
+      }
+      if (!lastPointer) return;
+      const picked = scene.pick(game, lastPointer.x, lastPointer.y);
+      if (skill === "crush") {
+        if (picked?.kind === "monster") input.cast = { skill, target: picked.id };
+      } else if (skill === "leap") {
+        if (picked?.kind === "ground") input.cast = { skill, at: picked.world };
+      }
+    };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "i") setInvOpen((open) => !open);
+      else if (e.key === "s") setSkillsOpen((open) => !open);
+      else if (e.key === "1") castAtCursor("cleave");
+      else if (e.key === "2") castAtCursor("crush");
+      else if (e.key === "3") castAtCursor("warcry");
+      else if (e.key === "4") castAtCursor("leap");
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
@@ -96,6 +120,10 @@ function Game() {
             scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
           } else if (e.type === "player_hit") {
             scene.addDamageNumber(game.player.pos, String(e.amount), "#e05252");
+          } else if (e.type === "level_up") {
+            scene.addDamageNumber(game.player.pos, `level ${e.level}!`, "#f0c96a");
+          } else if (e.type === "skill_cast" && e.skill === "warcry") {
+            scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
           }
         }
         if (game.events.length > 0) sawEvents = true;
@@ -103,10 +131,12 @@ function Game() {
       }
       if (sawEvents) setVersion((v) => v + 1);
       if (lifeRef.current) {
-        lifeRef.current.textContent = game.player.dead
+        const p = game.player;
+        lifeRef.current.textContent = p.dead
           ? "you have died"
-          : `life ${game.player.life}/${game.player.maxLife}`;
-        lifeRef.current.style.color = game.player.dead ? "#e05252" : "#c9b896";
+          : `life ${p.life}/${p.maxLife} · mana ${Math.floor(p.mana)}/${p.maxMana} · lvl ${p.level}` +
+            (p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : "");
+        lifeRef.current.style.color = p.dead ? "#e05252" : "#c9b896";
       }
       scene.render(game, prevPlayerPos, acc / TICK_MS);
     };
@@ -140,6 +170,14 @@ function Game() {
           pointerEvents: "none",
         }}
       />
+      {skillsOpen && gameRef.current && (
+        <SkillPanel
+          game={gameRef.current}
+          onSpend={(skill) => {
+            uiInputRef.current.spendSkill = skill;
+          }}
+        />
+      )}
       {invOpen && gameRef.current && (
         <InventoryPanel
           game={gameRef.current}

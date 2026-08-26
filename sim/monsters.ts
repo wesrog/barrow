@@ -82,6 +82,8 @@ export interface Monster {
   xp: number;
   tc: string;
   mlvl: number;
+  /** Tick until which this monster is stunned (no moving, no swinging). */
+  stunnedUntil: number;
 }
 
 export interface Corpse {
@@ -115,6 +117,7 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec): Monste
     xp: t.xp,
     tc: t.tc,
     mlvl: t.mlvl,
+    stunnedUntil: 0,
   };
   state.monsters.set(monster.id, monster);
   return monster;

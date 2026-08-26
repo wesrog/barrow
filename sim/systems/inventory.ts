@@ -13,16 +13,18 @@ const PICKUP_RANGE = 1.0;
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
 export function recomputePlayerStats(state: GameState): void {
   const p = state.player;
-  const s = computeStats(p.equipment);
+  const s = computeStats(p.equipment, p.level);
   p.dmgMin = s.dmgMin;
   p.dmgMax = s.dmgMax;
   p.attackRating = s.attackRating;
   p.defense = s.defense;
   p.maxLife = s.maxLife;
+  p.maxMana = s.maxMana;
   p.swingEvery = s.swingEvery;
   p.magicFind = s.magicFind;
   p.speed = (4.5 / 25) * (1 + s.moveSpeedPct / 100);
   if (p.life > p.maxLife) p.life = p.maxLife;
+  if (p.mana > p.maxMana) p.mana = p.maxMana;
 }
 
 export function applyPickupInput(state: GameState, input: PlayerInput): void {

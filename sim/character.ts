@@ -111,7 +111,15 @@ export const BASE_STATS = {
   swingEvery: 12,
 } as const;
 
-export function computeStats(eq: Equipment): DerivedStats {
+export const LIFE_PER_LEVEL = 8;
+
+/** Total xp at which the player becomes `level`. */
+export function xpForLevel(level: number): number {
+  const n = level - 1;
+  return 20 * n + 15 * n * n;
+}
+
+export function computeStats(eq: Equipment, level = 1): DerivedStats {
   const weapon = eq.weapon;
   const weaponBase = weapon ? BASES[weapon.baseId]! : null;
   let dmgMin = weaponBase?.dmgMin ?? BASE_STATS.dmgMin;
@@ -119,7 +127,7 @@ export function computeStats(eq: Equipment): DerivedStats {
   let dmgPct = 0;
   let attackRating: number = BASE_STATS.attackRating;
   let defense: number = BASE_STATS.defense;
-  let maxLife: number = BASE_STATS.maxLife;
+  let maxLife: number = BASE_STATS.maxLife + (level - 1) * LIFE_PER_LEVEL;
   let maxMana: number = BASE_STATS.maxMana;
   let attackSpeedPct = 0;
   let moveSpeedPct = 0;

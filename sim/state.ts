@@ -3,6 +3,7 @@ import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
 import type { Item, Rarity } from "./items/generate";
 import type { Equipment, EquipSlot, Inventory } from "./character";
+import type { SkillId } from "./skills";
 
 export interface Player {
   pos: Vec;
@@ -27,6 +28,13 @@ export interface Player {
   /** Ground item id being walked to for pickup, if any. */
   pickupTarget: number | null;
   level: number;
+  xp: number;
+  skillPoints: number;
+  skills: Record<SkillId, number>;
+  mana: number;
+  maxMana: number;
+  /** Tick until which the Warcry buff is active. */
+  warcryUntil: number;
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
@@ -41,7 +49,9 @@ export interface GroundItem {
 export type SimEvent =
   | { type: "player_hit"; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec }
-  | { type: "monster_died"; id: number; typeId: string; pos: Vec }
+  | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }
+  | { type: "level_up"; level: number }
+  | { type: "skill_cast"; skill: SkillId; pos: Vec }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
   | { type: "item_picked"; id: number; name: string }
   | { type: "item_equipped"; slot: EquipSlot }
@@ -72,4 +82,8 @@ export interface PlayerInput {
   equip?: number;
   /** Equipment slot to unequip back into the inventory. */
   unequip?: EquipSlot;
+  /** Spend a skill point on this skill. */
+  spendSkill?: SkillId;
+  /** Cast a skill, optionally at a ground position or monster target. */
+  cast?: { skill: SkillId; at?: Vec; target?: number };
 }

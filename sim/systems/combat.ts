@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, type Vec } from "../map";
+import { hasLineOfSight, isWalkable, type Vec } from "../map";
 import { findPath, smoothPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 import type { Monster } from "../monsters";
@@ -169,7 +169,8 @@ export function monsterAiSystem(state: GameState): void {
         ? d <= m.ranged && hasLineOfSight(state.map, m.pos, p.pos)
         : d <= m.range;
     if (inReach) {
-      m.path = [];
+      // Keep the path — clearing it caused stop/start jitter at the reach
+      // boundary; being in reach simply pauses movement.
       if (m.swingCooldown === 0) {
         m.swingCooldown = m.swingEvery;
         if (m.windup !== undefined && !m.ranged) {
@@ -199,6 +200,38 @@ export function monsterAiSystem(state: GameState): void {
         m.repathIn = 10;
       }
       moveAlongPath(m.pos, m.path, m.speed);
+    }
+  }
+  separateMonsters(state);
+}
+
+/** Nudge overlapping monsters apart so packs don't stack into one shivering pile. */
+function separateMonsters(state: GameState): void {
+  const list = [...state.monsters.values()];
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i]!;
+      const b = list[j]!;
+      const dx = b.pos.x - a.pos.x;
+      const dy = b.pos.y - a.pos.y;
+      const d = Math.hypot(dx, dy);
+      if (d >= 0.45) continue;
+      // Perfectly stacked pairs split along a deterministic axis.
+      const nx = d > 1e-6 ? dx / d : (a.id < b.id ? 1 : -1);
+      const ny = d > 1e-6 ? dy / d : 0;
+      const push = 0.03;
+      const ax = a.pos.x - nx * push;
+      const ay = a.pos.y - ny * push;
+      const bx = b.pos.x + nx * push;
+      const by = b.pos.y + ny * push;
+      if (isWalkable(state.map, Math.floor(ax), Math.floor(ay))) {
+        a.pos.x = ax;
+        a.pos.y = ay;
+      }
+      if (isWalkable(state.map, Math.floor(bx), Math.floor(by))) {
+        b.pos.x = bx;
+        b.pos.y = by;
+      }
     }
   }
 }

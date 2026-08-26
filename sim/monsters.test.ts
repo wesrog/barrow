@@ -157,3 +157,15 @@ describe("barrow lord telegraph", () => {
     }
   });
 });
+
+describe("crowding", () => {
+  test("monsters shoved into the same spot separate instead of stacking", () => {
+    const state = createGame(5, openArena());
+    state.player.pos = { x: 9.5, y: 3.5 };
+    const a = spawnMonster(state, "shambler", { x: 3.5, y: 1.5 });
+    const b = spawnMonster(state, "shambler", { x: 3.5, y: 1.5 });
+    for (let i = 0; i < 60; i++) step(state, {});
+    const d = Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
+    expect(d).toBeGreaterThan(0.3);
+  });
+});

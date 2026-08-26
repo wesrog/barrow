@@ -384,20 +384,21 @@ export function createScene(
         const my = lerp.py + (lerp.cy - lerp.py) * alpha;
         const off = monsterFxOffsets.get(monster.id);
         rig.group.position.set(mx + (off?.x ?? 0), 0, my + (off?.z ?? 0));
-        // Face movement when moving, the player when engaged.
+        // Face travel when actually covering ground; otherwise square up to the player.
         const vx = lerp.cx - lerp.px;
         const vy = lerp.cy - lerp.py;
-        if (vx * vx + vy * vy > 1e-5) {
+        const tickDist = Math.hypot(vx, vy); // cells per sim tick — stable between ticks
+        if (tickDist > 0.02) {
           lerp.yaw = Math.atan2(vx, vy);
         } else if (monster.ai === "chasing") {
           lerp.yaw = Math.atan2(state.player.pos.x - monster.pos.x, state.player.pos.y - monster.pos.y);
         }
         rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 9);
         const anim = monsterAnim.get(monster.id)!;
-        const step = Math.hypot(monster.pos.x - anim.last.x, monster.pos.y - anim.last.y);
-        anim.phase += step * 8;
-        anim.last = { ...monster.pos };
-        rig.animate(frameNow, anim.phase, step * 60);
+        // Speed derived from the tick delta stays constant across render frames,
+        // so the walk cycle never flickers to idle between sim ticks.
+        anim.phase += tickDist * 8 * frameDt * 25;
+        rig.animate(frameNow, anim.phase, tickDist * 25);
 
         // Overhead health bar once wounded
         if (monster.life < monster.maxLife) {

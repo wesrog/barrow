@@ -126,7 +126,8 @@ describe("leap", () => {
     const state = createGame(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "leap" });
-    const near = spawnMonster(state, "skitter", { x: 7.5, y: 3.2 });
+    // Close enough to stun, far enough that body-blocking doesn't shove anyone.
+    const near = spawnMonster(state, "skitter", { x: 7.5, y: 2.8 });
     const posBefore = { ...near.pos };
     step(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
     expect(state.player.pos.x).toBeCloseTo(7.5);
@@ -144,6 +145,63 @@ describe("leap", () => {
     const before = { ...state.player.pos };
     step(state, { cast: { skill: "leap", at: { x: 0.5, y: 0.5 } } }); // wall
     expect(state.player.pos).toEqual(before);
+  });
+});
+
+describe("cast rate", () => {
+  test("cleave cannot be recast until its cast time elapses", () => {
+    const state = createGame(1, arena());
+    readyPlayer(state);
+    step(state, { spendSkill: "cleave" });
+    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    step(state, { cast: { skill: "cleave" } });
+    const castsAfterFirst = state.events.filter((e) => e.type === "skill_cast").length;
+    expect(castsAfterFirst).toBe(1);
+    // Spamming during the animation does nothing and spends no mana.
+    const manaAfterFirst = state.player.mana;
+    step(state, { cast: { skill: "cleave" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(0);
+    for (let i = 0; i < SKILLS.cleave.castTicks - 2; i++) {
+      step(state, { cast: { skill: "cleave" } });
+      expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(0);
+    }
+    expect(state.player.mana).toBeLessThanOrEqual(manaAfterFirst + 1); // regen only
+    // Once the cast time has fully elapsed, the next cast lands.
+    step(state, { cast: { skill: "cleave" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(1);
+  });
+
+  test("every skill occupies the shared action cooldown", () => {
+    const state = createGame(7, arena());
+    readyPlayer(state);
+    for (const id of ["cleave", "crush", "warcry", "leap"] as const) {
+      step(state, { spendSkill: id });
+    }
+    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    step(state, { cast: { skill: "warcry" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(1);
+    expect(state.player.swingCooldown).toBe(SKILLS.warcry.castTicks - 1);
+    // Mid-warcry, cleave is refused.
+    step(state, { cast: { skill: "cleave" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(0);
+  });
+
+  test("a basic swing blocks skills, and a skill blocks basic swings", () => {
+    const state = createGame(1, arena());
+    readyPlayer(state);
+    step(state, { spendSkill: "cleave" });
+    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    step(state, { swingAt: { x: 2.2, y: 1.5 } });
+    expect(state.events.filter((e) => e.type === "player_swing")).toHaveLength(1);
+    // Still mid-swing: cleave refused.
+    step(state, { cast: { skill: "cleave" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(0);
+    // Wait out the swing, cleave, then a swing is refused mid-cleave.
+    while (state.player.swingCooldown > 0) step(state, {});
+    step(state, { cast: { skill: "cleave" } });
+    expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(1);
+    step(state, { swingAt: { x: 2.2, y: 1.5 } });
+    expect(state.events.filter((e) => e.type === "player_swing")).toHaveLength(0);
   });
 });
 

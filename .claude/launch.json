@@ -4,14 +4,88 @@
     {
       "name": "dev",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5197
     },
     {
       "name": "dev-alt",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5297"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5297"
+      ],
       "port": 5297
+    },
+    {
+      "name": "dev-wander",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5497"
+      ],
+      "port": 5497,
+      "autoPort": false
+    },
+    {
+      "name": "dev-paperdoll",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5597"
+      ],
+      "port": 5597,
+      "autoPort": false
+    },
+    {
+      "name": "dev-collision",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5397"
+      ],
+      "port": 5397,
+      "autoPort": false
+    },
+    {
+      "name": "dev-vendor",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5797"
+      ],
+      "port": 5797,
+      "autoPort": false
+    },
+    {
+      "name": "dev-stairs",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5697"
+      ],
+      "port": 5697,
+      "autoPort": false
     }
   ]
 }

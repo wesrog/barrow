@@ -15,6 +15,8 @@ export interface MonsterType {
   aggro: number;
   /** Melee reach in cells. */
   range: number;
+  /** Body radius in cells, for collision. */
+  radius: number;
   /** Ticks between swings. */
   swingEvery: number;
   xp: number;
@@ -44,6 +46,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     defense: 20,
     aggro: 6,
     range: 1.1,
+    radius: 0.3,
     swingEvery: 25,
     xp: 12,
     tc: "standard",
@@ -60,6 +63,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     defense: 5,
     aggro: 7,
     range: 1.0,
+    radius: 0.25,
     swingEvery: 15,
     xp: 6,
     tc: "trash",
@@ -76,6 +80,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     defense: 10,
     aggro: 9,
     range: 1.0,
+    radius: 0.3,
     swingEvery: 40,
     xp: 10,
     tc: "standard",
@@ -93,6 +98,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     defense: 8,
     aggro: 7,
     range: 1.0,
+    radius: 0.35,
     swingEvery: 30,
     xp: 8,
     tc: "trash",
@@ -110,6 +116,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     defense: 30,
     aggro: 8,
     range: 1.3,
+    radius: 0.5,
     swingEvery: 20,
     xp: 60,
     tc: "boss",
@@ -157,11 +164,16 @@ export interface Monster {
   defense: number;
   aggro: number;
   range: number;
+  radius: number;
   swingEvery: number;
   swingCooldown: number;
   ai: MonsterAi;
   path: Vec[];
   repathIn: number;
+  /** Spawn anchor: idle wandering stays leashed to this point. */
+  home: Vec;
+  /** Ticks until the next idle stroll. */
+  wanderIn: number;
   xp: number;
   tc: string;
   mlvl: number;
@@ -203,11 +215,14 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth =
     defense: t.defense,
     aggro: t.aggro,
     range: t.range,
+    radius: t.radius,
     swingEvery: t.swingEvery,
     swingCooldown: 0,
     ai: "idle",
     path: [],
     repathIn: 0,
+    home: { ...pos },
+    wanderIn: 0,
     xp: t.xp,
     tc: t.tc,
     mlvl: t.mlvl,

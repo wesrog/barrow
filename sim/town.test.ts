@@ -53,6 +53,44 @@ describe("town portal", () => {
   });
 });
 
+describe("talking to the vendor", () => {
+  function vendorPos(state: GameState): { x: number; y: number } {
+    const v = state.map.markers.find((m) => m.ch === "V")!;
+    return { x: v.x, y: v.y };
+  }
+
+  test("clicking Maren walks the hero over and opens the shop on arrival", () => {
+    const state = createGame(1, cryptZone());
+    goToTown(state);
+    step(state, { talkVendor: true });
+    expect(state.player.vendorTarget).toBe(true);
+    let opened = false;
+    for (let i = 0; i < 200 && !opened; i++) {
+      step(state, {});
+      opened = state.events.some((e) => e.type === "shop_opened");
+    }
+    expect(opened).toBe(true);
+    expect(state.player.vendorTarget).toBe(false);
+    const v = vendorPos(state);
+    expect(Math.hypot(state.player.pos.x - v.x, state.player.pos.y - v.y)).toBeLessThanOrEqual(1.5);
+  });
+
+  test("talkVendor does nothing down in the crypt", () => {
+    const state = createGame(1, cryptZone());
+    step(state, { talkVendor: true });
+    expect(state.player.vendorTarget).toBe(false);
+  });
+
+  test("walking somewhere else cancels the approach", () => {
+    const state = createGame(1, cryptZone());
+    goToTown(state);
+    step(state, { talkVendor: true });
+    expect(state.player.vendorTarget).toBe(true);
+    step(state, { moveTo: { x: state.player.pos.x, y: state.player.pos.y } });
+    expect(state.player.vendorTarget).toBe(false);
+  });
+});
+
 describe("the vendor", () => {
   test("entering town stocks the shop", () => {
     const state = createGame(1, cryptZone());

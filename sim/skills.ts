@@ -10,13 +10,15 @@ export interface SkillDef {
   manaCost: number;
   /** Buff duration in ticks (warcry only). */
   buffTicks: number;
+  /** Ticks the cast occupies the shared action cooldown — tuned to the animation. */
+  castTicks: number;
 }
 
 export const SKILLS: Record<SkillId, SkillDef> = {
-  cleave: { id: "cleave", name: "Cleave", levelReq: 1, manaCost: 3, buffTicks: 0 },
-  crush: { id: "crush", name: "Crush", levelReq: 2, manaCost: 4, buffTicks: 0 },
-  warcry: { id: "warcry", name: "Warcry", levelReq: 4, manaCost: 6, buffTicks: 500 },
-  leap: { id: "leap", name: "Leap", levelReq: 6, manaCost: 5, buffTicks: 0 },
+  cleave: { id: "cleave", name: "Cleave", levelReq: 1, manaCost: 3, buffTicks: 0, castTicks: 18 },
+  crush: { id: "crush", name: "Crush", levelReq: 2, manaCost: 4, buffTicks: 0, castTicks: 14 },
+  warcry: { id: "warcry", name: "Warcry", levelReq: 4, manaCost: 6, buffTicks: 500, castTicks: 15 },
+  leap: { id: "leap", name: "Leap", levelReq: 6, manaCost: 5, buffTicks: 0, castTicks: 20 },
 };
 
 export const CLEAVE_RADIUS = 1.8;

@@ -45,6 +45,27 @@ describe("monster AI", () => {
     expect(near.ai).toBe("chasing");
   });
 
+  test("idle monster shuffles around instead of standing frozen", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "shambler", { x: 10.5, y: 3.5 });
+    let moved = false;
+    for (let i = 0; i < 500; i++) {
+      step(game, {});
+      expect(m.ai).toBe("idle");
+      if (Math.hypot(m.pos.x - 10.5, m.pos.y - 3.5) > 0.3) moved = true;
+    }
+    expect(moved).toBe(true);
+  });
+
+  test("idle wander stays leashed near the spawn point", () => {
+    const game = createGame(2, arena());
+    const m = spawnMonster(game, "shambler", { x: 10.5, y: 3.5 });
+    for (let i = 0; i < 2000; i++) {
+      step(game, {});
+      expect(Math.hypot(m.pos.x - 10.5, m.pos.y - 3.5)).toBeLessThanOrEqual(2.5);
+    }
+  });
+
   test("chasing monster closes distance and damages the player", () => {
     const game = createGame(1, arena());
     spawnMonster(game, "shambler", { x: 6.5, y: 1.5 });

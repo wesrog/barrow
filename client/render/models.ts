@@ -40,6 +40,8 @@ const DUNGEON_URLS = {
   barrel: "/models/dungeon/barrel_large.glb",
   crates: "/models/dungeon/crates_stacked.glb",
   chest: "/models/dungeon/chest.glb",
+  chest_gold: "/models/dungeon/chest_gold.glb",
+  stairs: "/models/dungeon/stairs_narrow.glb",
 } as const;
 
 export type CharacterName = keyof typeof CHARACTER_URLS;
@@ -54,7 +56,8 @@ export interface GameAssets {
 
 export async function loadAssets(): Promise<GameAssets> {
   const loader = new GLTFLoader();
-  const load = (url: string) => loader.loadAsync(url);
+  const load = (url: string) =>
+    loader.loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url);
 
   const characterEntries = Object.entries(CHARACTER_URLS) as [CharacterName, string][];
   const weaponEntries = Object.entries(WEAPON_URLS) as [WeaponName, string][];

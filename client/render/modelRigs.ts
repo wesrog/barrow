@@ -179,11 +179,10 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
 
   // The model ships with prop meshes (axes, shield, a beer mug) — hide them,
   // our equipment drives what shows.
-  for (const prop of ["1H_Axe", "2H_Axe", "Mug", "Barbarian_Round_Shield"]) {
+  for (const prop of ["1H_Axe", "2H_Axe", "Mug", "Barbarian_Round_Shield", "Barbarian_Hat"]) {
     const node = rig.group.getObjectByName(prop);
     if (node) node.visible = false;
   }
-  const hat = rig.group.getObjectByName("Barbarian_Hat");
   const boneOf = (name: string) => rig.group.getObjectByName(name);
   const gear: THREE.Object3D[] = [];
   const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
@@ -199,8 +198,7 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     for (const g of gear) g.parent?.remove(g);
     gear.length = 0;
 
-    // Helm replaces the hair/hat
-    if (hat) hat.visible = !eq.helm;
+    // Only an equipped helm puts anything on the head.
     if (eq.helm) addGear("head", helmMesh(eq.helm.baseId), eq.helm);
 
     // Chest: pauldrons on the shoulders, a plate over the chest bone

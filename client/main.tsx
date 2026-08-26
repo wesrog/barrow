@@ -6,7 +6,7 @@ import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { play, unlock } from "./audio";
-import { loadAssets } from "./render/models";
+import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
 import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
@@ -14,6 +14,7 @@ import { MiniMap } from "./ui/MiniMap";
 import { ShopPanel } from "./ui/ShopPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
+import { ZoneBanner } from "./ui/ZoneBanner";
 
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -28,6 +29,7 @@ function Game() {
   const [, setVersion] = useState(0);
 
   const [loading, setLoading] = useState(true);
+  const [assets, setAssets] = useState<GameAssets | null>(null);
 
   useEffect(() => {
     const mount = mountRef.current!;
@@ -38,10 +40,15 @@ function Game() {
       const assets = await loadAssets();
       if (disposed) return;
       setLoading(false);
+      setAssets(assets);
       const map = cryptZone();
       const game = createGame(Date.now() >>> 0, map);
       loadFromStorage(game);
       gameRef.current = game;
+      // Dev console hook: poke the sim from the browser console while testing.
+      if (import.meta.env.DEV) {
+        (window as { __barrow?: unknown }).__barrow = { game, input: uiInputRef };
+      }
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
       };
@@ -77,6 +84,12 @@ function Game() {
         delete pending.moveTo;
       } else if (picked.kind === "item" && allowAttack) {
         pending.pickup = picked.id;
+        delete pending.moveTo;
+      } else if (picked.kind === "breakable" && allowAttack) {
+        pending.smash = picked.id;
+        delete pending.moveTo;
+      } else if (picked.kind === "vendor" && allowAttack) {
+        pending.talkVendor = true;
         delete pending.moveTo;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
@@ -178,6 +191,9 @@ function Game() {
             case "monster_died":
               play("die");
               break;
+            case "breakable_broken":
+              play("hit");
+              break;
             case "item_dropped":
               play(e.rarity === "normal" ? "drop" : "drop_rare");
               break;
@@ -205,8 +221,10 @@ function Game() {
               break;
             case "portal":
               play("portal");
-              if (e.to === "town") setShopOpen(true);
-              else setShopOpen(false);
+              if (e.to === "crypt") setShopOpen(false);
+              break;
+            case "shop_opened":
+              setShopOpen(true);
               break;
             case "item_broke":
               scene.addDamageNumber(game.player.pos, `${e.name} broke!`, "#e05252");
@@ -284,6 +302,7 @@ function Game() {
           descending into the barrow…
         </div>
       )}
+      {gameRef.current && <ZoneBanner game={gameRef.current} />}
       {gameRef.current && <BottomBar game={gameRef.current} />}
       {gameRef.current && <MiniMap game={gameRef.current} />}
       {shopOpen && gameRef.current && gameRef.current.town !== null && (
@@ -311,6 +330,7 @@ function Game() {
       {invOpen && gameRef.current && (
         <InventoryPanel
           game={gameRef.current}
+          assets={assets}
           onEquip={(entryId) => {
             uiInputRef.current.equip = entryId;
           }}

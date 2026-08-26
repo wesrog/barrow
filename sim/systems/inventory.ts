@@ -112,6 +112,7 @@ export function applyPickupInput(state: GameState, input: PlayerInput): void {
   if (!state.groundItems.has(input.pickup)) return;
   state.player.pickupTarget = input.pickup;
   state.player.attackTarget = null;
+  state.player.smashTarget = null;
   state.player.path = [];
 }
 

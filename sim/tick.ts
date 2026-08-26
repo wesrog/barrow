@@ -17,13 +17,21 @@ import {
   pickupSystem,
 } from "./systems/inventory";
 import { applyCastInput, applySpendSkillInput, manaRegenSystem } from "./systems/skills";
+import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
 import { spawnMonster } from "./monsters";
 import { MARKER_TYPES } from "./zone";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 import { rollDurability } from "./items/generate";
 import { durabilitySystem } from "./systems/inventory";
-import { applyShopInput, applyTownPortalInput, townPadSystem } from "./systems/town";
+import {
+  applyShopInput,
+  applyTalkVendorInput,
+  applyTownPortalInput,
+  townPadSystem,
+  vendorSystem,
+} from "./systems/town";
+import { applySmashInput, breakSystem, spawnBreakables } from "./breakables";
 
 export const TICK_RATE = 25;
 
@@ -42,13 +50,16 @@ export function descend(state: GameState): void {
   state.monsters.clear();
   state.groundItems.clear();
   state.goldPiles.clear();
+  state.breakables.clear();
   state.corpses.length = 0;
   const p = state.player;
   p.pos = { ...state.map.spawn };
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.smashTarget = null;
   spawnFromMarkers(state);
+  spawnBreakables(state);
   state.events.push({ type: "descended", depth: state.depth });
 }
 
@@ -77,6 +88,7 @@ export function resetRun(state: GameState): void {
   state.monsters.clear();
   state.groundItems.clear();
   state.goldPiles.clear();
+  state.breakables.clear();
   state.corpses.length = 0;
   p.dead = false;
   p.life = p.maxLife;
@@ -85,8 +97,10 @@ export function resetRun(state: GameState): void {
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.smashTarget = null;
   p.warcryUntil = 0;
   spawnFromMarkers(state);
+  spawnBreakables(state);
 }
 
 export function createGame(seed: number, map: ZoneMap): GameState {
@@ -124,6 +138,8 @@ export function createGame(seed: number, map: ZoneMap): GameState {
       attackTarget: null,
       pendingStrike: null,
       pickupTarget: null,
+      smashTarget: null,
+      vendorTarget: false,
       level: 1,
       xp: 0,
       skillPoints: 0,
@@ -143,10 +159,12 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     corpses: [],
     groundItems: new Map(),
     goldPiles: new Map(),
+    breakables: new Map(),
     events: [],
     nextId: 1,
   };
   spawnFromMarkers(state);
+  spawnBreakables(state);
   return state;
 }
 
@@ -163,21 +181,26 @@ export function step(state: GameState, input: PlayerInput): void {
     applyAttackInput(state, input);
     applySwingInPlaceInput(state, input);
     applyPickupInput(state, input);
+    applySmashInput(state, input);
     applyEquipInput(state, input);
     applyDropItemInput(state, input);
     applyDrinkInput(state, input);
     applySpendSkillInput(state, input);
     applyTownPortalInput(state, input);
+    applyTalkVendorInput(state, input);
     applyShopInput(state, input);
     manaRegenSystem(state);
     applyCastInput(state, input);
     playerCombatSystem(state);
     pickupSystem(state);
+    vendorSystem(state);
+    breakSystem(state);
     movementSystem(state);
     townPadSystem(state);
     stairsSystem(state);
   }
   monsterAiSystem(state);
+  collisionSystem(state);
   deathSystem(state);
   xpSystem(state);
   durabilitySystem(state);

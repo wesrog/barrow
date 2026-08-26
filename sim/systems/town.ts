@@ -4,6 +4,10 @@ import { townZone } from "../zone";
 import type { GameState, PlayerInput } from "../state";
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
+import { findPath, smoothPath } from "../path";
+
+/** How close you must stand to Maren before he'll talk shop. */
+const TALK_RANGE = 1.4;
 
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
@@ -57,6 +61,7 @@ export function applyTownPortalInput(state: GameState, input: PlayerInput): void
       monsters: state.monsters,
       groundItems: state.groundItems,
       goldPiles: state.goldPiles,
+      breakables: state.breakables,
       corpses: state.corpses,
       pos: { ...p.pos },
     },
@@ -65,11 +70,14 @@ export function applyTownPortalInput(state: GameState, input: PlayerInput): void
   state.monsters = new Map();
   state.groundItems = new Map();
   state.goldPiles = new Map();
+  state.breakables = new Map();
   state.corpses = [];
   p.pos = { ...state.map.spawn };
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.smashTarget = null;
+  p.vendorTarget = false;
   p.pendingStrike = null;
   restock(state);
   state.events.push({ type: "portal", to: "town" });
@@ -87,6 +95,7 @@ export function townPadSystem(state: GameState): void {
       state.monsters = saved.monsters;
       state.groundItems = saved.groundItems;
       state.goldPiles = saved.goldPiles;
+      state.breakables = saved.breakables;
       state.corpses = saved.corpses;
       p.pos = { ...saved.pos };
       p.path = [];
@@ -94,6 +103,46 @@ export function townPadSystem(state: GameState): void {
       state.events.push({ type: "portal", to: "crypt" });
       return;
     }
+  }
+}
+
+/** Click on Maren: start walking over to trade. */
+export function applyTalkVendorInput(state: GameState, input: PlayerInput): void {
+  if (!input.talkVendor || state.town === null) return;
+  const p = state.player;
+  p.vendorTarget = true;
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.smashTarget = null;
+  p.path = [];
+}
+
+/** Walk toward the V marker; within talking range, the shop opens. */
+export function vendorSystem(state: GameState): void {
+  const p = state.player;
+  if (!p.vendorTarget) return;
+  const marker = state.map.markers.find((m) => m.ch === "V");
+  if (state.town === null || !marker) {
+    p.vendorTarget = false;
+    return;
+  }
+  const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
+  if (d <= TALK_RANGE) {
+    p.vendorTarget = false;
+    p.path = [];
+    state.events.push({ type: "shop_opened" });
+  } else if (p.path.length === 0) {
+    const cells = findPath(
+      state.map,
+      { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+      { x: Math.floor(marker.x), y: Math.floor(marker.y) },
+    );
+    if (cells === null) {
+      p.vendorTarget = false;
+      return;
+    }
+    p.path = smoothPath(state.map, p.pos, cells);
+    p.path.push({ x: marker.x, y: marker.y });
   }
 }
 

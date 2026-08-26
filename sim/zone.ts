@@ -38,6 +38,14 @@ export function cryptZone(): ZoneMap {
   ]);
 }
 
+/** What the locals call each stretch of the descent. */
+export function zoneName(depth: number): string {
+  if (depth <= 2) return "The Barrow Crypt";
+  if (depth <= 4) return "The Sunken Halls";
+  if (depth <= 6) return "The Bone Vaults";
+  return "The Wyrm's Undercroft";
+}
+
 /** Placeholder kept for the scaffold-era tests and boot. */
 export function starterZone(): ZoneMap {
   return cryptZone();

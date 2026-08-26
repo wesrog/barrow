@@ -26,12 +26,15 @@ export function applySpendSkillInput(state: GameState, input: PlayerInput): void
   p.skillPoints--;
 }
 
+/** Rank, mana, and the shared action cooldown all gate a cast; success starts it. */
 function spendMana(state: GameState, id: SkillId): boolean {
   const p = state.player;
   if (p.skills[id] <= 0) return false;
+  if (p.swingCooldown > 0) return false;
   const cost = SKILLS[id].manaCost;
   if (p.mana < cost) return false;
   p.mana -= cost;
+  p.swingCooldown = SKILLS[id].castTicks;
   return true;
 }
 

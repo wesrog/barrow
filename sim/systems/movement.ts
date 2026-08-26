@@ -15,6 +15,8 @@ export function applyMoveInput(state: GameState, input: PlayerInput): void {
   if (cells === null) return;
   state.player.attackTarget = null;
   state.player.pickupTarget = null;
+  state.player.smashTarget = null;
+  state.player.vendorTarget = false;
   state.player.path = smoothPath(state.map, state.player.pos, cells);
 }
 

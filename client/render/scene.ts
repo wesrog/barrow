@@ -16,6 +16,8 @@ const VIEW_HEIGHT = 16; // world units visible vertically
 export type PickResult =
   | { kind: "monster"; id: number }
   | { kind: "item"; id: number }
+  | { kind: "breakable"; id: number }
+  | { kind: "vendor" }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -149,21 +151,20 @@ export function createScene(
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
+  // Stair cells get a real stairwell instead of a floor tile.
+  const stairCells = new Set(
+    map.markers.filter((m) => m.ch === ">").map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
+  );
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
       const h = hash(x, y);
       if (isWalkable(map, x, y)) {
+        if (stairCells.has(`${x},${y}`)) continue;
         // Stone floor tile, occasionally broken or weedy
         const roll = h % 23;
         const floorPiece =
           roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
         placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE);
-        // Sparse clutter against walls
-        const clutterRoll = h % 89;
-        if ((clutterRoll === 3 || clutterRoll === 7) && !isWalkable(map, x, y - 1)) {
-          const prop = clutterRoll === 3 ? assets.dungeon.barrel : assets.dungeon.crates;
-          placePiece(prop, x + 0.5, y + 0.35, ((h >> 5) % 4) * (Math.PI / 2), { x: 0.28, y: 0.28, z: 0.28 });
-        }
       } else {
         // Brick facades on every edge that faces open floor
         const wallRoll = h % 10;
@@ -177,22 +178,45 @@ export function createScene(
     }
   }
 
-  // --- Stairs down: a dark pit with a pale glowing rim ---
+  // --- Stairs down: a real stairwell sinking into a dark shaft ---
+  const stairGlows: THREE.PointLight[] = [];
   for (const marker of map.markers) {
     if (marker.ch !== ">") continue;
-    const pit = new THREE.Mesh(
-      new THREE.BoxGeometry(0.85, 0.02, 0.85),
-      new THREE.MeshBasicMaterial({ color: 0x020204 }),
+    const cx = Math.floor(marker.x);
+    const cy = Math.floor(marker.y);
+    // Steps descend away from the open approach side.
+    const approaches = [
+      { dx: 0, dy: 1, ry: 0 },
+      { dx: 1, dy: 0, ry: Math.PI / 2 },
+      { dx: 0, dy: -1, ry: Math.PI },
+      { dx: -1, dy: 0, ry: -Math.PI / 2 },
+    ];
+    const open = approaches.find((a) => isWalkable(map, cx + a.dx, cy + a.dy)) ?? approaches[0]!;
+    // The shaft: a lightless block below floor level so the well reads as depth.
+    const shaft = new THREE.Mesh(
+      new THREE.BoxGeometry(0.98, 1.4, 0.98),
+      new THREE.MeshBasicMaterial({ color: 0x030308 }),
     );
-    pit.position.set(marker.x, 0.02, marker.y);
+    shaft.position.set(marker.x, -0.72, marker.y);
+    scene.add(shaft);
+    // The steps themselves, top tread flush with the floor.
+    const stairs = placePiece(assets.dungeon.stairs, marker.x, marker.y, open.ry, FLOOR_SCALE);
+    const bb = new THREE.Box3().setFromObject(stairs);
+    stairs.position.y = -bb.max.y + 0.02;
+    // A pale rim marks the mouth of the well…
     const rim = new THREE.Mesh(
-      new THREE.RingGeometry(0.42, 0.5, 4),
-      new THREE.MeshBasicMaterial({ color: 0x7fb8c9, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+      new THREE.RingGeometry(0.5, 0.56, 4),
+      new THREE.MeshBasicMaterial({ color: 0x7fb8c9, transparent: true, opacity: 0.45, side: THREE.DoubleSide }),
     );
     rim.rotation.x = -Math.PI / 2;
     rim.rotation.z = Math.PI / 4;
-    rim.position.set(marker.x, 0.06, marker.y);
-    scene.add(pit, rim);
+    rim.position.set(marker.x, 0.05, marker.y);
+    scene.add(rim);
+    // …and a cold glow breathes up out of it.
+    const glow = new THREE.PointLight(0x6fb0d9, 2.4, 4.5, 1.7);
+    glow.position.set(marker.x, 0.55, marker.y);
+    scene.add(glow);
+    stairGlows.push(glow);
   }
 
   const placePieceLater: (() => void)[] = [];
@@ -247,6 +271,30 @@ export function createScene(
       nug.position.set((i - 1) * 0.09, 0.05 + (i % 2) * 0.04, ((i * 7) % 3 - 1) * 0.07);
       g.add(nug);
     }
+    return g;
+  };
+
+  // --- Breakables: smashable barrels, crates, and the floor's treasure chest ---
+  const breakableVisuals = new Map<number, THREE.Group>();
+  const makeBreakable = (kind: string, id: number): THREE.Group => {
+    const src =
+      kind === "barrel"
+        ? assets.dungeon.barrel
+        : kind === "crate"
+          ? assets.dungeon.crates
+          : assets.dungeon.chest_gold;
+    const g = src.clone(true);
+    g.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+        // Own materials, so hover tints don't bleed across every barrel.
+        if (obj.material instanceof THREE.Material) obj.material = obj.material.clone();
+      }
+    });
+    const s = kind === "chest" ? 0.4 : 0.3;
+    g.scale.setScalar(s);
+    g.rotation.y = ((id * 47) % 8) * (Math.PI / 4);
     return g;
   };
 
@@ -320,8 +368,8 @@ export function createScene(
 
   // --- Hover highlight: brighten the rig under the cursor ---
   let hoveredId: number | null = null;
-  const hoverTint = (rig: Rig | undefined, on: boolean) => {
-    rig?.group.traverse((obj) => {
+  const hoverTint = (root: THREE.Object3D | undefined, on: boolean) => {
+    root?.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
         const mat = obj.material;
         if (on) {
@@ -561,6 +609,22 @@ export function createScene(
         v.label.style.top = `${at.y}px`;
       }
 
+      // Sync breakables (smash effects remove theirs via the broken event)
+      for (const [id, g] of breakableVisuals) {
+        if (!state.breakables.has(id)) {
+          scene.remove(g);
+          breakableVisuals.delete(id);
+        }
+      }
+      for (const b of state.breakables.values()) {
+        if (!breakableVisuals.has(b.id)) {
+          const g = makeBreakable(b.kind, b.id);
+          g.position.set(b.pos.x, 0, b.pos.y);
+          scene.add(g);
+          breakableVisuals.set(b.id, g);
+        }
+      }
+
       // Sync gold piles
       for (const [id, g] of goldVisuals) {
         if (!state.goldPiles.has(id)) {
@@ -602,6 +666,9 @@ export function createScene(
 
       // Torch flicker
       const now = performance.now();
+      for (const glow of stairGlows) {
+        glow.intensity = 2.2 + Math.sin(now / 650) * 0.7;
+      }
       for (const torch of torches) {
         const flicker =
           0.8 +
@@ -660,6 +727,20 @@ export function createScene(
           if (v.mesh === itemHits[0]!.object) return { kind: "item", id };
         }
       }
+      if (vendorRig) {
+        const vendorHits = raycaster.intersectObject(vendorRig.group, true);
+        if (vendorHits.length > 0) return { kind: "vendor" };
+      }
+      const breakableGroups: THREE.Object3D[] = [];
+      for (const g of breakableVisuals.values()) breakableGroups.push(g);
+      const breakableHits = raycaster.intersectObjects(breakableGroups, true);
+      if (breakableHits.length > 0) {
+        let obj: THREE.Object3D | null = breakableHits[0]!.object;
+        while (obj && obj.parent !== scene) obj = obj.parent;
+        for (const [id, g] of breakableVisuals) {
+          if (g === obj) return { kind: "breakable", id };
+        }
+      }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
     },
@@ -672,14 +753,20 @@ export function createScene(
 
     updateHover(state, clientX, clientY) {
       const picked = this.pick(state, clientX, clientY);
-      const id = picked?.kind === "monster" ? picked.id : null;
+      const id = picked?.kind === "monster" || picked?.kind === "breakable" ? picked.id : null;
+      const tintable = (targetId: number | null) =>
+        targetId === null
+          ? undefined
+          : (monsterRigs.get(targetId)?.group ?? breakableVisuals.get(targetId));
       if (id !== hoveredId) {
-        hoverTint(hoveredId !== null ? monsterRigs.get(hoveredId) : undefined, false);
-        hoverTint(id !== null ? monsterRigs.get(id) : undefined, true);
+        hoverTint(tintable(hoveredId), false);
+        hoverTint(tintable(id), true);
         hoveredId = id;
       }
       renderer.domElement.style.cursor =
-        picked?.kind === "monster" || picked?.kind === "item" ? "pointer" : "default";
+        picked?.kind === "monster" || picked?.kind === "item" || picked?.kind === "breakable"
+          ? "pointer"
+          : "default";
     },
 
     handleEvent(event, state) {
@@ -790,6 +877,20 @@ export function createScene(
           }
           monsterFxOffsets.delete(event.id);
           fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
+          break;
+        }
+        case "breakable_broken": {
+          const g = breakableVisuals.get(event.id);
+          breakableVisuals.delete(event.id);
+          const woody = event.kind === "chest" ? 0xd9b04c : 0x8a6a3a;
+          fx.burst(event.pos.x, 0.4, event.pos.y, woody, 12, 2.6);
+          if (g) {
+            const base = g.scale.x;
+            fx.tween(180, (t) => {
+              const s = base * (1 - t);
+              g.scale.set(s * 1.3, s * 0.5, s * 1.3); // crushed flat as it vanishes
+            }, () => scene.remove(g));
+          }
           break;
         }
         case "skill_cast": {

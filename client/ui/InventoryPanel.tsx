@@ -4,6 +4,8 @@ import { INV_H, INV_W, type EquipSlot } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import type { GameState } from "../../sim/state";
+import type { GameAssets } from "../render/models";
+import { CharacterView } from "./CharacterView";
 import { ItemIcon } from "./ItemIcon";
 
 const CELL = 32;
@@ -73,11 +75,13 @@ function itemDetail(item: Item): { lines: string[]; color: string } {
 
 export function InventoryPanel({
   game,
+  assets,
   onEquip,
   onUnequip,
   onDrop,
 }: {
   game: GameState;
+  assets: GameAssets | null;
   onEquip: (entryId: number) => void;
   onUnequip: (slot: EquipSlot) => void;
   onDrop: (entryId: number) => void;
@@ -91,6 +95,11 @@ export function InventoryPanel({
         inventory — dmg {p.dmgMin}–{p.dmgMax} · ar {p.attackRating} · def {p.defense} · mf{" "}
         {p.magicFind}%
       </div>
+
+      {/* Character */}
+      {assets && (
+        <CharacterView assets={assets} equipment={p.equipment} width={INV_W * CELL} />
+      )}
 
       {/* Equipment */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 10 }}>

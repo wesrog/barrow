@@ -2,6 +2,7 @@ import type { Rng } from "./rng";
 import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
 import type { Item, Rarity } from "./items/generate";
+import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { SkillId } from "./skills";
 
@@ -29,6 +30,10 @@ export interface Player {
   pendingStrike: { at: number; target: number | null } | null;
   /** Ground item id being walked to for pickup, if any. */
   pickupTarget: number | null;
+  /** Breakable id being walked to for smashing, if any. */
+  smashTarget: number | null;
+  /** Walking over to Maren to trade (town only). */
+  vendorTarget: boolean;
   level: number;
   xp: number;
   skillPoints: number;
@@ -69,11 +74,13 @@ export type SimEvent =
   | { type: "exploded"; pos: Vec; radius: number }
   | { type: "potion_drunk"; healed: number }
   | { type: "descended"; depth: number }
+  | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec }
   | { type: "gold_picked"; amount: number }
   | { type: "item_broke"; name: string }
   | { type: "repaired"; cost: number }
   | { type: "portal"; to: "town" | "crypt" }
+  | { type: "shop_opened" }
   | { type: "bought"; name: string; price: number }
   | { type: "sold"; name: string; price: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
@@ -94,6 +101,7 @@ export interface TownState {
     monsters: Map<number, Monster>;
     groundItems: Map<number, GroundItem>;
     goldPiles: Map<number, GoldPile>;
+    breakables: Map<number, Breakable>;
     corpses: Corpse[];
     pos: Vec;
   };
@@ -114,6 +122,8 @@ export interface GameState {
   corpses: Corpse[];
   groundItems: Map<number, GroundItem>;
   goldPiles: Map<number, GoldPile>;
+  /** Smashable clutter: barrels, crates, and the floor's treasure chest. */
+  breakables: Map<number, Breakable>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;
@@ -128,6 +138,8 @@ export interface PlayerInput {
   swingAt?: Vec;
   /** Ground item id the player clicked to pick up. */
   pickup?: number;
+  /** Breakable id the player clicked to smash open. */
+  smash?: number;
   /** Inventory entry id to equip. */
   equip?: number;
   /** Equipment slot to unequip back into the inventory. */
@@ -144,6 +156,8 @@ export interface PlayerInput {
   newGame?: boolean;
   /** Open a portal and step through to the camp. */
   townPortal?: boolean;
+  /** Walk to the vendor and open the shop (town only). */
+  talkVendor?: boolean;
   /** Buy the shop entry at this index (town only). */
   buy?: number;
   /** Sell this inventory entry to the vendor (town only). */

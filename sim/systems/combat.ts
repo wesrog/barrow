@@ -73,6 +73,7 @@ export function applyAttackInput(state: GameState, input: PlayerInput): void {
   if (state.monsters.has(input.attack)) {
     state.player.attackTarget = input.attack;
     state.player.pickupTarget = null;
+    state.player.smashTarget = null;
     state.player.path = [];
   }
 }
@@ -110,6 +111,29 @@ export function playerCombatSystem(state: GameState): void {
   } else {
     p.path = pathToward(state, p.pos, target.pos);
   }
+}
+
+/** Idle strolls stay within this many cells of the spawn anchor. */
+const WANDER_RADIUS = 1.5;
+const WANDER_SPEED_SCALE = 0.35;
+
+/** An idle monster ambles to a random spot near home, then loiters a while. */
+function idleWander(state: GameState, m: Monster): void {
+  if (m.path.length > 0) {
+    moveAlongPath(m.pos, m.path, m.speed * WANDER_SPEED_SCALE);
+    return;
+  }
+  if (m.wanderIn > 0) {
+    m.wanderIn--;
+    return;
+  }
+  m.wanderIn = state.rng.int(50, 150);
+  const ang = state.rng.next() * Math.PI * 2;
+  const r = 0.4 + state.rng.next() * (WANDER_RADIUS - 0.4);
+  const to = { x: m.home.x + Math.cos(ang) * r, y: m.home.y + Math.sin(ang) * r };
+  if (!isWalkable(state.map, Math.floor(to.x), Math.floor(to.y))) return;
+  if (!hasLineOfSight(state.map, m.pos, to)) return;
+  m.path = [to];
 }
 
 export function monsterAiSystem(state: GameState): void {
@@ -161,8 +185,13 @@ export function monsterAiSystem(state: GameState): void {
     }
     const d = dist(m.pos, p.pos);
     if (m.ai === "idle") {
-      if (d <= m.aggro) m.ai = "chasing";
-      else continue;
+      if (d <= m.aggro) {
+        m.ai = "chasing";
+        m.path = [];
+      } else {
+        idleWander(state, m);
+        continue;
+      }
     }
     const inReach =
       m.ranged !== undefined
@@ -200,38 +229,6 @@ export function monsterAiSystem(state: GameState): void {
         m.repathIn = 10;
       }
       moveAlongPath(m.pos, m.path, m.speed);
-    }
-  }
-  separateMonsters(state);
-}
-
-/** Nudge overlapping monsters apart so packs don't stack into one shivering pile. */
-function separateMonsters(state: GameState): void {
-  const list = [...state.monsters.values()];
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      const a = list[i]!;
-      const b = list[j]!;
-      const dx = b.pos.x - a.pos.x;
-      const dy = b.pos.y - a.pos.y;
-      const d = Math.hypot(dx, dy);
-      if (d >= 0.45) continue;
-      // Perfectly stacked pairs split along a deterministic axis.
-      const nx = d > 1e-6 ? dx / d : (a.id < b.id ? 1 : -1);
-      const ny = d > 1e-6 ? dy / d : 0;
-      const push = 0.03;
-      const ax = a.pos.x - nx * push;
-      const ay = a.pos.y - ny * push;
-      const bx = b.pos.x + nx * push;
-      const by = b.pos.y + ny * push;
-      if (isWalkable(state.map, Math.floor(ax), Math.floor(ay))) {
-        a.pos.x = ax;
-        a.pos.y = ay;
-      }
-      if (isWalkable(state.map, Math.floor(bx), Math.floor(by))) {
-        b.pos.x = bx;
-        b.pos.y = by;
-      }
     }
   }
 }

@@ -15,7 +15,7 @@ export function ItemIcon({
   size: number;
   style?: CSSProperties;
 }) {
-  const mask = `url(/icons/items/${baseId}.svg)`;
+  const mask = `url(${import.meta.env.BASE_URL.replace(/\/$/, "")}/icons/items/${baseId}.svg)`;
   return (
     <div
       style={{

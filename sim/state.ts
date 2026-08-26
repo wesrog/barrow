@@ -49,6 +49,8 @@ export interface GroundItem {
 }
 
 export type SimEvent =
+  | { type: "player_swing"; to: Vec }
+  | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean }
   | { type: "player_hit"; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec }
   | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }

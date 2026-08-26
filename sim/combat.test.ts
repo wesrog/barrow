@@ -112,3 +112,51 @@ describe("player attacking", () => {
     expect(game.player.life).toBe(0);
   });
 });
+
+describe("swing events", () => {
+  test("a player swing emits player_swing whether or not it hits", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    let swings = 0;
+    for (let i = 0; i < 30; i++) {
+      step(game, i === 0 ? { attack: m.id } : {});
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    // swingEvery is 12 ticks: at least two swings in 30
+    expect(swings).toBeGreaterThanOrEqual(2);
+  });
+
+  test("melee monsters emit monster_swing at the player, not flagged ranged", () => {
+    const game = createGame(1, arena());
+    spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    let seen = false;
+    for (let i = 0; i < 60 && !seen; i++) {
+      step(game, {});
+      for (const e of game.events) {
+        if (e.type === "monster_swing") {
+          seen = true;
+          expect(e.ranged).toBe(false);
+          expect(e.to).toEqual(game.player.pos);
+        }
+      }
+    }
+    expect(seen).toBe(true);
+  });
+
+  test("gravespit swings are flagged ranged with a firing origin", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "gravespit", { x: 6.5, y: 1.5 });
+    let seen = false;
+    for (let i = 0; i < 120 && !seen; i++) {
+      step(game, {});
+      for (const e of game.events) {
+        if (e.type === "monster_swing") {
+          seen = true;
+          expect(e.ranged).toBe(true);
+          expect(e.from).toEqual(m.pos);
+        }
+      }
+    }
+    expect(seen).toBe(true);
+  });
+});

@@ -118,6 +118,7 @@ function Game() {
         step(game, pending);
         pending = {};
         for (const e of game.events) {
+          scene.handleEvent(e, game);
           if (e.type === "monster_hit") {
             scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
           } else if (e.type === "player_hit") {

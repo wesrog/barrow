@@ -53,6 +53,7 @@ export function playerCombatSystem(state: GameState): void {
     p.path = [];
     if (p.swingCooldown === 0) {
       p.swingCooldown = p.swingEvery;
+      state.events.push({ type: "player_swing", to: { ...target.pos } });
       if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
         const amount = Math.max(
           1,
@@ -90,6 +91,13 @@ export function monsterAiSystem(state: GameState): void {
       m.path = [];
       if (m.swingCooldown === 0) {
         m.swingCooldown = m.swingEvery;
+        state.events.push({
+          type: "monster_swing",
+          id: m.id,
+          from: { ...m.pos },
+          to: { ...p.pos },
+          ranged: m.ranged !== undefined,
+        });
         if (state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
           const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
           p.life -= amount;

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
-import type { GameState } from "../../sim/state";
+import type { GameState, SimEvent } from "../../sim/state";
+import { Effects } from "./fx";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -19,6 +20,8 @@ export interface SceneHandle {
   addDamageNumber(pos: Vec, text: string, color: string): void;
   /** Flash an expanding blast ring at a world position. */
   addExplosion(pos: Vec, radius: number): void;
+  /** Play any visual reaction this sim event deserves (swings, hits, deaths...). */
+  handleEvent(event: SimEvent, state: GameState): void;
   dispose(): void;
 }
 
@@ -113,7 +116,8 @@ export function createScene(
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0a0c);
-  scene.fog = new THREE.Fog(0x0a0a0c, 24, 46);
+  scene.fog = new THREE.Fog(0x0a0a0c, 20, 40);
+  const fx = new Effects(scene);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   const camOffset = new THREE.Vector3(14, 18, 14);
@@ -151,43 +155,101 @@ export function createScene(
   heroLight.position.set(0, 1.6, 0);
   scene.add(heroLight);
 
-  // --- Ground + walls from the walk grid ---
+  // --- Ground + walls from the walk grid, in a few tones so rooms read as stone ---
   const floorGeo = new THREE.BoxGeometry(1, 0.1, 1);
   const wallGeo = new THREE.BoxGeometry(1, 1.4, 1);
-  const floors: THREE.Matrix4[] = [];
-  const walls: THREE.Matrix4[] = [];
+  const tallWallGeo = new THREE.BoxGeometry(1, 1.75, 1);
+  const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
+  const floorBuckets: THREE.Matrix4[][] = [[], [], []];
+  const wallBuckets: { geo: THREE.BufferGeometry; color: number; mats: THREE.Matrix4[] }[] = [
+    { geo: wallGeo, color: 0x35303c, mats: [] },
+    { geo: wallGeo, color: 0x2e2a36, mats: [] },
+    { geo: tallWallGeo, color: 0x3a3546, mats: [] },
+  ];
   const m = new THREE.Matrix4();
+  const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
   for (let y = 0; y < map.height; y++) {
     for (let x = 0; x < map.width; x++) {
+      const h = hash(x, y);
       m.makeTranslation(x + 0.5, 0, y + 0.5);
       if (isWalkable(map, x, y)) {
-        const jitter = ((x * 7 + y * 13) % 5) * 0.008;
-        floors.push(m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.05 + jitter, 0)));
+        const jitter = (h % 5) * 0.008;
+        floorBuckets[h % 3]!.push(
+          m.clone().multiply(new THREE.Matrix4().makeTranslation(0, -0.05 + jitter, 0)),
+        );
       } else {
-        walls.push(m.clone().multiply(new THREE.Matrix4().makeTranslation(0, 0.7, 0)));
+        const bucket = h % 7 === 0 ? 2 : h % 2;
+        const lift = bucket === 2 ? 0.87 : 0.7;
+        wallBuckets[bucket]!.mats.push(
+          m.clone().multiply(new THREE.Matrix4().makeTranslation(0, lift, 0)),
+        );
+        // Torch candidates: wall with open floor to its south, sparse
+        if (isWalkable(map, x, y + 1) && h % 17 === 0) {
+          torchSpots.push({ x: x + 0.5, y: y + 0.72, fx: x + 0.5, fy: y + 1 });
+        }
       }
     }
   }
-  const floorMesh = new THREE.InstancedMesh(floorGeo, flatMat(0x232028, 1), floors.length);
-  floors.forEach((mat, i) => floorMesh.setMatrixAt(i, mat));
-  floorMesh.receiveShadow = true;
-  scene.add(floorMesh);
-  const wallMesh = new THREE.InstancedMesh(wallGeo, flatMat(0x35303c, 0.95), walls.length);
-  walls.forEach((mat, i) => wallMesh.setMatrixAt(i, mat));
-  wallMesh.castShadow = true;
-  wallMesh.receiveShadow = true;
-  scene.add(wallMesh);
+  const floorTones = [0x232028, 0x201d25, 0x26222c];
+  floorBuckets.forEach((mats, i) => {
+    const mesh = new THREE.InstancedMesh(floorGeo, flatMat(floorTones[i]!, 1), mats.length);
+    mats.forEach((mat, j) => mesh.setMatrixAt(j, mat));
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  });
+  for (const bucket of wallBuckets) {
+    const mesh = new THREE.InstancedMesh(bucket.geo, flatMat(bucket.color, 0.95), bucket.mats.length);
+    bucket.mats.forEach((mat, j) => mesh.setMatrixAt(j, mat));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
 
-  // --- Hero ---
+  // --- Torches: emissive flames, the first few carrying real light ---
+  const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number }[] = [];
+  for (let i = 0; i < torchSpots.length && i < 14; i++) {
+    const spot = torchSpots[i]!;
+    const flame = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.09, 0),
+      new THREE.MeshStandardMaterial({
+        color: 0xffb35c,
+        emissive: 0xff9030,
+        emissiveIntensity: 2.2,
+      }),
+    );
+    flame.position.set(spot.x, 1.15, spot.fy + 0.08);
+    scene.add(flame);
+    const light =
+      i < 8 ? new THREE.PointLight(0xff9a45, 3.2, 6.5, 1.8) : null;
+    if (light) {
+      light.position.set(spot.x, 1.2, spot.fy + 0.25);
+      scene.add(light);
+    }
+    torches.push({ flame, light, seed: (i * 37) % 100 });
+  }
+
+  // --- Hero: body, head, and a blade on a swinging shoulder pivot ---
   const hero = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.5, 3, 8), flatMat(0x8a4a2c, 0.8));
-  body.position.y = 0.55;
-  body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18, 0), flatMat(0xd9b08c, 0.7));
-  head.position.y = 1.12;
-  head.castShadow = true;
-  hero.add(body, head);
+  const heroBody = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.5, 3, 8), flatMat(0x8a4a2c, 0.8));
+  heroBody.position.y = 0.55;
+  heroBody.castShadow = true;
+  const heroHead = new THREE.Mesh(new THREE.IcosahedronGeometry(0.18, 0), flatMat(0xd9b08c, 0.7));
+  heroHead.position.y = 1.12;
+  heroHead.castShadow = true;
+  const weaponPivot = new THREE.Group();
+  weaponPivot.position.set(0.3, 0.85, 0);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.72, 0.14), flatMat(0xb9bec9, 0.35));
+  blade.position.y = 0.42;
+  blade.castShadow = true;
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.05, 0.2), flatMat(0x6e5a32, 0.6));
+  guard.position.y = 0.1;
+  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.05), flatMat(0x4a3520, 0.8));
+  weaponPivot.add(blade, guard, grip);
+  weaponPivot.rotation.z = -0.5; // resting at the side
+  hero.add(heroBody, heroHead, weaponPivot);
   scene.add(hero);
+  // Renderer-side displacement for lunges; sim position stays authoritative.
+  const heroFxOffset = new THREE.Vector3();
 
   // --- Ground items ---
   const RARITY_COLORS: Record<string, { hex: number; css: string }> = {
@@ -200,6 +262,7 @@ export function createScene(
 
   // --- Monsters & corpses ---
   const monsterMeshes = new Map<number, THREE.Group>();
+  const monsterFxOffsets = new Map<number, THREE.Vector3>();
   const corpseMeshes: THREE.Mesh[] = [];
   let corpseCount = 0;
   const corpseMatByType: Record<string, THREE.MeshStandardMaterial> = {
@@ -210,8 +273,28 @@ export function createScene(
     barrow_lord: flatMat(0x272a38),
   };
 
-  // --- Explosions (expanding, fading rings) ---
-  const explosions: { mesh: THREE.Mesh; born: number; radius: number }[] = [];
+  // --- Expanding ground rings (explosions, cleave arcs, warcry) ---
+  const ring = (pos: Vec, radius: number, color: number, dur = 400) => {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.7, 1, 24),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(pos.x, 0.1, pos.y);
+    scene.add(mesh);
+    fx.tween(
+      dur,
+      (t) => {
+        const s = 0.2 + t * radius;
+        mesh.scale.set(s, 1, s);
+        (mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - t);
+      },
+      () => {
+        scene.remove(mesh);
+        (mesh.material as THREE.Material).dispose();
+      },
+    );
+  };
 
   // --- Picking ---
   const raycaster = new THREE.Raycaster();
@@ -242,7 +325,7 @@ export function createScene(
     render(state, prevPlayerPos, alpha) {
       const px = prevPlayerPos.x + (state.player.pos.x - prevPlayerPos.x) * alpha;
       const py = prevPlayerPos.y + (state.player.pos.y - prevPlayerPos.y) * alpha;
-      hero.position.set(px, 0, py);
+      hero.position.set(px + heroFxOffset.x, 0, py + heroFxOffset.z);
       heroLight.position.set(px, 1.6, py);
 
       const dx = state.player.pos.x - prevPlayerPos.x;
@@ -252,7 +335,9 @@ export function createScene(
         hero.rotation.y = Math.atan2(facing.x, facing.z);
       }
       const moving = state.player.path.length > 0;
-      hero.position.y = moving ? Math.abs(Math.sin(performance.now() / 90)) * 0.06 : 0;
+      hero.position.y = moving
+        ? Math.abs(Math.sin(performance.now() / 90)) * 0.06
+        : Math.sin(performance.now() / 700) * 0.015; // idle breath
       hero.rotation.x = state.player.dead ? Math.PI / 2 : 0;
 
       // Sync monster meshes with sim state
@@ -269,7 +354,12 @@ export function createScene(
           monsterMeshes.set(monster.id, mesh);
           scene.add(mesh);
         }
-        mesh.position.set(monster.pos.x, 0, monster.pos.y);
+        const off = monsterFxOffsets.get(monster.id);
+        mesh.position.set(
+          monster.pos.x + (off?.x ?? 0),
+          Math.sin((performance.now() + monster.id * 331) / 500) * 0.02,
+          monster.pos.y + (off?.z ?? 0),
+        );
         const mdx = state.player.pos.x - monster.pos.x;
         const mdy = state.player.pos.y - monster.pos.y;
         if (monster.ai === "chasing") mesh.rotation.y = Math.atan2(mdx, mdy);
@@ -339,21 +429,19 @@ export function createScene(
         if (corpseMeshes.length > 40) scene.remove(corpseMeshes.shift()!);
       }
 
-      // Animate explosion rings
-      for (let i = explosions.length - 1; i >= 0; i--) {
-        const ex = explosions[i]!;
-        const age = (performance.now() - ex.born) / 400;
-        if (age >= 1) {
-          scene.remove(ex.mesh);
-          explosions.splice(i, 1);
-          continue;
-        }
-        const s = 0.2 + age * ex.radius;
-        ex.mesh.scale.set(s, 1, s);
-        (ex.mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - age);
+      // Torch flicker
+      const now = performance.now();
+      for (const torch of torches) {
+        const flicker =
+          0.8 +
+          0.25 * Math.sin(now / 90 + torch.seed) +
+          0.12 * Math.sin(now / 41 + torch.seed * 3);
+        torch.flame.scale.setScalar(0.85 + flicker * 0.25);
+        if (torch.light) torch.light.intensity = 2.6 * flicker + 0.8;
       }
 
-      camera.position.set(px + camOffset.x, camOffset.y, py + camOffset.z);
+      const shakeOff = fx.update();
+      camera.position.set(px + camOffset.x + shakeOff.x, camOffset.y, py + camOffset.z + shakeOff.z);
       camera.lookAt(px, 0, py);
       moon.target.position.set(px, 0, py);
       moon.position.set(px + 18, 30, py + 8);
@@ -387,19 +475,116 @@ export function createScene(
     },
 
     addExplosion(pos, radius) {
-      const mesh = new THREE.Mesh(
-        new THREE.RingGeometry(0.7, 1, 24),
-        new THREE.MeshBasicMaterial({
-          color: 0xe8a44c,
-          transparent: true,
-          opacity: 0.8,
-          side: THREE.DoubleSide,
-        }),
-      );
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(pos.x, 0.1, pos.y);
-      scene.add(mesh);
-      explosions.push({ mesh, born: performance.now(), radius });
+      ring(pos, radius, 0xe8a44c);
+      fx.burst(pos.x, 0.4, pos.y, 0xe8a44c, 14, 3.4);
+      fx.shake(0.3);
+    },
+
+    handleEvent(event, state) {
+      switch (event.type) {
+        case "player_swing": {
+          const p = state.player.pos;
+          const dx = event.to.x - p.x;
+          const dy = event.to.y - p.y;
+          if (dx * dx + dy * dy > 1e-6) hero.rotation.y = Math.atan2(dx, dy);
+          const len = Math.hypot(dx, dy) || 1;
+          fx.tween(180, (t) => {
+            // Wind up, slash through, settle back to rest
+            weaponPivot.rotation.z =
+              t < 0.55
+                ? -1.7 + (1.0 - -1.7) * (1 - (1 - t / 0.55) ** 2)
+                : 1.0 + (-0.5 - 1.0) * ((t - 0.55) / 0.45);
+            const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
+            heroFxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
+          }, () => heroFxOffset.set(0, 0, 0));
+          break;
+        }
+        case "monster_swing": {
+          if (event.ranged) {
+            const glob = new THREE.Mesh(
+              new THREE.IcosahedronGeometry(0.09, 0),
+              new THREE.MeshStandardMaterial({
+                color: 0x9be07a,
+                emissive: 0x6fbf4a,
+                emissiveIntensity: 2.0,
+              }),
+            );
+            scene.add(glob);
+            const from = { ...event.from };
+            const to = { ...event.to };
+            fx.tween(150, (t) => {
+              glob.position.set(
+                from.x + (to.x - from.x) * t,
+                0.65 + Math.sin(t * Math.PI) * 0.35,
+                from.y + (to.y - from.y) * t,
+              );
+            }, () => {
+              scene.remove(glob);
+              fx.burst(to.x, 0.5, to.y, 0x9be07a, 5, 1.6);
+            });
+          } else {
+            const off = monsterFxOffsets.get(event.id) ?? new THREE.Vector3();
+            monsterFxOffsets.set(event.id, off);
+            const dx = event.to.x - event.from.x;
+            const dy = event.to.y - event.from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            fx.tween(160, (t) => {
+              const lunge = Math.sin(t * Math.PI) * 0.28;
+              off.set((dx / len) * lunge, 0, (dy / len) * lunge);
+            }, () => off.set(0, 0, 0));
+          }
+          break;
+        }
+        case "monster_hit": {
+          const mesh = monsterMeshes.get(event.id);
+          if (mesh) {
+            fx.flash(mesh, 0xffffff);
+            fx.tween(120, (t) => {
+              const s = 1 + Math.sin(t * Math.PI) * 0.14;
+              mesh.scale.set(s, 2 - s, s);
+            }, () => mesh.scale.set(1, 1, 1));
+          }
+          fx.burst(event.pos.x, 0.55, event.pos.y, 0x8a2a2a, 6, 1.8);
+          break;
+        }
+        case "player_hit": {
+          fx.flash(hero, 0xc03030, 110);
+          fx.burst(state.player.pos.x, 0.7, state.player.pos.y, 0xc03030, 5, 1.6);
+          fx.shake(0.06);
+          break;
+        }
+        case "monster_died": {
+          const mesh = monsterMeshes.get(event.id);
+          if (mesh) {
+            monsterMeshes.delete(event.id);
+            const dir = ((event.id * 61) % 2) * 2 - 1;
+            fx.tween(300, (t) => {
+              mesh.rotation.z = dir * t * (Math.PI / 2);
+              mesh.position.y = -t * 0.25;
+              const s = 1 - t * 0.25;
+              mesh.scale.set(s, s, s);
+            }, () => scene.remove(mesh));
+          }
+          monsterFxOffsets.delete(event.id);
+          fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
+          break;
+        }
+        case "skill_cast": {
+          if (event.skill === "cleave") {
+            ring(event.pos, 1.8, 0xd9dde8, 240);
+            fx.shake(0.08);
+          } else if (event.skill === "warcry") {
+            ring(event.pos, 2.6, 0x6a9ad1, 500);
+          } else if (event.skill === "leap") {
+            ring(event.pos, 1.6, 0x8a8478, 260);
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
+            fx.shake(0.18);
+          } else if (event.skill === "crush") {
+            fx.shake(0.12);
+          }
+          break;
+        }
+      }
     },
 
     addDamageNumber(pos, text, color) {

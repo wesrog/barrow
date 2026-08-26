@@ -144,6 +144,15 @@ export function createScene(mount: HTMLElement, map: ZoneMap): SceneHandle {
   hero.add(body, head);
   scene.add(hero);
 
+  // --- Ground items ---
+  const RARITY_COLORS: Record<string, { hex: number; css: string }> = {
+    normal: { hex: 0xbdbdbd, css: "#d6d6d6" },
+    magic: { hex: 0x5f7fe8, css: "#8ba3f5" },
+    rare: { hex: 0xe8d95f, css: "#f0e68c" },
+    unique: { hex: 0xc9884c, css: "#d9a05c" },
+  };
+  const groundItemVisuals = new Map<number, { mesh: THREE.Mesh; label: HTMLDivElement }>();
+
   // --- Monsters & corpses ---
   const monsterMeshes = new Map<number, THREE.Group>();
   const corpseMeshes: THREE.Mesh[] = [];
@@ -213,6 +222,43 @@ export function createScene(mount: HTMLElement, map: ZoneMap): SceneHandle {
         const mdx = state.player.pos.x - monster.pos.x;
         const mdy = state.player.pos.y - monster.pos.y;
         if (monster.ai === "chasing") mesh.rotation.y = Math.atan2(mdx, mdy);
+      }
+
+      // Sync ground items
+      for (const [id, v] of groundItemVisuals) {
+        if (!state.groundItems.has(id)) {
+          scene.remove(v.mesh);
+          v.label.remove();
+          groundItemVisuals.delete(id);
+        }
+      }
+      for (const gi of state.groundItems.values()) {
+        let v = groundItemVisuals.get(gi.id);
+        if (!v) {
+          const colors = RARITY_COLORS[gi.item.rarity]!;
+          const mesh = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.14, 0),
+            new THREE.MeshStandardMaterial({
+              color: colors.hex,
+              emissive: colors.hex,
+              emissiveIntensity: 0.55,
+              roughness: 0.4,
+              flatShading: true,
+            }),
+          );
+          mesh.position.set(gi.pos.x, 0.16, gi.pos.y);
+          scene.add(mesh);
+          const label = document.createElement("div");
+          label.textContent = gi.item.name;
+          label.style.cssText = `position:absolute;color:${colors.css};font-size:11.5px;transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:1px 5px;white-space:nowrap;text-shadow:0 1px 2px #000;`;
+          overlay.appendChild(label);
+          v = { mesh, label };
+          groundItemVisuals.set(gi.id, v);
+        }
+        v.mesh.rotation.y = performance.now() / 900;
+        const at = worldToScreen(gi.pos, 0.6);
+        v.label.style.left = `${at.x}px`;
+        v.label.style.top = `${at.y}px`;
       }
 
       // Corpses: add newly dead

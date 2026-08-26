@@ -18,6 +18,10 @@ export interface MonsterType {
   /** Ticks between swings. */
   swingEvery: number;
   xp: number;
+  /** Treasure class rolled on death. */
+  tc: string;
+  /** Monster level: caps droppable bases and affix levels. */
+  mlvl: number;
 }
 
 export const MONSTER_TYPES: Record<string, MonsterType> = {
@@ -34,6 +38,8 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     range: 1.1,
     swingEvery: 25,
     xp: 12,
+    tc: "standard",
+    mlvl: 5,
   },
   skitter: {
     id: "skitter",
@@ -48,6 +54,8 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     range: 1.0,
     swingEvery: 15,
     xp: 6,
+    tc: "trash",
+    mlvl: 2,
   },
 };
 
@@ -72,6 +80,8 @@ export interface Monster {
   path: Vec[];
   repathIn: number;
   xp: number;
+  tc: string;
+  mlvl: number;
 }
 
 export interface Corpse {
@@ -103,6 +113,8 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec): Monste
     path: [],
     repathIn: 0,
     xp: t.xp,
+    tc: t.tc,
+    mlvl: t.mlvl,
   };
   state.monsters.set(monster.id, monster);
   return monster;

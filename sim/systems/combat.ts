@@ -3,6 +3,7 @@ import type { Vec } from "../map";
 import { findPath } from "../path";
 import type { GameState, PlayerInput } from "../state";
 import type { Monster } from "../monsters";
+import { rollDrop } from "../items/treasure";
 import { moveAlongPath } from "./movement";
 
 export function computeHitChance(attackRating: number, defense: number): number {
@@ -112,5 +113,15 @@ export function deathSystem(state: GameState): void {
     state.monsters.delete(m.id);
     state.corpses.push({ typeId: m.typeId, pos: { ...m.pos }, diedAt: state.tick });
     state.events.push({ type: "monster_died", id: m.id, typeId: m.typeId, pos: { ...m.pos } });
+    const item = rollDrop(state.rng, m.tc, m.mlvl);
+    if (item) {
+      const pos = {
+        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
+        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
+      };
+      const id = state.nextId++;
+      state.groundItems.set(id, { id, item, pos });
+      state.events.push({ type: "item_dropped", id, name: item.name, rarity: item.rarity, pos });
+    }
   }
 }

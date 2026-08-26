@@ -36,6 +36,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     },
     monsters: new Map(),
     corpses: [],
+    groundItems: new Map(),
     events: [],
     nextId: 1,
   };

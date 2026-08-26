@@ -1,6 +1,7 @@
 import type { Rng } from "./rng";
 import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
+import type { Item, Rarity } from "./items/generate";
 
 export interface Player {
   pos: Vec;
@@ -24,10 +25,17 @@ export interface Player {
   attackTarget: number | null;
 }
 
+export interface GroundItem {
+  id: number;
+  item: Item;
+  pos: Vec;
+}
+
 export type SimEvent =
   | { type: "player_hit"; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec }
-  | { type: "monster_died"; id: number; typeId: string; pos: Vec };
+  | { type: "monster_died"; id: number; typeId: string; pos: Vec }
+  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec };
 
 export interface GameState {
   tick: number;
@@ -36,6 +44,7 @@ export interface GameState {
   player: Player;
   monsters: Map<number, Monster>;
   corpses: Corpse[];
+  groundItems: Map<number, GroundItem>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;

@@ -160,3 +160,40 @@ describe("swing events", () => {
     expect(seen).toBe(true);
   });
 });
+
+describe("attack in place (shift-click)", () => {
+  test("swings at a nearby monster without moving", () => {
+    const game = createGame(1, arena());
+    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const start = { ...game.player.pos };
+    let hit = false;
+    for (let i = 0; i < 40 && !hit; i++) {
+      step(game, { swingAt: { x: 2.2, y: 1.5 } });
+      if (game.events.some((e) => e.type === "monster_hit" && (e as any).id === m.id)) hit = true;
+      expect(game.player.pos).toEqual(start);
+      expect(game.player.path).toHaveLength(0);
+    }
+    expect(hit).toBe(true);
+  });
+
+  test("swinging at empty air still swings, hits nothing, never moves", () => {
+    const game = createGame(1, arena());
+    spawnMonster(game, "shambler", { x: 9.5, y: 3.5 }); // far away
+    const start = { ...game.player.pos };
+    let swings = 0;
+    for (let i = 0; i < 30; i++) {
+      step(game, { swingAt: { x: 3.5, y: 1.5 } });
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+      expect(game.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
+    }
+    expect(game.player.pos).toEqual(start);
+    expect(swings).toBeGreaterThanOrEqual(2);
+  });
+
+  test("a swing-in-place cancels a pending move", () => {
+    const game = createGame(1, arena());
+    step(game, { moveTo: { x: 9.5, y: 3.5 } });
+    step(game, { swingAt: { x: 3.5, y: 1.5 } });
+    expect(game.player.path).toHaveLength(0);
+  });
+});

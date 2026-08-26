@@ -5,9 +5,11 @@ import { cryptZone } from "../sim/zone";
 import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
+import { play, unlock } from "./audio";
 import { createScene } from "./render/scene";
 import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
+import { MiniMap } from "./ui/MiniMap";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 
@@ -37,10 +39,25 @@ function Game() {
     let mouseDown = false;
     let lastPointer: { x: number; y: number } | null = null;
 
+    let shiftDown = false;
     const aimFromPointer = (allowAttack: boolean) => {
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
       if (!picked) return;
+      if (shiftDown) {
+        // Stand ground and swing toward the cursor, D2-style.
+        const at =
+          picked.kind === "ground"
+            ? picked.world
+            : picked.kind === "monster"
+              ? game.monsters.get(picked.id)?.pos
+              : undefined;
+        if (at) {
+          pending.swingAt = { ...at };
+          delete pending.moveTo;
+        }
+        return;
+      }
       if (picked.kind === "monster" && allowAttack) {
         pending.attack = picked.id;
         delete pending.moveTo;
@@ -52,15 +69,18 @@ function Game() {
       }
     };
     const onPointerDown = (e: PointerEvent) => {
+      unlock(); // first gesture wakes the audio engine
       if (e.button !== 0) return;
       // Only canvas clicks are world clicks — HUD panels handle their own.
       if (!(e.target instanceof HTMLCanvasElement)) return;
       mouseDown = true;
+      shiftDown = e.shiftKey;
       lastPointer = { x: e.clientX, y: e.clientY };
       aimFromPointer(true);
     };
     const onPointerMove = (e: PointerEvent) => {
       lastPointer = { x: e.clientX, y: e.clientY };
+      shiftDown = e.shiftKey;
     };
     const onPointerUp = () => {
       mouseDown = false;
@@ -113,7 +133,7 @@ function Game() {
       last = now;
       let sawEvents = false;
       while (acc >= TICK_MS) {
-        if (mouseDown && pending.attack === undefined) aimFromPointer(false);
+        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(!shiftDown ? false : true);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
         prevPlayerPos = { ...game.player.pos };
@@ -121,24 +141,60 @@ function Game() {
         pending = {};
         for (const e of game.events) {
           scene.handleEvent(e, game);
-          if (e.type === "monster_hit") {
-            scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
-          } else if (e.type === "player_hit") {
-            scene.addDamageNumber(game.player.pos, String(e.amount), "#e05252");
-          } else if (e.type === "level_up") {
-            scene.addDamageNumber(game.player.pos, `level ${e.level}!`, "#f0c96a");
-          } else if (e.type === "skill_cast" && e.skill === "warcry") {
-            scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
-          } else if (e.type === "potion_drunk") {
-            scene.addDamageNumber(game.player.pos, `+${e.healed}`, "#7fd97f");
-          } else if (e.type === "exploded") {
-            scene.addExplosion(e.pos, e.radius);
+          switch (e.type) {
+            case "monster_hit":
+              scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
+              play("hit");
+              break;
+            case "player_hit":
+              scene.addDamageNumber(game.player.pos, String(e.amount), "#e05252");
+              play("hurt");
+              break;
+            case "player_swing":
+              play("swing");
+              break;
+            case "monster_swing":
+              if (e.ranged) play("spit");
+              break;
+            case "monster_windup":
+              play("windup");
+              break;
+            case "monster_died":
+              play("die");
+              break;
+            case "item_dropped":
+              play(e.rarity === "normal" ? "drop" : "drop_rare");
+              break;
+            case "item_picked":
+              play("pickup");
+              break;
+            case "potion_drunk":
+              scene.addDamageNumber(game.player.pos, `+${e.healed}`, "#7fd97f");
+              play("potion");
+              break;
+            case "level_up":
+              scene.addDamageNumber(game.player.pos, `level ${e.level}!`, "#f0c96a");
+              play("levelup");
+              break;
+            case "exploded":
+              scene.addExplosion(e.pos, e.radius);
+              play("explode");
+              break;
+            case "skill_cast":
+              if (e.skill === "warcry") {
+                scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
+                play("warcry");
+              } else if (e.skill === "cleave") play("cleave");
+              else if (e.skill === "crush") play("crush");
+              else if (e.skill === "leap") play("leap");
+              break;
           }
         }
         if (game.events.length > 0) sawEvents = true;
         acc -= TICK_MS;
       }
       if (sawEvents) setVersion((v) => v + 1);
+      if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPlayerPos, acc / TICK_MS);
     };
     raf = requestAnimationFrame(frame);
@@ -160,6 +216,7 @@ function Game() {
   return (
     <div ref={mountRef} style={{ width: "100%", height: "100%" }}>
       {gameRef.current && <BottomBar game={gameRef.current} />}
+      {gameRef.current && <MiniMap game={gameRef.current} />}
       {skillsOpen && gameRef.current && (
         <SkillPanel
           game={gameRef.current}
@@ -176,6 +233,9 @@ function Game() {
           }}
           onUnequip={(slot: EquipSlot) => {
             uiInputRef.current.unequip = slot;
+          }}
+          onDrop={(entryId) => {
+            uiInputRef.current.dropItem = entryId;
           }}
         />
       )}

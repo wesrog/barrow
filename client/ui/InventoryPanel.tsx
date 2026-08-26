@@ -67,10 +67,12 @@ export function InventoryPanel({
   game,
   onEquip,
   onUnequip,
+  onDrop,
 }: {
   game: GameState;
   onEquip: (entryId: number) => void;
   onUnequip: (slot: EquipSlot) => void;
+  onDrop: (entryId: number) => void;
 }) {
   const [hovered, setHovered] = useState<Item | null>(null);
   const p = game.player;
@@ -129,9 +131,14 @@ export function InventoryPanel({
             <div
               key={e.id}
               onClick={() => onEquip(e.id)}
+              onContextMenu={(ev) => {
+                ev.preventDefault();
+                setHovered(null);
+                onDrop(e.id);
+              }}
               onMouseEnter={() => setHovered(e.item)}
               onMouseLeave={() => setHovered(null)}
-              title="click to equip"
+              title="click to equip · right-click to drop"
               style={{
                 position: "absolute",
                 left: e.x * CELL + 1,
@@ -171,7 +178,9 @@ export function InventoryPanel({
             ))}
           </>
         ) : (
-          <div style={{ color: "#55503f" }}>hover an item · click to equip / unequip · i to close</div>
+          <div style={{ color: "#55503f" }}>
+            click to equip / unequip · right-click to drop · i to close
+          </div>
         )}
       </div>
     </div>

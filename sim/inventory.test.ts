@@ -158,3 +158,23 @@ describe("unequip", () => {
     expect(state.player.equipment.weapon?.baseId).toBe("rusted_blade");
   });
 });
+
+describe("dropping items", () => {
+  test("a dropped inventory item lands on the ground at the player's feet", () => {
+    const state = createGame(1, openMap());
+    const id = state.nextId++;
+    placeItem(state.player.inventory, id, plain("rag_tunic"));
+    step(state, { dropItem: id });
+    expect(state.player.inventory.entries).toHaveLength(0);
+    expect(state.groundItems.size).toBe(1);
+    const gi = [...state.groundItems.values()][0]!;
+    expect(gi.item.baseId).toBe("rag_tunic");
+    expect(Math.hypot(gi.pos.x - state.player.pos.x, gi.pos.y - state.player.pos.y)).toBeLessThan(1.5);
+  });
+
+  test("dropping an unknown entry does nothing", () => {
+    const state = createGame(1, openMap());
+    step(state, { dropItem: 999 });
+    expect(state.groundItems.size).toBe(0);
+  });
+});

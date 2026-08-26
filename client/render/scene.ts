@@ -23,6 +23,8 @@ export interface SceneHandle {
   addExplosion(pos: Vec, radius: number): void;
   /** Play any visual reaction this sim event deserves (swings, hits, deaths...). */
   handleEvent(event: SimEvent, state: GameState): void;
+  /** Highlight whatever is under the cursor and set an appropriate cursor. */
+  updateHover(state: GameState, clientX: number, clientY: number): void;
   dispose(): void;
 }
 
@@ -186,6 +188,22 @@ export function createScene(
   const monsterFxOffsets = new Map<number, THREE.Vector3>();
   const monsterAnim = new Map<number, { phase: number; last: { x: number; y: number } }>();
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
+
+  // --- Hover highlight: brighten the rig under the cursor ---
+  let hoveredId: number | null = null;
+  const hoverTint = (rig: Rig | undefined, on: boolean) => {
+    rig?.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        const mat = obj.material;
+        if (on) {
+          if (mat.userData.baseColor === undefined) mat.userData.baseColor = mat.color.getHex();
+          mat.color.setHex(mat.userData.baseColor).multiplyScalar(1.45);
+        } else if (mat.userData.baseColor !== undefined) {
+          mat.color.setHex(mat.userData.baseColor);
+        }
+      }
+    });
+  };
   const corpseMeshes: THREE.Mesh[] = [];
   let corpseCount = 0;
   const corpseMatByType: Record<string, THREE.MeshStandardMaterial> = {
@@ -424,6 +442,25 @@ export function createScene(
           if (rig.group === obj) return { kind: "monster", id };
         }
       }
+      // Forgiving fallback: nearest monster within a generous screen radius.
+      {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const cx = clientX - rect.left;
+        const cy = clientY - rect.top;
+        let bestId: number | null = null;
+        let bestD = 30; // px
+        for (const [id] of monsterRigs) {
+          const monster = state.monsters.get(id);
+          if (!monster) continue;
+          const at = worldToScreen(monster.pos, 0.55);
+          const d = Math.hypot(at.x - cx, at.y - cy);
+          if (d < bestD) {
+            bestD = d;
+            bestId = id;
+          }
+        }
+        if (bestId !== null) return { kind: "monster", id: bestId };
+      }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
       const itemHits = raycaster.intersectObjects(itemMeshes, false);
@@ -442,8 +479,27 @@ export function createScene(
       fx.shake(0.3);
     },
 
+    updateHover(state, clientX, clientY) {
+      const picked = this.pick(state, clientX, clientY);
+      const id = picked?.kind === "monster" ? picked.id : null;
+      if (id !== hoveredId) {
+        hoverTint(hoveredId !== null ? monsterRigs.get(hoveredId) : undefined, false);
+        hoverTint(id !== null ? monsterRigs.get(id) : undefined, true);
+        hoveredId = id;
+      }
+      renderer.domElement.style.cursor =
+        picked?.kind === "monster" || picked?.kind === "item" ? "pointer" : "default";
+    },
+
     handleEvent(event, state) {
       switch (event.type) {
+        case "monster_windup": {
+          // The boss telegraphs: a growing blood ring and a darkening body.
+          const mesh = monsterRigs.get(event.id)?.group;
+          if (mesh) fx.flash(mesh, 0x7a1010, event.ticks * 40);
+          ring(event.pos, 2.0, 0xc03030, event.ticks * 40);
+          break;
+        }
         case "player_swing": {
           const p = state.player.pos;
           const dx = event.to.x - p.x;

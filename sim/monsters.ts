@@ -28,6 +28,8 @@ export interface MonsterType {
   explode?: { radius: number; dmgMin: number; dmgMax: number };
   /** Always drops, magic or better (boss packs). */
   guaranteedDrop?: boolean;
+  /** Telegraphed attack: ticks of visible windup before the strike lands. */
+  windup?: number;
 }
 
 export const MONSTER_TYPES: Record<string, MonsterType> = {
@@ -113,6 +115,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     tc: "boss",
     mlvl: 8,
     guaranteedDrop: true,
+    windup: 20,
   },
 };
 
@@ -142,6 +145,9 @@ export interface Monster {
   ranged?: number;
   explode?: { radius: number; dmgMin: number; dmgMax: number };
   guaranteedDrop?: boolean;
+  windup?: number;
+  /** Tick when a telegraphed strike lands, or null when not winding up. */
+  windingUntil: number | null;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
 }
@@ -180,6 +186,8 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec): Monste
     ranged: t.ranged,
     explode: t.explode,
     guaranteedDrop: t.guaranteedDrop,
+    windup: t.windup,
+    windingUntil: null,
     stunnedUntil: 0,
   };
   state.monsters.set(monster.id, monster);

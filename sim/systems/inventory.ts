@@ -29,6 +29,20 @@ export function recomputePlayerStats(state: GameState): void {
   if (p.mana > p.maxMana) p.mana = p.maxMana;
 }
 
+export function applyDropItemInput(state: GameState, input: PlayerInput): void {
+  if (input.dropItem === undefined) return;
+  const p = state.player;
+  const entry = removeEntry(p.inventory, input.dropItem);
+  if (!entry) return;
+  const pos = {
+    x: p.pos.x + (state.rng.next() - 0.5) * 1.2,
+    y: p.pos.y + (state.rng.next() - 0.5) * 1.2,
+  };
+  const id = state.nextId++;
+  state.groundItems.set(id, { id, item: entry.item, pos });
+  state.events.push({ type: "item_dropped", id, name: entry.item.name, rarity: entry.item.rarity, pos });
+}
+
 export function applyDrinkInput(state: GameState, input: PlayerInput): void {
   if (!input.drink) return;
   const p = state.player;

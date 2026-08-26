@@ -40,6 +40,33 @@ export function applyAttackInput(state: GameState, input: PlayerInput): void {
   }
 }
 
+/** Shift-click: stand your ground and swing toward a point. */
+export function applySwingInPlaceInput(state: GameState, input: PlayerInput): void {
+  if (!input.swingAt) return;
+  const p = state.player;
+  p.path = [];
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  if (p.swingCooldown > 0) return;
+  p.swingCooldown = p.swingEvery;
+  state.events.push({ type: "player_swing", to: { ...input.swingAt } });
+  // Hit the nearest monster within melee reach, if any.
+  let best: Monster | null = null;
+  let bestD = Infinity;
+  for (const m of state.monsters.values()) {
+    const d = dist(m.pos, p.pos);
+    if (d <= p.range && d < bestD) {
+      best = m;
+      bestD = d;
+    }
+  }
+  if (best && state.rng.next() < computeHitChance(p.attackRating, best.defense)) {
+    const amount = rollDamage(state.rng, p.dmgMin, p.dmgMax);
+    best.life -= amount;
+    state.events.push({ type: "monster_hit", id: best.id, amount, pos: { ...best.pos } });
+  }
+}
+
 export function playerCombatSystem(state: GameState): void {
   const p = state.player;
   if (p.swingCooldown > 0) p.swingCooldown--;
@@ -72,10 +99,35 @@ export function monsterAiSystem(state: GameState): void {
   const p = state.player;
   for (const m of state.monsters.values()) {
     if (m.swingCooldown > 0) m.swingCooldown--;
-    if (m.stunnedUntil > state.tick) continue;
+    if (m.stunnedUntil > state.tick) {
+      m.windingUntil = null; // a stun breaks the windup
+      continue;
+    }
     if (p.dead) {
       m.ai = "idle";
       m.path = [];
+      m.windingUntil = null;
+      continue;
+    }
+    // A telegraphed strike in progress: hold position until it lands.
+    if (m.windingUntil !== null) {
+      if (state.tick < m.windingUntil) continue;
+      m.windingUntil = null;
+      const reach = dist(m.pos, p.pos);
+      if (reach <= m.range * 1.4) {
+        state.events.push({
+          type: "monster_swing",
+          id: m.id,
+          from: { ...m.pos },
+          to: { ...p.pos },
+          ranged: false,
+        });
+        if (state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
+          const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
+          p.life -= amount;
+          state.events.push({ type: "player_hit", amount });
+        }
+      }
       continue;
     }
     const d = dist(m.pos, p.pos);
@@ -91,6 +143,12 @@ export function monsterAiSystem(state: GameState): void {
       m.path = [];
       if (m.swingCooldown === 0) {
         m.swingCooldown = m.swingEvery;
+        if (m.windup !== undefined && !m.ranged) {
+          // Telegraph: announce the strike, land it windup ticks later.
+          m.windingUntil = state.tick + m.windup;
+          state.events.push({ type: "monster_windup", id: m.id, ticks: m.windup, pos: { ...m.pos } });
+          continue;
+        }
         state.events.push({
           type: "monster_swing",
           id: m.id,

@@ -51,6 +51,7 @@ export interface GroundItem {
 export type SimEvent =
   | { type: "player_swing"; to: Vec }
   | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean }
+  | { type: "monster_windup"; id: number; ticks: number; pos: Vec }
   | { type: "player_hit"; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec }
   | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }
@@ -82,12 +83,16 @@ export interface PlayerInput {
   moveTo?: Vec;
   /** Monster id the player clicked to attack. */
   attack?: number;
+  /** Shift-click: swing toward this point without moving (hits whatever is in reach). */
+  swingAt?: Vec;
   /** Ground item id the player clicked to pick up. */
   pickup?: number;
   /** Inventory entry id to equip. */
   equip?: number;
   /** Equipment slot to unequip back into the inventory. */
   unequip?: EquipSlot;
+  /** Inventory entry id to toss on the ground at the player's feet. */
+  dropItem?: number;
   /** Spend a skill point on this skill. */
   spendSkill?: SkillId;
   /** Cast a skill, optionally at a ground position or monster target. */

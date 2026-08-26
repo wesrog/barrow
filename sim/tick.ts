@@ -4,12 +4,14 @@ import type { GameState, PlayerInput } from "./state";
 import { applyMoveInput, movementSystem } from "./systems/movement";
 import {
   applyAttackInput,
+  applySwingInPlaceInput,
   deathSystem,
   monsterAiSystem,
   playerCombatSystem,
 } from "./systems/combat";
 import {
   applyDrinkInput,
+  applyDropItemInput,
   applyEquipInput,
   applyPickupInput,
   pickupSystem,
@@ -113,8 +115,10 @@ export function step(state: GameState, input: PlayerInput): void {
   if (!state.player.dead) {
     applyMoveInput(state, input);
     applyAttackInput(state, input);
+    applySwingInPlaceInput(state, input);
     applyPickupInput(state, input);
     applyEquipInput(state, input);
+    applyDropItemInput(state, input);
     applyDrinkInput(state, input);
     applySpendSkillInput(state, input);
     manaRegenSystem(state);

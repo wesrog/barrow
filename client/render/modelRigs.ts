@@ -301,6 +301,13 @@ const MONSTER_LOOKS: Record<
     weapon: "skeleton_axe",
     tint: 0xc9b880,
   },
+  // The camp vendor: an old knight minding the stall.
+  __vendor__: {
+    model: "knight",
+    idle: "Idle",
+    walk: "Walking_A",
+    scale: 0.72,
+  },
 };
 
 export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & Partial<ModelRig> {

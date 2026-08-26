@@ -12,6 +12,7 @@ interface CharacterSave {
   skillPoints: number;
   skills: Record<SkillId, number>;
   belt: number;
+  gold?: number;
   inventory: Inventory;
   equipment: Equipment;
 }
@@ -25,6 +26,7 @@ export function serializeCharacter(state: GameState): string {
     skillPoints: p.skillPoints,
     skills: { ...p.skills },
     belt: p.belt,
+    gold: p.gold,
     inventory: p.inventory,
     equipment: p.equipment,
   };
@@ -48,6 +50,7 @@ export function applyCharacter(state: GameState, raw: string): boolean {
   p.skillPoints = save.skillPoints;
   p.skills = { ...save.skills };
   p.belt = save.belt;
+  p.gold = save.gold ?? 0;
   p.inventory = save.inventory;
   p.equipment = save.equipment;
   // Keep item ids clear of the fresh state's counter.

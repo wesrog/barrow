@@ -195,6 +195,61 @@ export function createScene(
     scene.add(pit, rim);
   }
 
+  const placePieceLater: (() => void)[] = [];
+
+  // --- Portal pad (town): a slowly turning arcane ring ---
+  let portalRing: THREE.Mesh | null = null;
+  for (const marker of map.markers) {
+    if (marker.ch !== "P") continue;
+    portalRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.35, 0.55, 6),
+      new THREE.MeshBasicMaterial({ color: 0x7fb8f5, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+    );
+    portalRing.rotation.x = -Math.PI / 2;
+    portalRing.position.set(marker.x, 0.08, marker.y);
+    scene.add(portalRing);
+    const glow = new THREE.PointLight(0x7fb8f5, 2.5, 5, 1.8);
+    glow.position.set(marker.x, 0.8, marker.y);
+    scene.add(glow);
+  }
+
+  // --- Vendor (town): a knight minding the stall ---
+  let vendorRig: Rig | null = null;
+  for (const marker of map.markers) {
+    if (marker.ch !== "V") continue;
+    vendorRig = makeMonsterModelRig(assets, "__vendor__") as Rig;
+    scene.add(vendorRig.group);
+    vendorRig.group.position.set(marker.x, 0, marker.y);
+    vendorRig.group.rotation.y = Math.PI * 0.75;
+    // A market stall: crates and a barrel beside the knight
+    placePieceLater.push(() => {
+      placePiece(assets.dungeon.crates, marker.x + 0.9, marker.y + 0.3, 0.4, { x: 0.3, y: 0.3, z: 0.3 });
+      placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
+      placePiece(assets.dungeon.chest, marker.x + 0.1, marker.y + 0.9, Math.PI, { x: 0.35, y: 0.35, z: 0.35 });
+    });
+  }
+  for (const fn of placePieceLater) fn();
+
+  // --- Gold piles ---
+  const goldVisuals = new Map<number, THREE.Group>();
+  const makeGoldPile = () => {
+    const g = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const nug = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.06 + (i % 2) * 0.02, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0xe8c34c,
+          emissive: 0xb98a1c,
+          emissiveIntensity: 0.7,
+          roughness: 0.35,
+        }),
+      );
+      nug.position.set((i - 1) * 0.09, 0.05 + (i % 2) * 0.04, ((i * 7) % 3 - 1) * 0.07);
+      g.add(nug);
+    }
+    return g;
+  };
+
   // --- Torches: emissive flames, the first few carrying real light ---
   const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number }[] = [];
   for (let i = 0; i < torchSpots.length && i < 14; i++) {
@@ -505,6 +560,26 @@ export function createScene(
         v.label.style.left = `${at.x}px`;
         v.label.style.top = `${at.y}px`;
       }
+
+      // Sync gold piles
+      for (const [id, g] of goldVisuals) {
+        if (!state.goldPiles.has(id)) {
+          scene.remove(g);
+          goldVisuals.delete(id);
+        }
+      }
+      for (const pile of state.goldPiles.values()) {
+        if (!goldVisuals.has(pile.id)) {
+          const g = makeGoldPile();
+          g.position.set(pile.pos.x, 0, pile.pos.y);
+          scene.add(g);
+          goldVisuals.set(pile.id, g);
+        }
+      }
+
+      // Town dressing: the portal ring turns, the vendor idles
+      if (portalRing) portalRing.rotation.z = performance.now() / 1400;
+      vendorRig?.animate(frameNow, 0, 0);
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
       if (state.corpses.length < corpseCount) {

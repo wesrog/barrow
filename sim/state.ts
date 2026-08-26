@@ -39,6 +39,7 @@ export interface Player {
   warcryUntil: number;
   /** Healing potions on the belt. */
   belt: number;
+  gold: number;
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
@@ -47,6 +48,12 @@ export interface Player {
 export interface GroundItem {
   id: number;
   item: Item;
+  pos: Vec;
+}
+
+export interface GoldPile {
+  id: number;
+  amount: number;
   pos: Vec;
 }
 
@@ -62,11 +69,35 @@ export type SimEvent =
   | { type: "exploded"; pos: Vec; radius: number }
   | { type: "potion_drunk"; healed: number }
   | { type: "descended"; depth: number }
+  | { type: "gold_dropped"; id: number; amount: number; pos: Vec }
+  | { type: "gold_picked"; amount: number }
+  | { type: "item_broke"; name: string }
+  | { type: "repaired"; cost: number }
+  | { type: "portal"; to: "town" | "crypt" }
+  | { type: "bought"; name: string; price: number }
+  | { type: "sold"; name: string; price: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
   | { type: "item_picked"; id: number; name: string }
   | { type: "item_equipped"; slot: EquipSlot }
   | { type: "item_unequipped"; slot: EquipSlot }
   | { type: "inventory_full" };
+
+export interface ShopEntry {
+  item: Item;
+  price: number;
+}
+
+/** Everything the dungeon holds, frozen while the player is topside. */
+export interface TownState {
+  saved: {
+    map: ZoneMap;
+    monsters: Map<number, Monster>;
+    groundItems: Map<number, GroundItem>;
+    goldPiles: Map<number, GoldPile>;
+    corpses: Corpse[];
+    pos: Vec;
+  };
+}
 
 export interface GameState {
   tick: number;
@@ -74,10 +105,15 @@ export interface GameState {
   map: ZoneMap;
   /** Crypt floor, 1-based; deeper floors scale monsters and loot. */
   depth: number;
+  /** Non-null while the player is up in the camp. */
+  town: TownState | null;
+  /** The vendor's current stock; restocked each town visit. */
+  shop: ShopEntry[];
   player: Player;
   monsters: Map<number, Monster>;
   corpses: Corpse[];
   groundItems: Map<number, GroundItem>;
+  goldPiles: Map<number, GoldPile>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;
@@ -106,4 +142,12 @@ export interface PlayerInput {
   drink?: boolean;
   /** Start a fresh run: respawn the zone, revive, keep the character. */
   newGame?: boolean;
+  /** Open a portal and step through to the camp. */
+  townPortal?: boolean;
+  /** Buy the shop entry at this index (town only). */
+  buy?: number;
+  /** Sell this inventory entry to the vendor (town only). */
+  sell?: number;
+  /** Repair all gear at the vendor (town only). */
+  repair?: boolean;
 }

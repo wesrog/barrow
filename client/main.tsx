@@ -11,6 +11,7 @@ import { createScene } from "./render/scene";
 import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
 import { MiniMap } from "./ui/MiniMap";
+import { ShopPanel } from "./ui/ShopPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 
@@ -23,6 +24,7 @@ function Game() {
   const uiInputRef = useRef<PlayerInput>({});
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
   const [, setVersion] = useState(0);
 
   const [loading, setLoading] = useState(true);
@@ -40,9 +42,11 @@ function Game() {
       const game = createGame(Date.now() >>> 0, map);
       loadFromStorage(game);
       gameRef.current = game;
-      const scene = createScene(mount, map, assets, (itemId) => {
+      const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
-      });
+      };
+      let scene = createScene(mount, map, assets, onItemClick);
+      let sceneMap = game.map;
 
     let pending: PlayerInput = {};
     let prevPlayerPos = { ...game.player.pos };
@@ -114,6 +118,8 @@ function Game() {
       else if (e.key === "s") setSkillsOpen((open) => !open);
       else if (e.key === "q") uiInputRef.current.drink = true;
       else if (e.key === "n") uiInputRef.current.newGame = true;
+      else if (e.key === "t") uiInputRef.current.townPortal = true;
+      else if (e.key === "v") setShopOpen((open) => !open);
       else if (e.key === "N") {
         // Bury this character and start fresh.
         wipeStorage();
@@ -194,6 +200,26 @@ function Game() {
               scene.addDamageNumber(game.player.pos, `depth ${e.depth} — the barrow deepens`, "#7fb8c9");
               play("windup");
               break;
+            case "gold_picked":
+              play("coin");
+              break;
+            case "portal":
+              play("portal");
+              if (e.to === "town") setShopOpen(true);
+              else setShopOpen(false);
+              break;
+            case "item_broke":
+              scene.addDamageNumber(game.player.pos, `${e.name} broke!`, "#e05252");
+              play("die");
+              break;
+            case "repaired":
+              scene.addDamageNumber(game.player.pos, `repaired (-${e.cost}g)`, "#c9a84c");
+              play("coin");
+              break;
+            case "bought":
+            case "sold":
+              play("coin");
+              break;
             case "skill_cast":
               if (e.skill === "warcry") {
                 scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
@@ -208,6 +234,13 @@ function Game() {
         acc -= TICK_MS;
       }
       if (sawEvents) setVersion((v) => v + 1);
+      // Crossing a portal swaps the map — rebuild the whole scene around it.
+      if (game.map !== sceneMap) {
+        scene.dispose();
+        scene = createScene(mount, game.map, assets, onItemClick);
+        sceneMap = game.map;
+        prevPlayerPos = { ...game.player.pos };
+      }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPlayerPos, acc / TICK_MS);
     };
@@ -253,6 +286,20 @@ function Game() {
       )}
       {gameRef.current && <BottomBar game={gameRef.current} />}
       {gameRef.current && <MiniMap game={gameRef.current} />}
+      {shopOpen && gameRef.current && gameRef.current.town !== null && (
+        <ShopPanel
+          game={gameRef.current}
+          onBuy={(index) => {
+            uiInputRef.current.buy = index;
+          }}
+          onSell={(entryId) => {
+            uiInputRef.current.sell = entryId;
+          }}
+          onRepair={() => {
+            uiInputRef.current.repair = true;
+          }}
+        />
+      )}
       {skillsOpen && gameRef.current && (
         <SkillPanel
           game={gameRef.current}

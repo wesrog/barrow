@@ -4,11 +4,14 @@
     {
       "name": "dev",
       "runtimeExecutable": "bun",
-      "runtimeArgs": [
-        "run",
-        "dev"
-      ],
+      "runtimeArgs": ["run", "dev"],
       "port": 5197
+    },
+    {
+      "name": "dev-alt",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5297"],
+      "port": 5297
     }
   ]
 }

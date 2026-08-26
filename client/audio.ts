@@ -19,7 +19,9 @@ type SoundName =
   | "cleave"
   | "crush"
   | "spit"
-  | "windup";
+  | "windup"
+  | "coin"
+  | "portal";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -155,6 +157,15 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
   windup: (c) => {
     tone(c, { type: "sawtooth", from: 55, to: 110, dur: 0.7, gain: 0.3 });
     noise(c, { dur: 0.7, gain: 0.1, filterFrom: 300, filterTo: 900 });
+  },
+  coin: (c) => {
+    tone(c, { type: "triangle", from: 988, dur: 0.06, gain: 0.14 });
+    tone(c, { type: "triangle", from: 1319, dur: 0.14, gain: 0.14, at: 0.05 });
+  },
+  portal: (c) => {
+    tone(c, { type: "sine", from: 220, to: 880, dur: 0.5, gain: 0.25 });
+    tone(c, { type: "sine", from: 227, to: 900, dur: 0.5, gain: 0.15 });
+    noise(c, { dur: 0.5, gain: 0.12, filterFrom: 600, filterTo: 2400 });
   },
 };
 

@@ -4,6 +4,7 @@ import { INV_H, INV_W, type EquipSlot } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import type { GameState } from "../../sim/state";
+import { ItemIcon } from "./ItemIcon";
 
 const CELL = 32;
 
@@ -60,6 +61,13 @@ function itemDetail(item: Item): { lines: string[]; color: string } {
   if (base.defense !== undefined) lines.push(`defense ${base.defense}`);
   if (base.levelReq > 1) lines.push(`requires level ${base.levelReq}`);
   for (const mod of item.mods) lines.push(MOD_LABELS[mod.stat](mod.value));
+  if (item.durability) {
+    lines.push(
+      item.durability.cur === 0
+        ? "BROKEN — repair at the vendor"
+        : `durability ${item.durability.cur}/${item.durability.max}`,
+    );
+  }
   return { lines, color: RARITY_CSS[item.rarity]! };
 }
 
@@ -99,11 +107,21 @@ export function InventoryPanel({
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
               }}
               title={item ? "click to unequip" : undefined}
             >
               <span style={{ color: "#6b6455" }}>{label} </span>
-              <span style={{ color: item ? RARITY_CSS[item.rarity] : "#494339" }}>
+              {item && <ItemIcon baseId={item.baseId} color={RARITY_CSS[item.rarity]!} size={14} />}
+              <span
+                style={{
+                  color: item ? RARITY_CSS[item.rarity] : "#494339",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
                 {item ? item.name : "—"}
               </span>
             </div>
@@ -152,15 +170,13 @@ export function InventoryPanel({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color,
-                fontSize: 10,
-                textAlign: "center",
-                padding: 1,
-                overflow: "hidden",
-                lineHeight: 1.15,
               }}
             >
-              {base.name}
+              <ItemIcon
+                baseId={e.item.baseId}
+                color={color}
+                size={Math.min(base.w, base.h) * CELL - 8}
+              />
             </div>
           );
         })}

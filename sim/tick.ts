@@ -21,6 +21,9 @@ import { xpSystem } from "./systems/xp";
 import { spawnMonster } from "./monsters";
 import { MARKER_TYPES } from "./zone";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
+import { rollDurability } from "./items/generate";
+import { durabilitySystem } from "./systems/inventory";
+import { applyShopInput, applyTownPortalInput, townPadSystem } from "./systems/town";
 
 export const TICK_RATE = 25;
 
@@ -38,6 +41,7 @@ export function descend(state: GameState): void {
   state.depth++;
   state.monsters.clear();
   state.groundItems.clear();
+  state.goldPiles.clear();
   state.corpses.length = 0;
   const p = state.player;
   p.pos = { ...state.map.spawn };
@@ -64,9 +68,15 @@ export function stairsSystem(state: GameState): void {
 /** Fresh run on the same map: revive, repopulate, keep the character. */
 export function resetRun(state: GameState): void {
   const p = state.player;
+  if (state.town !== null) {
+    // Coming home from camp: the reset happens down in the crypt.
+    state.map = state.town.saved.map;
+    state.town = null;
+  }
   state.depth = 1;
   state.monsters.clear();
   state.groundItems.clear();
+  state.goldPiles.clear();
   state.corpses.length = 0;
   p.dead = false;
   p.life = p.maxLife;
@@ -89,6 +99,7 @@ export function createGame(seed: number, map: ZoneMap): GameState {
     affixIds: [],
     mods: [],
     ilvl: 1,
+    durability: rollDurability("rusted_blade"),
   };
   const stats = computeStats(equipment);
   const state: GameState = {
@@ -121,13 +132,17 @@ export function createGame(seed: number, map: ZoneMap): GameState {
       maxMana: stats.maxMana,
       warcryUntil: 0,
       belt: 0,
+      gold: 0,
       inventory: createInventory(),
       equipment,
       magicFind: 0,
     },
+    town: null,
+    shop: [],
     monsters: new Map(),
     corpses: [],
     groundItems: new Map(),
+    goldPiles: new Map(),
     events: [],
     nextId: 1,
   };
@@ -152,15 +167,19 @@ export function step(state: GameState, input: PlayerInput): void {
     applyDropItemInput(state, input);
     applyDrinkInput(state, input);
     applySpendSkillInput(state, input);
+    applyTownPortalInput(state, input);
+    applyShopInput(state, input);
     manaRegenSystem(state);
     applyCastInput(state, input);
     playerCombatSystem(state);
     pickupSystem(state);
     movementSystem(state);
+    townPadSystem(state);
     stairsSystem(state);
   }
   monsterAiSystem(state);
   deathSystem(state);
   xpSystem(state);
+  durabilitySystem(state);
   state.tick++;
 }

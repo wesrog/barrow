@@ -122,8 +122,13 @@ export function xpForLevel(level: number): number {
   return 20 * n + 15 * n * n;
 }
 
+/** Broken gear (durability 0) contributes nothing until repaired. */
+export function isBroken(item: Item): boolean {
+  return item.durability !== undefined && item.durability.cur <= 0;
+}
+
 export function computeStats(eq: Equipment, level = 1): DerivedStats {
-  const weapon = eq.weapon;
+  const weapon = eq.weapon && !isBroken(eq.weapon) ? eq.weapon : null;
   const weaponBase = weapon ? BASES[weapon.baseId]! : null;
   let dmgMin = weaponBase?.dmgMin ?? BASE_STATS.dmgMin;
   let dmgMax = weaponBase?.dmgMax ?? BASE_STATS.dmgMax;
@@ -137,7 +142,7 @@ export function computeStats(eq: Equipment, level = 1): DerivedStats {
   let magicFind = 0;
 
   for (const item of Object.values(eq)) {
-    if (!item) continue;
+    if (!item || isBroken(item)) continue;
     const base = BASES[item.baseId]!;
     if (base.slot !== "weapon" && base.defense) defense += base.defense;
     for (const mod of item.mods) {

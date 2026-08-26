@@ -1,0 +1,135 @@
+import { BASES } from "../items/bases";
+import { rollItem, type Item, type Rarity } from "../items/generate";
+import { townZone } from "../zone";
+import type { GameState, PlayerInput } from "../state";
+import { BELT_SIZE, placeItem, removeEntry } from "../character";
+import { repairAll } from "./inventory";
+
+/** What the vendor thinks an item is worth. Selling pays a quarter of this. */
+export function itemValue(item: Item): number {
+  const base = BASES[item.baseId]!;
+  if (base.slot === "potion") return 25;
+  const rarityMult: Record<Rarity, number> = { normal: 1, magic: 2.5, rare: 5, unique: 8 };
+  return Math.floor((12 + base.levelReq * 8 + item.mods.length * 22) * rarityMult[item.rarity]);
+}
+
+const SHOP_BASES = [
+  "rusted_blade",
+  "hatchet",
+  "war_maul",
+  "twin_fang",
+  "grave_scythe",
+  "cracked_helm",
+  "bone_visage",
+  "rag_tunic",
+  "studded_jerkin",
+  "grave_plate",
+  "worn_boots",
+  "chain_greaves",
+  "bone_ring",
+  "grave_amulet",
+];
+
+function restock(state: GameState): void {
+  const rng = state.rng;
+  const ilvl = Math.max(1, state.player.level);
+  const stock: GameState["shop"] = [];
+  for (let i = 0; i < 2; i++) {
+    stock.push({ item: rollItem(rng, "minor_potion", 1, "normal"), price: 25 });
+  }
+  for (let i = 0; i < 4; i++) {
+    const baseId = SHOP_BASES[rng.int(0, SHOP_BASES.length - 1)]!;
+    // The last slot always carries something magic — the window-shopping hook.
+    const rarity: Rarity = i === 3 || rng.next() < 0.35 ? "magic" : "normal";
+    const item = rollItem(rng, baseId, ilvl, rarity);
+    stock.push({ item, price: itemValue(item) });
+  }
+  state.shop = stock;
+}
+
+/** t: step through the portal to the camp; the dungeon freezes behind you. */
+export function applyTownPortalInput(state: GameState, input: PlayerInput): void {
+  if (!input.townPortal || state.town !== null || state.player.dead) return;
+  const p = state.player;
+  state.town = {
+    saved: {
+      map: state.map,
+      monsters: state.monsters,
+      groundItems: state.groundItems,
+      goldPiles: state.goldPiles,
+      corpses: state.corpses,
+      pos: { ...p.pos },
+    },
+  };
+  state.map = townZone();
+  state.monsters = new Map();
+  state.groundItems = new Map();
+  state.goldPiles = new Map();
+  state.corpses = [];
+  p.pos = { ...state.map.spawn };
+  p.path = [];
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.pendingStrike = null;
+  restock(state);
+  state.events.push({ type: "portal", to: "town" });
+}
+
+/** Standing on the P pad drops you back where you left the crypt. */
+export function townPadSystem(state: GameState): void {
+  if (state.town === null) return;
+  const p = state.player;
+  for (const marker of state.map.markers) {
+    if (marker.ch !== "P") continue;
+    if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
+      const saved = state.town.saved;
+      state.map = saved.map;
+      state.monsters = saved.monsters;
+      state.groundItems = saved.groundItems;
+      state.goldPiles = saved.goldPiles;
+      state.corpses = saved.corpses;
+      p.pos = { ...saved.pos };
+      p.path = [];
+      state.town = null;
+      state.events.push({ type: "portal", to: "crypt" });
+      return;
+    }
+  }
+}
+
+export function applyShopInput(state: GameState, input: PlayerInput): void {
+  if (state.town === null) return;
+  const p = state.player;
+
+  if (input.buy !== undefined) {
+    const entry = state.shop[input.buy];
+    if (entry && p.gold >= entry.price) {
+      const isPotion = BASES[entry.item.baseId]!.slot === "potion";
+      let delivered = false;
+      if (isPotion && p.belt < BELT_SIZE) {
+        p.belt++;
+        delivered = true;
+      } else {
+        delivered = placeItem(p.inventory, state.nextId++, entry.item);
+      }
+      if (delivered) {
+        p.gold -= entry.price;
+        state.shop.splice(input.buy, 1);
+        state.events.push({ type: "bought", name: entry.item.name, price: entry.price });
+      }
+    }
+  }
+
+  if (input.sell !== undefined) {
+    const entry = removeEntry(p.inventory, input.sell);
+    if (entry) {
+      const price = Math.max(1, Math.floor(itemValue(entry.item) / 4));
+      p.gold += price;
+      state.events.push({ type: "sold", name: entry.item.name, price });
+    }
+  }
+
+  if (input.repair) {
+    repairAll(state);
+  }
+}

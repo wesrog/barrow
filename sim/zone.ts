@@ -42,3 +42,20 @@ export function cryptZone(): ZoneMap {
 export function starterZone(): ZoneMap {
   return cryptZone();
 }
+
+/**
+ * The camp above the barrow. Safe ground: V the vendor, P the portal pad
+ * back down, @ where the portal drops you.
+ */
+export function townZone(): ZoneMap {
+  return mapFromStrings([
+    "################",
+    "#..............#",
+    "#..V...........#",
+    "#..........P...#",
+    "#.....@........#",
+    "#..............#",
+    "#..............#",
+    "################",
+  ]);
+}

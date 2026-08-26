@@ -283,6 +283,17 @@ export function deathSystem(state: GameState): void {
       state.groundItems.set(id, { id, item, pos });
       state.events.push({ type: "item_dropped", id, name: item.name, rarity: item.rarity, pos });
     }
+    // Gold: a separate 35% roll, scaling with the monster's level
+    if (state.rng.next() < 0.35) {
+      const amount = state.rng.int(2, 5) + Math.floor(m.mlvl * state.rng.next() * 2);
+      const pos = {
+        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
+        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
+      };
+      const id = state.nextId++;
+      state.goldPiles.set(id, { id, amount, pos });
+      state.events.push({ type: "gold_dropped", id, amount, pos });
+    }
   }
   // After explosions have resolved: did the player fall?
   if (!p.dead && p.life <= 0) {

@@ -18,6 +18,17 @@ export interface Item {
   mods: ItemMod[];
   ilvl: number;
   uniqueId?: string;
+  /** Weapons and armor wear out; at 0 the item goes inert until repaired. */
+  durability?: { cur: number; max: number };
+}
+
+const DURABLE_SLOTS = new Set(["weapon", "helm", "chest", "boots"]);
+
+export function rollDurability(baseId: string): { cur: number; max: number } | undefined {
+  const base = BASES[baseId];
+  if (!base || !DURABLE_SLOTS.has(base.slot)) return undefined;
+  const max = 24 + base.levelReq * 2;
+  return { cur: max, max };
 }
 
 const RARE_NAMES_A = ["Doom", "Grim", "Ash", "Bone", "Dusk", "Raven", "Sorrow", "Storm", "Grave", "Wraith"];
@@ -61,11 +72,12 @@ export function rollItem(rng: Rng, baseId: string, ilvl: number, rarity: Rarity)
       mods: rollMods(rng, unique.mods),
       ilvl,
       uniqueId: unique.id,
+      durability: rollDurability(baseId),
     };
   }
 
   if (rarity === "normal") {
-    return { baseId, rarity, name: base.name, affixIds: [], mods: [], ilvl };
+    return { baseId, rarity, name: base.name, affixIds: [], mods: [], ilvl, durability: rollDurability(baseId) };
   }
 
   const usedGroups = new Set<string>();
@@ -112,5 +124,5 @@ export function rollItem(rng: Rng, baseId: string, ilvl: number, rarity: Rarity)
     name = `${RARE_NAMES_A[rng.int(0, RARE_NAMES_A.length - 1)]!} ${RARE_NAMES_B[rng.int(0, RARE_NAMES_B.length - 1)]!}`;
   }
 
-  return { baseId, rarity, name, affixIds: picked.map((p) => p.id), mods, ilvl };
+  return { baseId, rarity, name, affixIds: picked.map((p) => p.id), mods, ilvl, durability: rollDurability(baseId) };
 }

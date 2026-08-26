@@ -59,7 +59,7 @@ export function MiniMap({ game }: { game: GameState }) {
     draw();
     const timer = setInterval(draw, 150);
     return () => clearInterval(timer);
-  }, [game]);
+  }, [game, game.map]);
 
   return (
     <canvas

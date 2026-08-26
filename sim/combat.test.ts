@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { createGame, step } from "./tick";
-import { computeHitChance, rollDamage } from "./systems/combat";
+import { computeHitChance, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
 import { spawnMonster } from "./monsters";
 import { createRng } from "./rng";
 
@@ -199,24 +199,25 @@ describe("attack in place (shift-click)", () => {
 });
 
 describe("contact frames", () => {
-  test("player damage lands a few ticks after the swing starts, not instantly", () => {
+  test("every hit lands exactly the strike delay after some swing, never instantly", () => {
     const game = createGame(1, arena());
     const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
-    let swingTick = -1;
-    let hitTick = -1;
-    for (let i = 0; i < 60 && hitTick === -1; i++) {
+    m.life = 1000000;
+    const swingTicks: number[] = [];
+    const hitTicks: number[] = [];
+    for (let i = 0; i < 120; i++) {
       step(game, i === 0 ? { attack: m.id } : {});
       for (const e of game.events) {
-        if (e.type === "player_swing" && swingTick === -1) swingTick = game.tick;
-        if (e.type === "monster_hit" && hitTick === -1) hitTick = game.tick;
-      }
-      if (swingTick === game.tick && hitTick === game.tick) {
-        throw new Error("hit landed on the same tick as the swing");
+        if (e.type === "player_swing") swingTicks.push(game.tick);
+        if (e.type === "monster_hit") hitTicks.push(game.tick);
       }
     }
-    expect(swingTick).toBeGreaterThan(-1);
-    expect(hitTick).toBeGreaterThan(swingTick);
-    expect(hitTick - swingTick).toBeLessThanOrEqual(8);
+    expect(swingTicks.length).toBeGreaterThan(3);
+    expect(hitTicks.length).toBeGreaterThan(0);
+    for (const hit of hitTicks) {
+      expect(swingTicks).toContain(hit - PLAYER_STRIKE_TICKS);
+      expect(swingTicks).not.toContain(hit);
+    }
   });
 
   test("the strike whiffs when the target escapes mid-swing", () => {

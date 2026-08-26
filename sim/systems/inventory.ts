@@ -43,6 +43,60 @@ export function applyDropItemInput(state: GameState, input: PlayerInput): void {
   state.events.push({ type: "item_dropped", id, name: entry.item.name, rarity: entry.item.rarity, pos });
 }
 
+const WEAR_CHANCE = 0.04;
+const REPAIR_PER_POINT = 2;
+
+/** Gear wears with use: swings chew the weapon, taken hits chew the armor. */
+export function durabilitySystem(state: GameState): void {
+  const p = state.player;
+  let broke = false;
+  const wear = (item: { durability?: { cur: number; max: number }; name: string } | null) => {
+    if (!item?.durability || item.durability.cur <= 0) return;
+    if (state.rng.next() < WEAR_CHANCE) {
+      item.durability.cur--;
+      if (item.durability.cur === 0) {
+        broke = true;
+        state.events.push({ type: "item_broke", name: item.name });
+      }
+    }
+  };
+  for (const e of state.events) {
+    if (e.type === "player_swing") wear(p.equipment.weapon);
+    else if (e.type === "player_hit") {
+      wear(p.equipment.helm);
+      wear(p.equipment.chest);
+      wear(p.equipment.boots);
+    }
+  }
+  if (broke) recomputePlayerStats(state);
+}
+
+export function repairAllCost(state: GameState): number {
+  let missing = 0;
+  for (const item of Object.values(state.player.equipment)) {
+    if (item?.durability) missing += item.durability.max - item.durability.cur;
+  }
+  for (const entry of state.player.inventory.entries) {
+    if (entry.item.durability) missing += entry.item.durability.max - entry.item.durability.cur;
+  }
+  return missing * REPAIR_PER_POINT;
+}
+
+export function repairAll(state: GameState): boolean {
+  const cost = repairAllCost(state);
+  if (cost === 0 || state.player.gold < cost) return false;
+  state.player.gold -= cost;
+  for (const item of Object.values(state.player.equipment)) {
+    if (item?.durability) item.durability.cur = item.durability.max;
+  }
+  for (const entry of state.player.inventory.entries) {
+    if (entry.item.durability) entry.item.durability.cur = entry.item.durability.max;
+  }
+  recomputePlayerStats(state);
+  state.events.push({ type: "repaired", cost });
+  return true;
+}
+
 export function applyDrinkInput(state: GameState, input: PlayerInput): void {
   if (!input.drink) return;
   const p = state.player;
@@ -63,6 +117,14 @@ export function applyPickupInput(state: GameState, input: PlayerInput): void {
 
 export function pickupSystem(state: GameState): void {
   const p = state.player;
+  // Gold is scooped just by walking near it.
+  for (const pile of [...state.goldPiles.values()]) {
+    if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
+      state.goldPiles.delete(pile.id);
+      p.gold += pile.amount;
+      state.events.push({ type: "gold_picked", amount: pile.amount });
+    }
+  }
   if (p.pickupTarget === null) return;
   const target = state.groundItems.get(p.pickupTarget);
   if (!target) {

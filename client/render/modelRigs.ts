@@ -102,7 +102,7 @@ class AnimRig implements ModelRig {
       this.oneShotUntil = 0;
       if (speed > 0.4) {
         const action = this.play(this.walkName);
-        if (action) action.timeScale = Math.max(0.6, Math.min(1.6, speed / this.walkSpeedRef));
+        if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.walkSpeedRef));
       } else {
         this.play(this.idleName);
       }
@@ -171,7 +171,9 @@ const BOOT_LOOKS: Record<string, number> = {
 
 export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
   const inst = instantiate(assets.characters.barbarian);
-  const rig = new AnimRig(inst, "Idle", "Running_A", 4.2);
+  // Low ref speed = fast cadence: at 4.5 cells/s the run cycle plays ~1.8x,
+  // matching feet to the ground actually covered.
+  const rig = new AnimRig(inst, "Idle", "Running_A", 2.5);
   rig.group.scale.setScalar(0.72);
   let twoHanded = false;
 

@@ -6,6 +6,7 @@ import type { GameState, PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { play, unlock } from "./audio";
+import { loadAssets } from "./render/models";
 import { createScene } from "./render/scene";
 import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
@@ -24,15 +25,24 @@ function Game() {
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [, setVersion] = useState(0);
 
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     const mount = mountRef.current!;
-    const map = cryptZone();
-    const game = createGame(Date.now() >>> 0, map);
-    loadFromStorage(game);
-    gameRef.current = game;
-    const scene = createScene(mount, map, (itemId) => {
-      uiInputRef.current.pickup = itemId;
-    });
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+
+    void (async () => {
+      const assets = await loadAssets();
+      if (disposed) return;
+      setLoading(false);
+      const map = cryptZone();
+      const game = createGame(Date.now() >>> 0, map);
+      loadFromStorage(game);
+      gameRef.current = game;
+      const scene = createScene(mount, map, assets, (itemId) => {
+        uiInputRef.current.pickup = itemId;
+      });
 
     let pending: PlayerInput = {};
     let prevPlayerPos = { ...game.player.pos };
@@ -203,22 +213,44 @@ function Game() {
     };
     raf = requestAnimationFrame(frame);
 
+      cleanup = () => {
+        cancelAnimationFrame(raf);
+        mount.removeEventListener("pointerdown", onPointerDown);
+        mount.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("keydown", onKeyDown);
+        clearInterval(saveTimer);
+        clearInterval(hudTimer);
+        window.removeEventListener("beforeunload", onUnload);
+        scene.dispose();
+        gameRef.current = null;
+      };
+    })();
+
     return () => {
-      cancelAnimationFrame(raf);
-      mount.removeEventListener("pointerdown", onPointerDown);
-      mount.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("keydown", onKeyDown);
-      clearInterval(saveTimer);
-      clearInterval(hudTimer);
-      window.removeEventListener("beforeunload", onUnload);
-      scene.dispose();
-      gameRef.current = null;
+      disposed = true;
+      cleanup?.();
     };
   }, []);
 
   return (
     <div ref={mountRef} style={{ width: "100%", height: "100%" }}>
+      {loading && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontFamily: "ui-monospace, monospace",
+            color: "#8f8778",
+            letterSpacing: 2,
+          }}
+        >
+          descending into the barrow…
+        </div>
+      )}
       {gameRef.current && <BottomBar game={gameRef.current} />}
       {gameRef.current && <MiniMap game={gameRef.current} />}
       {skillsOpen && gameRef.current && (

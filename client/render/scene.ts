@@ -2,7 +2,14 @@ import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import type { GameState, SimEvent } from "../../sim/state";
 import { Effects } from "./fx";
-import { makeHeroRig, makeMonsterRig, type Rig } from "./rigs";
+import type { Rig } from "./rigs";
+import {
+  makeHeroModelRig,
+  makeMonsterModelRig,
+  monsterAttackClip,
+  type ModelRig,
+} from "./modelRigs";
+import type { GameAssets } from "./models";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -35,6 +42,7 @@ function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
 export function createScene(
   mount: HTMLElement,
   map: ZoneMap,
+  assets: GameAssets,
   onItemClick?: (id: number) => void,
 ): SceneHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -182,11 +190,11 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
-  // --- Hero: articulated rig with a blade on the weapon arm ---
-  const heroRig = makeHeroRig();
+  // --- Hero: animated KayKit barbarian with weapon in the hand slot ---
+  const heroRig = makeHeroModelRig(assets);
   const hero = heroRig.group;
-  const weaponPivot = heroRig.weaponPivot;
   scene.add(hero);
+  let heroWasDead = false;
   // Renderer-side displacement for lunges; sim position stays authoritative.
   const heroFxOffset = new THREE.Vector3();
   let heroPhase = 0;
@@ -294,7 +302,13 @@ export function createScene(
         facing.set(dx, 0, dy).normalize();
         hero.rotation.y = Math.atan2(facing.x, facing.z);
       }
-      hero.rotation.x = state.player.dead ? Math.PI / 2 : 0;
+      // Death and revival play through animation clips, not a rotation hack.
+      if (state.player.dead && !heroWasDead) {
+        heroRig.oneShot("Death_A", { hold: true });
+      } else if (!state.player.dead && heroWasDead) {
+        heroRig.release();
+      }
+      heroWasDead = state.player.dead;
 
       // Rebuild visible gear when equipment changes.
       const eq = state.player.equipment;
@@ -326,7 +340,7 @@ export function createScene(
       for (const monster of state.monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
-          rig = makeMonsterRig(monster.typeId);
+          rig = makeMonsterModelRig(assets, monster.typeId);
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
           scene.add(rig.group);
@@ -523,9 +537,10 @@ export function createScene(
     handleEvent(event, state) {
       switch (event.type) {
         case "monster_windup": {
-          // The boss telegraphs: a growing blood ring and a darkening body.
-          const mesh = monsterRigs.get(event.id)?.group;
-          if (mesh) fx.flash(mesh, 0x7a1010, event.ticks * 40);
+          // The boss telegraphs: a taunt, a growing blood ring, a darkening body.
+          const rig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
+          rig?.oneShot?.("Taunt");
+          if (rig) fx.flash(rig.group, 0x7a1010, event.ticks * 40);
           ring(event.pos, 2.0, 0xc03030, event.ticks * 40);
           break;
         }
@@ -535,24 +550,17 @@ export function createScene(
           const dy = event.to.y - p.y;
           if (dx * dx + dy * dy > 1e-6) hero.rotation.y = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
+          heroRig.oneShot(heroRig.attackClip(), { timeScale: 1.6 });
           fx.tween(200, (t) => {
-            // Raise the arm behind, chop through, settle back to rest
-            const rot =
-              t < 0.25
-                ? (t / 0.25) * 0.9
-                : t < 0.6
-                  ? 0.9 + ((t - 0.25) / 0.35) * (-2.1 - 0.9)
-                  : -2.1 + ((t - 0.6) / 0.4) * (0 - -2.1);
-            weaponPivot.rotation.x = rot;
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
             heroFxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
-          }, () => {
-            weaponPivot.rotation.x = 0;
-            heroFxOffset.set(0, 0, 0);
-          });
+          }, () => heroFxOffset.set(0, 0, 0));
           break;
         }
         case "monster_swing": {
+          const swingRig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
+          const typeId = state.monsters.get(event.id)?.typeId;
+          if (typeId) swingRig?.oneShot?.(monsterAttackClip(typeId), { timeScale: 1.4 });
           if (event.ranged) {
             const glob = new THREE.Mesh(
               new THREE.IcosahedronGeometry(0.09, 0),
@@ -607,17 +615,28 @@ export function createScene(
           break;
         }
         case "monster_died": {
-          const mesh = monsterRigs.get(event.id)?.group;
-          if (mesh) {
+          const rig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
+          if (rig) {
             monsterRigs.delete(event.id);
             monsterAnim.delete(event.id);
-            const dir = ((event.id * 61) % 2) * 2 - 1;
-            fx.tween(300, (t) => {
-              mesh.rotation.z = dir * t * (Math.PI / 2);
-              mesh.position.y = -t * 0.25;
-              const s = 1 - t * 0.25;
-              mesh.scale.set(s, s, s);
-            }, () => scene.remove(mesh));
+            const mesh = rig.group;
+            if (rig.oneShot) {
+              // Play the death clip in place, keep the mixer running, then sink away.
+              rig.oneShot("Death_A", { hold: true });
+              const start = performance.now();
+              fx.tween(1400, (t) => {
+                rig.animate!(start + t * 1400, 0, 0);
+                if (t > 0.7) mesh.position.y = -((t - 0.7) / 0.3) * 0.6;
+              }, () => scene.remove(mesh));
+            } else {
+              const dir = ((event.id * 61) % 2) * 2 - 1;
+              fx.tween(300, (t) => {
+                mesh.rotation.z = dir * t * (Math.PI / 2);
+                mesh.position.y = -t * 0.25;
+                const s = 1 - t * 0.25;
+                mesh.scale.set(s, s, s);
+              }, () => scene.remove(mesh));
+            }
           }
           monsterFxOffsets.delete(event.id);
           fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
@@ -625,15 +644,19 @@ export function createScene(
         }
         case "skill_cast": {
           if (event.skill === "cleave") {
+            heroRig.oneShot("2H_Melee_Attack_Spin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
             fx.shake(0.08);
           } else if (event.skill === "warcry") {
+            heroRig.oneShot("Cheer", { timeScale: 1.4 });
             ring(event.pos, 2.6, 0x6a9ad1, 500);
           } else if (event.skill === "leap") {
+            heroRig.oneShot("Jump_Full_Short", { timeScale: 1.3 });
             ring(event.pos, 1.6, 0x8a8478, 260);
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
             fx.shake(0.18);
           } else if (event.skill === "crush") {
+            heroRig.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
             fx.shake(0.12);
           }
           break;

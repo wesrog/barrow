@@ -693,7 +693,8 @@ export function createScene(
             heroRig.oneShot("Cheer", { timeScale: 1.4 });
             ring(event.pos, 2.6, 0x6a9ad1, 500);
           } else if (event.skill === "leap") {
-            heroRig.oneShot("Jump_Full_Short", { timeScale: 1.3 });
+            // The leap's own motion spike must not cancel its jump clip.
+            heroRig.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
             ring(event.pos, 1.6, 0x8a8478, 260);
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
             fx.shake(0.18);

@@ -12,7 +12,7 @@ import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
 export interface ModelRig extends Rig {
   /** Play a one-shot clip (attack, death, taunt), then return to locomotion. */
-  oneShot(name: string, opts?: { hold?: boolean; timeScale?: number }): void;
+  oneShot(name: string, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
   /** Cancel a held one-shot (revive after a held death pose). */
   release(): void;
 }
@@ -75,11 +75,14 @@ class AnimRig implements ModelRig {
     return action;
   }
 
-  oneShot(name: string, opts: { hold?: boolean; timeScale?: number } = {}): void {
+  private moveCancels = true;
+
+  oneShot(name: string, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
     // Force a restart so back-to-back identical attacks replay from the top.
     const action = this.play(name, 0.08, false, true);
     if (!action) return;
     action.timeScale = opts.timeScale ?? 1;
+    this.moveCancels = !opts.hold && (opts.cancelOnMove ?? true);
     const dur = (action.getClip().duration / action.timeScale) * 1000;
     this.oneShotUntil = opts.hold ? Number.POSITIVE_INFINITY : performance.now() + dur * 0.85;
   }
@@ -91,6 +94,10 @@ class AnimRig implements ModelRig {
   animate(now: number, _phase: number, speed: number): void {
     const dt = this.lastNow === null ? 1 / 60 : Math.min(0.1, (now - this.lastNow) / 1000);
     this.lastNow = now;
+    // Running cancels an attack pose — feet beat frozen swings.
+    if (this.oneShotUntil > 0 && this.oneShotUntil !== Number.POSITIVE_INFINITY && this.moveCancels && speed > 1.0) {
+      this.oneShotUntil = 0;
+    }
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
       if (speed > 0.4) {

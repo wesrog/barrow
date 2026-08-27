@@ -34,18 +34,22 @@ export class Sequencer {
     this.queuedLeaves.push(id);
   }
 
-  /** Record a peer's input for a tick (latest write wins). */
+  /** Record a peer's input for a tick (latest write wins). An input stamped for
+   * an already-emitted tick is rescheduled onto the next frame instead of
+   * dropped — relayed clients routinely run more than INPUT_DELAY_TICKS behind,
+   * and a click must land late rather than never. Hashes are the exception:
+   * they attest to one exact tick's state, so a late one is simply discarded. */
   onInput(id: PlayerId, tick: number, input: PlayerInput, hash?: number): void {
-    if (tick < this.tick) return; // frame for this tick already emitted; drop silently
+    const at = Math.max(tick, this.tick);
 
-    let tickInputs = this.pending.get(tick);
+    let tickInputs = this.pending.get(at);
     if (!tickInputs) {
       tickInputs = new Map();
-      this.pending.set(tick, tickInputs);
+      this.pending.set(at, tickInputs);
     }
     tickInputs.set(id, input);
 
-    if (hash !== undefined) {
+    if (hash !== undefined && tick >= this.tick) {
       let tickHashes = this.hashes.get(tick);
       if (!tickHashes) {
         tickHashes = new Map();

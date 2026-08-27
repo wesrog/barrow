@@ -3,6 +3,14 @@
 2026-08-26. Approved direction: 2–4 player drop-in co-op via host-relayed
 P2P lockstep, D2-style independent areas in one shared world.
 
+> **Addendum 2026-08-27 — transport changed to a WebSocket relay.** Real-world
+> testing showed STUN-only WebRTC fails in common topologies (same-NAT
+> hairpin, mDNS candidates without macOS Local Network permission) and would
+> have needed a TURN relay anyway. Since lockstep traffic is tiny, all game
+> traffic now rides the signaling server as opaque `relay` messages instead;
+> `client/net/rtc.ts` was replaced by `client/net/ws.ts` behind the same
+> `PeerLink` seam. WebRTC references below describe the original design.
+
 ## Goals
 
 - 2–4 players per game; drop-in join at any time via room code / link.

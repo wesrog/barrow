@@ -19,6 +19,7 @@ type Msg = { type: string; [key: string]: unknown };
 interface TestClient {
   send(msg: Msg): void;
   next(type: string): Promise<Msg>;
+  closed: Promise<void>;
   close(): void;
 }
 
@@ -27,6 +28,12 @@ function connect(): Promise<TestClient> {
     const ws = new WebSocket(baseUrl);
     const waiters = new Map<string, Array<(msg: Msg) => void>>();
     const backlog = new Map<string, Msg[]>();
+    let onClosed: () => void;
+    const closed = new Promise<void>((res) => {
+      onClosed = res;
+    });
+
+    ws.addEventListener("close", () => onClosed());
 
     ws.addEventListener("open", () => {
       resolve({
@@ -45,6 +52,7 @@ function connect(): Promise<TestClient> {
             waiters.set(type, list);
           });
         },
+        closed,
         close() {
           ws.close();
         },
@@ -68,7 +76,7 @@ function connect(): Promise<TestClient> {
 }
 
 describe("signaling server", () => {
-  test("host gets a room code; joiner and host relay signals both ways", async () => {
+  test("host gets a room code; join is acked to both sides; relay carries data both ways", async () => {
     const host = await connect();
     host.send({ type: "host" });
     const { code } = await host.next("room");
@@ -79,16 +87,19 @@ describe("signaling server", () => {
     peer.send({ type: "join", code: code as string });
     const { peerId } = await host.next("joined");
     expect(peerId).toBe(1);
+    // The joiner gets the same ack, carrying its own id — its signal to start talking.
+    const ack = await peer.next("joined");
+    expect(ack.peerId).toBe(1);
 
-    peer.send({ type: "signal", to: 0, payload: { sdp: "offer" } });
-    const fromPeer = await host.next("signal");
+    peer.send({ type: "relay", to: 0, data: JSON.stringify({ type: "hello" }) });
+    const fromPeer = await host.next("relay");
     expect(fromPeer.from).toBe(1);
-    expect(fromPeer.payload).toEqual({ sdp: "offer" });
+    expect(fromPeer.data).toBe(JSON.stringify({ type: "hello" }));
 
-    host.send({ type: "signal", to: peerId as number, payload: { sdp: "answer" } });
-    const fromHost = await peer.next("signal");
+    host.send({ type: "relay", to: peerId as number, data: "big-frame-payload" });
+    const fromHost = await peer.next("relay");
     expect(fromHost.from).toBe(0);
-    expect(fromHost.payload).toEqual({ sdp: "answer" });
+    expect(fromHost.data).toBe("big-frame-payload");
 
     host.close();
     peer.close();
@@ -114,5 +125,34 @@ describe("signaling server", () => {
     const closedMsg = await closedPromise;
     expect(closedMsg.reason).toBe("room-closed");
     peer.close();
+  });
+
+  test("a peer's disconnect tells the host peer-left", async () => {
+    const host = await connect();
+    host.send({ type: "host" });
+    const { code } = await host.next("room");
+
+    const peer = await connect();
+    peer.send({ type: "join", code: code as string });
+    const { peerId } = await host.next("joined");
+
+    peer.close();
+    const left = await host.next("peer-left");
+    expect(left.peerId).toBe(peerId);
+    host.close();
+  });
+
+  test("the host can kick a peer: its socket closes", async () => {
+    const host = await connect();
+    host.send({ type: "host" });
+    const { code } = await host.next("room");
+
+    const peer = await connect();
+    peer.send({ type: "join", code: code as string });
+    const { peerId } = await host.next("joined");
+
+    host.send({ type: "kick", to: peerId as number });
+    await peer.closed;
+    host.close();
   });
 });

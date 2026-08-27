@@ -1,9 +1,9 @@
 // The seam between the game loop and the network. main.tsx holds a NetDriver
 // and never learns whether the frames it steps on came from an in-process
 // Sequencer (solo), an in-process Sequencer that also feeds peers (host), or a
-// DataChannel (joined). Everything below the seam is Session + Sequencer, which
-// are pure; only the host/join drivers touch the browser, and they reach for
-// rtc.ts lazily so tests can import this module without a DOM.
+// relayed WebSocket (joined). Everything below the seam is Session + Sequencer,
+// which are pure; only the host/join drivers open sockets, and they reach for
+// ws.ts lazily so importing this module stays side-effect free.
 
 import { Sequencer } from "../../net/sequencer";
 import { Session } from "../../net/session";
@@ -12,7 +12,7 @@ import { INPUT_DELAY_TICKS } from "../../net/protocol";
 import type { ClientMsg, HostMsg } from "../../net/protocol";
 import { createGame, TICK_RATE } from "../../sim/tick";
 import type { PlayerId, PlayerInput } from "../../sim/state";
-import type { PeerLink } from "./rtc";
+import type { PeerLink } from "./ws";
 
 /** What main.tsx talks to; hides solo vs host vs joined. */
 export interface NetDriver {
@@ -191,13 +191,13 @@ export function hostCore(seed: number, character?: string) {
   return { driver, onPeer, pump };
 }
 
-/** Host: hostCore + rtc.hostGame; emits frames on a 25 Hz interval. */
+/** Host: hostCore + ws.hostGame; emits frames on a 25 Hz interval. */
 export async function hostDriver(
   seed: number,
   signalUrl: string,
   character?: string,
 ): Promise<{ driver: NetDriver; code: string }> {
-  const { hostGame } = await import("./rtc");
+  const { hostGame } = await import("./ws");
   const core = hostCore(seed, character);
   const room = await hostGame(signalUrl, core.onPeer);
 
@@ -216,13 +216,13 @@ export async function hostDriver(
   return { driver, code: room.code };
 }
 
-/** Joiner: rtc.joinGame; sends hello, awaits welcome. */
+/** Joiner: ws.joinGame; sends hello, awaits welcome. */
 export async function joinDriver(
   signalUrl: string,
   code: string,
   character?: string,
 ): Promise<NetDriver> {
-  const { joinGame } = await import("./rtc");
+  const { joinGame } = await import("./ws");
   const link = await joinGame(signalUrl, code);
   const session = new Session((msg: ClientMsg) => link.send(msg));
 

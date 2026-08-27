@@ -3,7 +3,7 @@ import { hostCore, localDriver, mismatchedPlayers } from "./driver";
 import { Session } from "../../net/session";
 import { INPUT_DELAY_TICKS } from "../../net/protocol";
 import type { ClientMsg, HostMsg } from "../../net/protocol";
-import type { PeerLink } from "./rtc";
+import type { PeerLink } from "./ws";
 
 /** Ask the driver for one tick and consume the frame it produced — exactly
  * what the main loop does per accumulated tick. */

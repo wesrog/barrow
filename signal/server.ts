@@ -6,12 +6,17 @@ const CODE_LENGTH = 5;
 type ClientMessage =
   | { type: "host" }
   | { type: "join"; code: string }
-  | { type: "signal"; to: number; payload: unknown };
+  // Opaque game traffic, relayed verbatim. `data` is a string so the server
+  // never parses (or pays to re-serialize) the payload.
+  | { type: "relay"; to: number; data: string }
+  // Host only: close a peer's socket (e.g. the room is full).
+  | { type: "kick"; to: number };
 
 type ServerMessage =
   | { type: "room"; code: string }
   | { type: "joined"; peerId: number }
-  | { type: "signal"; from: number; payload: unknown }
+  | { type: "relay"; from: number; data: string }
+  | { type: "peer-left"; peerId: number }
   | { type: "error"; reason: "no-such-room" | "room-closed" };
 
 interface Room {
@@ -79,19 +84,31 @@ export function startServer(port: number) {
           room.peers.set(peerId, ws);
           ws.data.code = room.code;
           ws.data.address = peerId;
+          // Both sides hear about it: the host to build the seat, the joiner
+          // as its cue that the room exists and it can start talking.
           send(room.host, { type: "joined", peerId });
+          send(ws, { type: "joined", peerId });
           return;
         }
 
-        if (msg.type === "signal") {
+        if (msg.type === "relay") {
           const code = ws.data.code;
           const from = ws.data.address;
-          if (code === undefined || from === undefined) return;
+          if (code === undefined || from === undefined || typeof msg.data !== "string") return;
           const room = rooms.get(code);
           if (!room) return;
           const target = msg.to === 0 ? room.host : room.peers.get(msg.to);
           if (!target) return;
-          send(target, { type: "signal", from, payload: msg.payload });
+          send(target, { type: "relay", from, data: msg.data });
+          return;
+        }
+
+        if (msg.type === "kick") {
+          const code = ws.data.code;
+          if (code === undefined || ws.data.address !== 0) return; // host only
+          const room = rooms.get(code);
+          if (!room) return;
+          room.peers.get(msg.to)?.close();
           return;
         }
       },
@@ -109,6 +126,7 @@ export function startServer(port: number) {
           }
         } else {
           room.peers.delete(address);
+          send(room.host, { type: "peer-left", peerId: address });
         }
       },
     },

@@ -1,5 +1,5 @@
 import type { Vec } from "./map";
-import type { GameState, ZoneState } from "./state";
+import type { GameState, PlayerId, ZoneState } from "./state";
 
 export interface MonsterType {
   id: string;
@@ -189,6 +189,8 @@ export interface Monster {
   strikeTo: Vec | null;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
+  /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
+  lastHitBy: PlayerId | null;
 }
 
 export interface Corpse {
@@ -240,6 +242,7 @@ export function spawnMonster(
     strikeAt: null,
     strikeTo: null,
     stunnedUntil: 0,
+    lastHitBy: null,
   };
   zone.monsters.set(monster.id, monster);
   return monster;

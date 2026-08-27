@@ -1,4 +1,4 @@
-import type { GameState } from "./state";
+import type { GameState, Player } from "./state";
 
 export type SkillId = "cleave" | "crush" | "warcry" | "leap";
 
@@ -45,9 +45,8 @@ export function leapStunTicks(rank: number): number {
   return 30 + 10 * (rank - 1);
 }
 
-/** Global damage multiplier from active buffs. */
-export function damageMultiplier(state: GameState): number {
-  const p = state.player;
+/** Damage multiplier from a player's active buffs. */
+export function damageMultiplier(state: GameState, p: Player): number {
   if (p.warcryUntil > state.tick && p.skills.warcry > 0) {
     return warcryMultiplier(p.skills.warcry);
   }

@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
@@ -114,7 +115,7 @@ export function BottomBar({
   game: GameState;
   onAction: (action: HudAction) => void;
 }) {
-  const p = game.player;
+  const p = localPlayer(game);
   const xpFloor = xpForLevel(p.level);
   const xpNext = xpForLevel(p.level + 1);
   const xpPct = Math.max(0, Math.min(1, (p.xp - xpFloor) / (xpNext - xpFloor)));
@@ -182,7 +183,7 @@ export function BottomBar({
             ))}
           </div>
           <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
-            {ACTION_BUTTONS.filter((b) => !b.townOnly || game.player.zoneId === "camp").map(
+            {ACTION_BUTTONS.filter((b) => !b.townOnly || localPlayer(game).zoneId === "camp").map(
               ({ action, key, label }) => (
                 <button
                   key={action}
@@ -234,7 +235,7 @@ export function BottomBar({
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
           lvl {p.level} ·{" "}
-          {game.player.zoneId === "camp" ? "the camp" : `depth ${zoneDepth(game.player.zoneId)}`} ·{" "}
+          {localPlayer(game).zoneId === "camp" ? "the camp" : `depth ${zoneDepth(localPlayer(game).zoneId)}`} ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>
           {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}
         </div>

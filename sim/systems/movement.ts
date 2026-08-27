@@ -1,24 +1,21 @@
 import { isWalkable, type Vec } from "../map";
 import { findPath, smoothPath } from "../path";
-import { zoneOf, type GameState, type PlayerInput } from "../state";
+import { zoneOf, type GameState, type Player, type PlayerInput } from "../state";
 
-export function applyMoveInput(state: GameState, input: PlayerInput): void {
+export function applyMoveInput(state: GameState, p: Player, input: PlayerInput): void {
   const dest = input.moveTo;
   if (!dest) return;
-  const map = zoneOf(state, state.player).map;
+  const map = zoneOf(state, p).map;
   const goal = { x: Math.floor(dest.x), y: Math.floor(dest.y) };
   if (!isWalkable(map, goal.x, goal.y)) return;
-  const start = {
-    x: Math.floor(state.player.pos.x),
-    y: Math.floor(state.player.pos.y),
-  };
+  const start = { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) };
   const cells = findPath(map, start, goal);
   if (cells === null) return;
-  state.player.attackTarget = null;
-  state.player.pickupTarget = null;
-  state.player.smashTarget = null;
-  state.player.vendorTarget = false;
-  state.player.path = smoothPath(map, state.player.pos, cells);
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.smashTarget = null;
+  p.vendorTarget = false;
+  p.path = smoothPath(map, p.pos, cells);
 }
 
 /** Advance a position along waypoints by `budget` distance. Mutates `path`. */
@@ -41,6 +38,6 @@ export function moveAlongPath(pos: Vec, path: Vec[], budget: number): void {
   }
 }
 
-export function movementSystem(state: GameState): void {
-  moveAlongPath(state.player.pos, state.player.path, state.player.speed);
+export function movementSystem(players: Player[]): void {
+  for (const p of players) moveAlongPath(p.pos, p.path, p.speed);
 }

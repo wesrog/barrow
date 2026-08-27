@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import { useEffect, useRef } from "react";
 import { isWalkable } from "../../sim/map";
 import { zoneOf, type GameState } from "../../sim/state";
@@ -10,7 +11,7 @@ export function MiniMap({ game }: { game: GameState }) {
   const wallsRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    const map = zoneOf(game, game.player).map;
+    const map = zoneOf(game, localPlayer(game)).map;
     // Render the static walls once
     const walls = document.createElement("canvas");
     walls.width = map.width * SCALE;
@@ -35,17 +36,17 @@ export function MiniMap({ game }: { game: GameState }) {
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(base, 0, 0);
-      for (const marker of zoneOf(game, game.player).map.markers) {
+      for (const marker of zoneOf(game, localPlayer(game)).map.markers) {
         if (marker.ch === ">") {
           ctx.fillStyle = "#7fb8c9";
           ctx.fillRect(marker.x * SCALE - 2, marker.y * SCALE - 2, 4, 4);
         }
       }
-      for (const gi of zoneOf(game, game.player).groundItems.values()) {
+      for (const gi of zoneOf(game, localPlayer(game)).groundItems.values()) {
         ctx.fillStyle = RARITY_CSS[gi.item.rarity] ?? "#d6d6d6";
         ctx.fillRect(gi.pos.x * SCALE - 1, gi.pos.y * SCALE - 1, 2, 2);
       }
-      for (const m of zoneOf(game, game.player).monsters.values()) {
+      for (const m of zoneOf(game, localPlayer(game)).monsters.values()) {
         const boss = m.typeId === "barrow_lord";
         ctx.fillStyle = boss ? "#c9a84c" : "#a03030";
         const r = boss ? 3 : 2;
@@ -53,19 +54,19 @@ export function MiniMap({ game }: { game: GameState }) {
       }
       ctx.fillStyle = "#f0e9dc";
       ctx.beginPath();
-      ctx.arc(game.player.pos.x * SCALE, game.player.pos.y * SCALE, 2.2, 0, Math.PI * 2);
+      ctx.arc(localPlayer(game).pos.x * SCALE, localPlayer(game).pos.y * SCALE, 2.2, 0, Math.PI * 2);
       ctx.fill();
     };
     draw();
     const timer = setInterval(draw, 150);
     return () => clearInterval(timer);
-  }, [game, game.player.zoneId]);
+  }, [game, localPlayer(game).zoneId]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={zoneOf(game, game.player).map.width * SCALE}
-      height={zoneOf(game, game.player).map.height * SCALE}
+      width={zoneOf(game, localPlayer(game)).map.width * SCALE}
+      height={zoneOf(game, localPlayer(game)).map.height * SCALE}
       style={{
         position: "absolute",
         top: 12,

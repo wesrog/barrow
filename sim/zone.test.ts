@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createGame, ensureFloor, step, travel } from "./tick";
+import { player, soloGame } from "./test-helpers";
+import { ensureFloor, stepSolo, travel } from "./tick";
 import { floorZone, getZone, zoneDepth } from "./state";
 import { cryptZone } from "./zone";
 
@@ -39,7 +40,7 @@ describe("crypt reachability", () => {
 
 describe("marker spawns", () => {
   test("the crypt zone has a boss and all four monster types", () => {
-    const state = createGame(1);
+    const state = soloGame(1);
     const types = new Set([...getZone(state, "floor:1").monsters.values()].map((m) => m.typeId));
     expect(types.has("barrow_lord")).toBe(true);
     expect(types.has("shambler")).toBe(true);
@@ -51,24 +52,24 @@ describe("marker spawns", () => {
 
 describe("new game reset", () => {
   test("respawns the floors, revives the player, keeps the character", () => {
-    const state = createGame(1);
-    travel(state, "floor:1");
+    const state = soloGame(1);
+    travel(state, player(state), "floor:1");
     const populated = getZone(state, "floor:1").monsters.size;
     // Progress a character: kill everything cheaply, get hurt, die.
     for (const m of getZone(state, "floor:1").monsters.values()) m.life = 0;
-    step(state, {});
-    const xpAfterKills = state.player.xp;
+    stepSolo(state, {});
+    const xpAfterKills = player(state).xp;
     expect(xpAfterKills).toBeGreaterThan(0);
-    state.player.life = 0;
-    step(state, {});
-    expect(state.player.dead).toBe(true);
+    player(state).life = 0;
+    stepSolo(state, {});
+    expect(player(state).dead).toBe(true);
 
-    step(state, { newGame: true });
-    expect(state.player.dead).toBe(false);
-    expect(state.player.life).toBe(state.player.maxLife);
-    expect(state.player.zoneId).toBe("camp");
-    expect(state.player.pos).toEqual(getZone(state, "camp").map.spawn);
-    expect(state.player.xp).toBe(xpAfterKills); // character persists
+    stepSolo(state, { newGame: true });
+    expect(player(state).dead).toBe(false);
+    expect(player(state).life).toBe(player(state).maxLife);
+    expect(player(state).zoneId).toBe("camp");
+    expect(player(state).pos).toEqual(getZone(state, "camp").map.spawn);
+    expect(player(state).xp).toBe(xpAfterKills); // character persists
     const fresh = getZone(state, "floor:1");
     expect(fresh.monsters.size).toBe(populated); // floor repopulated
     expect(fresh.groundItems.size).toBe(0);
@@ -76,74 +77,74 @@ describe("new game reset", () => {
   });
 
   test("a reset mid-run also clears the field and forgets deeper floors", () => {
-    const state = createGame(1);
-    travel(state, "floor:1");
+    const state = soloGame(1);
+    travel(state, player(state), "floor:1");
     const populated = getZone(state, "floor:1").monsters.size;
     ensureFloor(state, 4);
-    step(state, {});
-    step(state, { newGame: true });
+    stepSolo(state, {});
+    stepSolo(state, { newGame: true });
     expect([...state.zones.keys()]).toEqual(["camp", "floor:1"]);
     expect(getZone(state, "floor:1").monsters.size).toBe(populated);
-    expect(state.player.dead).toBe(false);
+    expect(player(state).dead).toBe(false);
   });
 });
 
 describe("zones", () => {
   test("createGame builds camp and floor:1; player starts in camp", () => {
-    const g = createGame(1);
+    const g = soloGame(1);
     expect([...g.zones.keys()]).toEqual(["camp", "floor:1"]);
-    expect(g.player.zoneId).toBe("camp");
+    expect(player(g).zoneId).toBe("camp");
     expect(getZone(g, "camp").monsters.size).toBe(0);
     expect(getZone(g, "floor:1").monsters.size).toBeGreaterThan(0);
   });
 
   test("ensureFloor generates lazily, deterministically, and only once", () => {
-    const g = createGame(7);
+    const g = soloGame(7);
     expect(g.zones.has("floor:2")).toBe(false);
     const z = ensureFloor(g, 2);
     expect(ensureFloor(g, 2)).toBe(z); // same instance, not regenerated
-    const h = createGame(7);
-    step(h, {}); // an unrelated tick must not affect gen determinism given same call order
+    const h = soloGame(7);
+    stepSolo(h, {}); // an unrelated tick must not affect gen determinism given same call order
     expect([...ensureFloor(h, 2).monsters.values()].map((m) => m.pos))
       .toEqual([...z.monsters.values()].map((m) => m.pos));
   });
 
   test("deeper floors scale monsters", () => {
-    const g = createGame(3);
+    const g = soloGame(3);
     const f1 = [...getZone(g, "floor:1").monsters.values()].find((m) => m.typeId === "shambler")!;
     const f3 = [...ensureFloor(g, 3).monsters.values()].find((m) => m.typeId === "shambler")!;
     expect(f3.maxLife).toBeGreaterThan(f1.maxLife);
   });
 
   test("standing on the camp pad travels to floor:1; stairs go one deeper", () => {
-    const g = createGame(1);
+    const g = soloGame(1);
     const pad = getZone(g, "camp").map.markers.find((m) => m.ch === "P")!;
-    g.player.pos = { x: pad.x, y: pad.y };
-    step(g, {});
-    expect(g.player.zoneId).toBe("floor:1");
+    player(g).pos = { x: pad.x, y: pad.y };
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("floor:1");
     expect(g.events.some((e) => e.type === "traveled" && e.to === "floor:1")).toBe(true);
     const stairs = getZone(g, "floor:1").map.markers.find((m) => m.ch === ">")!;
-    g.player.pos = { x: stairs.x, y: stairs.y };
-    step(g, {});
-    expect(g.player.zoneId).toBe("floor:2");
+    player(g).pos = { x: stairs.x, y: stairs.y };
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("floor:2");
   });
 
   test("floors persist: a cleared monster stays dead after leaving and returning", () => {
-    const g = createGame(1);
-    travel(g, "floor:1");
+    const g = soloGame(1);
+    travel(g, player(g), "floor:1");
     const first = [...getZone(g, "floor:1").monsters.keys()][0]!;
     getZone(g, "floor:1").monsters.delete(first);
     const count = getZone(g, "floor:1").monsters.size;
-    travel(g, "camp");
-    travel(g, "floor:1");
+    travel(g, player(g), "camp");
+    travel(g, player(g), "floor:1");
     expect(getZone(g, "floor:1").monsters.size).toBe(count);
   });
 
   test("empty zones are frozen: monsters there do not act", () => {
-    const g = createGame(1);
-    expect(g.player.zoneId).toBe("camp");
+    const g = soloGame(1);
+    expect(player(g).zoneId).toBe("camp");
     const before = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
-    for (let i = 0; i < 200; i++) step(g, {});
+    for (let i = 0; i < 200; i++) stepSolo(g, {});
     const after = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
     expect(after).toEqual(before);
   });

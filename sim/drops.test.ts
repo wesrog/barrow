@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { step } from "./tick";
-import { createGameOn, playerZone, spawnAt } from "./test-helpers";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { GameState } from "./state";
 
@@ -15,7 +15,7 @@ const arena = () =>
 
 /** Equip a one-shot test weapon so overrides survive stat recomputes. */
 function armToTheTeeth(game: GameState): void {
-  game.player.equipment.weapon = {
+  player(game).equipment.weapon = {
     baseId: "rusted_blade",
     rarity: "unique",
     name: "Test Cleaver",
@@ -27,8 +27,8 @@ function armToTheTeeth(game: GameState): void {
     ],
     ilvl: 99,
   };
-  recomputePlayerStats(game);
-  game.player.life = game.player.maxLife;
+  recomputePlayerStats(game, player(game));
+  player(game).life = player(game).maxLife;
 }
 
 describe("monster drops", () => {
@@ -38,8 +38,8 @@ describe("monster drops", () => {
     let kills = 0;
     for (let round = 0; round < 60; round++) {
       const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
-      step(game, { attack: m.id });
-      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) step(game, {});
+      stepSolo(game, { attack: m.id });
+      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) stepSolo(game, {});
       if (!playerZone(game).monsters.has(m.id)) kills++;
     }
     expect(kills).toBe(60);
@@ -62,8 +62,8 @@ describe("monster drops", () => {
     armToTheTeeth(game);
     for (let round = 0; round < 80; round++) {
       const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
-      step(game, { attack: m.id });
-      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) step(game, {});
+      stepSolo(game, { attack: m.id });
+      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) stepSolo(game, {});
     }
     for (const gi of playerZone(game).groundItems.values()) {
       expect(gi.item.ilvl).toBe(2); // skitter mlvl

@@ -1,9 +1,10 @@
+import { localPlayer } from "../local";
 import { zoneDepth, type GameState } from "../../sim/state";
 import { zoneName } from "../../sim/zone";
 
 /** Top-center banner: where you are, and how deep. */
 export function ZoneBanner({ game }: { game: GameState }) {
-  const depth = zoneDepth(game.player.zoneId);
+  const depth = zoneDepth(localPlayer(game).zoneId);
   return (
     <div
       style={{

@@ -1,7 +1,7 @@
 import type { Rng } from "../rng";
 import { hasLineOfSight, isWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
-import { zoneOf, type GameState, type PlayerInput, type ZoneState } from "../state";
+import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import type { Monster } from "../monsters";
 import { rollDrop } from "../items/treasure";
 import { damageMultiplier } from "../skills";
@@ -17,8 +17,7 @@ export const PLAYER_STRIKE_TICKS = 5;
 export const MONSTER_STRIKE_TICKS = 4;
 
 /** Resolve the player's in-flight swing at its contact frame. */
-function resolvePlayerStrike(state: GameState, zone: ZoneState): void {
-  const p = state.player;
+function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void {
   if (!p.pendingStrike || state.tick < p.pendingStrike.at) return;
   const strike = p.pendingStrike;
   p.pendingStrike = null;
@@ -42,9 +41,10 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState): void {
   if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
     const amount = Math.max(
       1,
-      Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state)),
+      Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
     target.life -= amount;
+    target.lastHitBy = p.id;
     state.events.push({
       type: "monster_hit",
       id: target.id,
@@ -74,49 +74,58 @@ function pathToward(map: ZoneMap, from: Vec, to: Vec): Vec[] {
   return waypoints;
 }
 
-export function applyAttackInput(state: GameState, input: PlayerInput): void {
+export function applyAttackInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.attack === undefined) return;
-  if (zoneOf(state, state.player).monsters.has(input.attack)) {
-    state.player.attackTarget = input.attack;
-    state.player.pickupTarget = null;
-    state.player.smashTarget = null;
-    state.player.path = [];
+  if (zoneOf(state, p).monsters.has(input.attack)) {
+    p.attackTarget = input.attack;
+    p.pickupTarget = null;
+    p.smashTarget = null;
+    p.path = [];
   }
 }
 
 /** Shift-click: stand your ground and swing toward a point. */
-export function applySwingInPlaceInput(state: GameState, input: PlayerInput): void {
+export function applySwingInPlaceInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!input.swingAt) return;
-  const p = state.player;
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
-  state.events.push({ type: "player_swing", to: { ...input.swingAt }, zone: p.zoneId });
+  state.events.push({
+    type: "player_swing",
+    playerId: p.id,
+    to: { ...input.swingAt },
+    zone: p.zoneId,
+  });
   p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: null };
 }
 
-export function playerCombatSystem(state: GameState): void {
-  const p = state.player;
-  const zone = zoneOf(state, p);
-  if (p.swingCooldown > 0) p.swingCooldown--;
-  resolvePlayerStrike(state, zone);
-  if (p.dead || p.attackTarget === null) return;
-  const target = zone.monsters.get(p.attackTarget);
-  if (!target) {
-    p.attackTarget = null;
-    return;
-  }
-  if (dist(p.pos, target.pos) <= p.range) {
-    p.path = [];
-    if (p.swingCooldown === 0) {
-      p.swingCooldown = p.swingEvery;
-      state.events.push({ type: "player_swing", to: { ...target.pos }, zone: zone.id });
-      p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+export function playerCombatSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.swingCooldown > 0) p.swingCooldown--;
+    resolvePlayerStrike(state, zone, p);
+    if (p.dead || p.attackTarget === null) continue;
+    const target = zone.monsters.get(p.attackTarget);
+    if (!target) {
+      p.attackTarget = null;
+      continue;
     }
-  } else {
-    p.path = pathToward(zone.map, p.pos, target.pos);
+    if (dist(p.pos, target.pos) <= p.range) {
+      p.path = [];
+      if (p.swingCooldown === 0) {
+        p.swingCooldown = p.swingEvery;
+        state.events.push({
+          type: "player_swing",
+          playerId: p.id,
+          to: { ...target.pos },
+          zone: zone.id,
+        });
+        p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+      }
+    } else {
+      p.path = pathToward(zone.map, p.pos, target.pos);
+    }
   }
 }
 
@@ -143,9 +152,22 @@ function idleWander(state: GameState, zone: ZoneState, m: Monster): void {
   m.path = [to];
 }
 
-export function monsterAiSystem(state: GameState): void {
-  const p = state.player;
-  const zone = zoneOf(state, p);
+/** Nearest living player to a point; ties go to the lower id. */
+function nearestPlayer(living: Player[], to: Vec): Player | null {
+  let best: Player | null = null;
+  let bestD = Infinity;
+  for (const q of living) {
+    const d = dist(q.pos, to);
+    if (d < bestD) {
+      best = q;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+export function monsterAiSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  const living = players.filter((q) => !q.dead);
   for (const m of zone.monsters.values()) {
     if (m.swingCooldown > 0) m.swingCooldown--;
     if (m.stunnedUntil > state.tick) {
@@ -153,7 +175,9 @@ export function monsterAiSystem(state: GameState): void {
       m.strikeAt = null;
       continue;
     }
-    if (p.dead) {
+    // Nobody left standing here: idle monsters over an empty or dead zone.
+    const p = nearestPlayer(living, m.pos);
+    if (!p) {
       m.ai = "idle";
       m.path = [];
       m.windingUntil = null;
@@ -171,7 +195,7 @@ export function monsterAiSystem(state: GameState): void {
       if (connects && state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
         const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
         p.life -= amount;
-        state.events.push({ type: "player_hit", amount });
+        state.events.push({ type: "player_hit", playerId: p.id, amount });
       }
       continue;
     }
@@ -249,9 +273,7 @@ export function monsterAiSystem(state: GameState): void {
   }
 }
 
-export function deathSystem(state: GameState): void {
-  const p = state.player;
-  const zone = zoneOf(state, p);
+export function deathSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   // Queue-process deaths so explosions can chain into more deaths.
   const dead: Monster[] = [];
   const collectDead = () => {
@@ -266,10 +288,11 @@ export function deathSystem(state: GameState): void {
     if (m.explode) {
       const { radius, dmgMin, dmgMax } = m.explode;
       state.events.push({ type: "exploded", pos: { ...m.pos }, radius, zone: zone.id });
-      if (!p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) <= radius) {
+      for (const p of players) {
+        if (p.dead || Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) > radius) continue;
         const amount = rollDamage(state.rng, dmgMin, dmgMax);
         p.life -= amount;
-        state.events.push({ type: "player_hit", amount });
+        state.events.push({ type: "player_hit", playerId: p.id, amount });
       }
       for (const other of zone.monsters.values()) {
         if (Math.hypot(other.pos.x - m.pos.x, other.pos.y - m.pos.y) <= radius) {
@@ -329,12 +352,16 @@ export function deathSystem(state: GameState): void {
       state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });
     }
   }
-  // After explosions have resolved: did the player fall?
-  if (!p.dead && p.life <= 0) {
+  // After explosions have resolved: who fell?
+  for (const p of players) {
+    if (p.dead || p.life > 0) continue;
     p.life = 0;
     p.dead = true;
     p.path = [];
     p.attackTarget = null;
     p.pickupTarget = null;
+    p.smashTarget = null;
+    p.vendorTarget = false;
+    state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
   }
 }

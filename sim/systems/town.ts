@@ -1,6 +1,6 @@
 import { BASES } from "../items/bases";
 import { rollItem, type Item, type Rarity } from "../items/generate";
-import { zoneOf, type GameState, type PlayerInput } from "../state";
+import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
 import { findPath, smoothPath } from "../path";
@@ -33,10 +33,10 @@ const SHOP_BASES = [
   "grave_amulet",
 ];
 
-/** Refill Maren's stall. Runs when a player arrives in an empty camp. */
-export function restock(state: GameState): void {
+/** Refill Maren's stall for the arriving player. Runs when they walk into an empty camp. */
+export function restock(state: GameState, p: Player): void {
   const rng = state.rng;
-  const ilvl = Math.max(1, state.player.level);
+  const ilvl = Math.max(1, p.level);
   const stock: GameState["shop"] = [];
   for (let i = 0; i < 2; i++) {
     stock.push({ item: rollItem(rng, "minor_potion", 1, "normal"), price: 25 });
@@ -52,9 +52,8 @@ export function restock(state: GameState): void {
 }
 
 /** Click on Maren: start walking over to trade. */
-export function applyTalkVendorInput(state: GameState, input: PlayerInput): void {
-  if (!input.talkVendor || state.player.zoneId !== "camp") return;
-  const p = state.player;
+export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (!input.talkVendor || p.zoneId !== "camp") return;
   p.vendorTarget = true;
   p.attackTarget = null;
   p.pickupTarget = null;
@@ -63,38 +62,38 @@ export function applyTalkVendorInput(state: GameState, input: PlayerInput): void
 }
 
 /** Walk toward the V marker; within talking range, the shop opens. */
-export function vendorSystem(state: GameState): void {
-  const p = state.player;
-  if (!p.vendorTarget) return;
-  const map = zoneOf(state, p).map;
+export function vendorSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  const map = zone.map;
   const marker = map.markers.find((m) => m.ch === "V");
-  if (p.zoneId !== "camp" || !marker) {
-    p.vendorTarget = false;
-    return;
-  }
-  const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
-  if (d <= TALK_RANGE) {
-    p.vendorTarget = false;
-    p.path = [];
-    state.events.push({ type: "shop_opened" });
-  } else if (p.path.length === 0) {
-    const cells = findPath(
-      map,
-      { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-      { x: Math.floor(marker.x), y: Math.floor(marker.y) },
-    );
-    if (cells === null) {
+  for (const p of players) {
+    if (!p.vendorTarget) continue;
+    if (p.zoneId !== "camp" || !marker) {
       p.vendorTarget = false;
-      return;
+      continue;
     }
-    p.path = smoothPath(map, p.pos, cells);
-    p.path.push({ x: marker.x, y: marker.y });
+    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
+    if (d <= TALK_RANGE) {
+      p.vendorTarget = false;
+      p.path = [];
+      state.events.push({ type: "shop_opened", playerId: p.id });
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
+      );
+      if (cells === null) {
+        p.vendorTarget = false;
+        continue;
+      }
+      p.path = smoothPath(map, p.pos, cells);
+      p.path.push({ x: marker.x, y: marker.y });
+    }
   }
 }
 
-export function applyShopInput(state: GameState, input: PlayerInput): void {
-  if (state.player.zoneId !== "camp") return;
-  const p = state.player;
+export function applyShopInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (p.zoneId !== "camp") return;
 
   if (input.buy !== undefined) {
     const entry = state.shop[input.buy];
@@ -110,7 +109,12 @@ export function applyShopInput(state: GameState, input: PlayerInput): void {
       if (delivered) {
         p.gold -= entry.price;
         state.shop.splice(input.buy, 1);
-        state.events.push({ type: "bought", name: entry.item.name, price: entry.price });
+        state.events.push({
+          type: "bought",
+          playerId: p.id,
+          name: entry.item.name,
+          price: entry.price,
+        });
       }
     }
   }
@@ -120,11 +124,11 @@ export function applyShopInput(state: GameState, input: PlayerInput): void {
     if (entry) {
       const price = Math.max(1, Math.floor(itemValue(entry.item) / 4));
       p.gold += price;
-      state.events.push({ type: "sold", name: entry.item.name, price });
+      state.events.push({ type: "sold", playerId: p.id, name: entry.item.name, price });
     }
   }
 
   if (input.repair) {
-    repairAll(state);
+    repairAll(state, p);
   }
 }

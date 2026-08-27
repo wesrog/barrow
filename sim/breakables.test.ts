@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createGame, step, travel } from "./tick";
+import { stepSolo, travel } from "./tick";
 import { mapFromStrings } from "./map";
 import { getZone } from "./state";
-import { createGameOn, playerZone } from "./test-helpers";
+import { createGameOn, player, playerZone, soloGame } from "./test-helpers";
 import { zoneName } from "./zone";
 /** Small open room: player in one corner, stairs far away. */
 const roomMap = () =>
@@ -17,7 +17,7 @@ const roomMap = () =>
 
 describe("breakable spawning", () => {
   test("a crypt floor holds breakables, including exactly one chest", () => {
-    const state = createGame(7);
+    const state = soloGame(7);
     const breakables = getZone(state, "floor:1").breakables;
     expect(breakables.size).toBeGreaterThan(0);
     const chests = [...breakables.values()].filter((b) => b.kind === "chest");
@@ -25,15 +25,15 @@ describe("breakable spawning", () => {
   });
 
   test("same seed produces the identical layout", () => {
-    const a = createGame(42);
-    const b = createGame(42);
+    const a = soloGame(42);
+    const b = soloGame(42);
     expect([...getZone(a, "floor:1").breakables.values()]).toEqual([
       ...getZone(b, "floor:1").breakables.values(),
     ]);
   });
 
   test("breakables sit on walkable cells, off the spawn and markers", () => {
-    const state = createGame(3);
+    const state = soloGame(3);
     const zone = getZone(state, "floor:1");
     const map = zone.map;
     for (const b of zone.breakables.values()) {
@@ -48,10 +48,10 @@ describe("breakable spawning", () => {
   });
 
   test("each floor gets its own fresh breakables", () => {
-    const state = createGame(11);
-    travel(state, "floor:1");
+    const state = soloGame(11);
+    travel(state, player(state), "floor:1");
     const beforeIds = [...playerZone(state).breakables.keys()];
-    travel(state, "floor:2");
+    travel(state, player(state), "floor:2");
     expect(playerZone(state).breakables.size).toBeGreaterThan(0);
     for (const id of playerZone(state).breakables.keys()) {
       expect(beforeIds).not.toContain(id);
@@ -65,7 +65,7 @@ describe("smashing", () => {
     playerZone(state).breakables.clear();
     const id = state.nextId++;
     playerZone(state).breakables.set(id, { id, kind: "barrel", pos: { x: 2.5, y: 1.5 } });
-    step(state, { smash: id });
+    stepSolo(state, { smash: id });
     expect(playerZone(state).breakables.has(id)).toBe(false);
     expect(state.events.some((e) => e.type === "breakable_broken" && e.id === id)).toBe(true);
     expect(state.events.some((e) => e.type === "player_swing")).toBe(true);
@@ -76,9 +76,9 @@ describe("smashing", () => {
     playerZone(state).breakables.clear();
     const id = state.nextId++;
     playerZone(state).breakables.set(id, { id, kind: "crate", pos: { x: 7.5, y: 3.5 } });
-    step(state, { smash: id });
+    stepSolo(state, { smash: id });
     expect(playerZone(state).breakables.has(id)).toBe(true); // too far to break yet
-    for (let i = 0; i < 200 && playerZone(state).breakables.has(id); i++) step(state, {});
+    for (let i = 0; i < 200 && playerZone(state).breakables.has(id); i++) stepSolo(state, {});
     expect(playerZone(state).breakables.has(id)).toBe(false);
   });
 
@@ -87,7 +87,7 @@ describe("smashing", () => {
     playerZone(state).breakables.clear();
     const id = state.nextId++;
     playerZone(state).breakables.set(id, { id, kind: "chest", pos: { x: 2.5, y: 1.5 } });
-    step(state, { smash: id });
+    stepSolo(state, { smash: id });
     expect(playerZone(state).breakables.has(id)).toBe(false);
     expect(playerZone(state).groundItems.size).toBeGreaterThan(0);
   });
@@ -97,25 +97,25 @@ describe("smashing", () => {
     playerZone(state).breakables.clear();
     const id = state.nextId++;
     playerZone(state).breakables.set(id, { id, kind: "barrel", pos: { x: 7.5, y: 3.5 } });
-    step(state, { smash: id });
-    step(state, { moveTo: { x: 1.5, y: 3.5 } });
-    for (let i = 0; i < 100; i++) step(state, {});
+    stepSolo(state, { smash: id });
+    stepSolo(state, { moveTo: { x: 1.5, y: 3.5 } });
+    for (let i = 0; i < 100; i++) stepSolo(state, {});
     expect(playerZone(state).breakables.has(id)).toBe(true);
   });
 });
 
 describe("camp trips", () => {
   test("breakables persist on the floor while the player is topside", () => {
-    const state = createGame(9);
-    travel(state, "floor:1");
+    const state = soloGame(9);
+    travel(state, player(state), "floor:1");
     const saved = [...playerZone(state).breakables.values()];
     expect(saved.length).toBeGreaterThan(0);
-    travel(state, "camp");
+    travel(state, player(state), "camp");
     expect(playerZone(state).breakables.size).toBe(0); // no barrels to smash topside
     // Walk onto the travel pad: back down to floor 1
     const pad = playerZone(state).map.markers.find((m) => m.ch === "P")!;
-    state.player.pos = { x: pad.x, y: pad.y };
-    step(state, {});
+    player(state).pos = { x: pad.x, y: pad.y };
+    stepSolo(state, {});
     expect([...playerZone(state).breakables.values()]).toEqual(saved);
   });
 });

@@ -1,7 +1,14 @@
 import { isWalkable, type Vec } from "./map";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
-import { zoneDepth, zoneOf, type GameState, type PlayerInput, type ZoneState } from "./state";
+import {
+  zoneDepth,
+  zoneOf,
+  type GameState,
+  type Player,
+  type PlayerInput,
+  type ZoneState,
+} from "./state";
 
 export type BreakableKind = "barrel" | "crate" | "chest";
 
@@ -46,10 +53,9 @@ export function spawnBreakables(state: GameState, zone: ZoneState, depth: number
   place("chest");
 }
 
-export function applySmashInput(state: GameState, input: PlayerInput): void {
+export function applySmashInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.smash === undefined) return;
-  if (!zoneOf(state, state.player).breakables.has(input.smash)) return;
-  const p = state.player;
+  if (!zoneOf(state, p).breakables.has(input.smash)) return;
   p.smashTarget = input.smash;
   p.attackTarget = null;
   p.pickupTarget = null;
@@ -57,38 +63,43 @@ export function applySmashInput(state: GameState, input: PlayerInput): void {
 }
 
 /** Walk to the targeted prop and smash it: one swing, loot spills out. */
-export function breakSystem(state: GameState): void {
-  const p = state.player;
-  if (p.smashTarget === null) return;
-  const zone = zoneOf(state, p);
-  const target = zone.breakables.get(p.smashTarget);
-  if (!target) {
-    p.smashTarget = null;
-    return;
-  }
-  const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y);
-  if (d <= SMASH_RANGE) {
-    p.smashTarget = null;
-    p.path = [];
-    smash(state, zone, target);
-  } else if (p.path.length === 0) {
-    const cells = findPath(
-      zone.map,
-      { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-      { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-    );
-    if (cells === null) {
+export function breakSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.smashTarget === null) continue;
+    const target = zone.breakables.get(p.smashTarget);
+    if (!target) {
       p.smashTarget = null;
-      return;
+      continue;
     }
-    p.path = smoothPath(zone.map, p.pos, cells);
-    p.path.push({ ...target.pos });
+    const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y);
+    if (d <= SMASH_RANGE) {
+      p.smashTarget = null;
+      p.path = [];
+      smash(state, zone, p, target);
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        zone.map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
+      );
+      if (cells === null) {
+        p.smashTarget = null;
+        continue;
+      }
+      p.path = smoothPath(zone.map, p.pos, cells);
+      p.path.push({ ...target.pos });
+    }
   }
 }
 
-function smash(state: GameState, zone: ZoneState, target: Breakable): void {
+function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable): void {
   zone.breakables.delete(target.id);
-  state.events.push({ type: "player_swing", to: { ...target.pos }, zone: zone.id });
+  state.events.push({
+    type: "player_swing",
+    playerId: p.id,
+    to: { ...target.pos },
+    zone: zone.id,
+  });
   state.events.push({
     type: "breakable_broken",
     id: target.id,

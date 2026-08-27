@@ -1,5 +1,5 @@
 import { isWalkable, type Vec, type ZoneMap } from "../map";
-import { zoneOf, type GameState } from "../state";
+import type { GameState, Player, ZoneState } from "../state";
 import type { Monster } from "../monsters";
 
 /** The hero's body radius in cells. */
@@ -29,14 +29,13 @@ function nudge(map: ZoneMap, pos: Vec, dx: number, dy: number): boolean {
  * tick — the player slides around monsters instead of walking through them,
  * and a pack can wall the player in.
  */
-export function collisionSystem(state: GameState): void {
-  const p = state.player;
-  const zone = zoneOf(state, p);
+export function collisionSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   const map = zone.map;
   const monsters = [...zone.monsters.values()];
+  const living = players.filter((p) => !p.dead);
   for (let pass = 0; pass < PASSES; pass++) {
     // Player vs monster: the player yields, so meat walls actually block.
-    if (!p.dead) {
+    for (const p of living) {
       // Static NPCs never budge; the player is always the one ejected.
       for (const marker of map.markers) {
         if (!SOLID_MARKERS.has(marker.ch)) continue;
@@ -64,7 +63,32 @@ export function collisionSystem(state: GameState): void {
         }
       }
     }
+    separatePlayers(map, living);
     separatePair(map, monsters);
+  }
+}
+
+/** Player vs player: neither outranks the other, so they split the overlap. */
+function separatePlayers(map: ZoneMap, players: Player[]): void {
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const a = players[i]!;
+      const b = players[j]!;
+      const dx = b.pos.x - a.pos.x;
+      const dy = b.pos.y - a.pos.y;
+      const d = Math.hypot(dx, dy);
+      const overlap = PLAYER_RADIUS * 2 - d;
+      if (overlap <= 0) continue;
+      // Perfectly stacked pairs split along a deterministic axis.
+      const nx = d > 1e-6 ? dx / d : a.id < b.id ? 1 : -1;
+      const ny = d > 1e-6 ? dy / d : 0;
+      const half = overlap / 2;
+      const aMoved = nudge(map, a.pos, -nx * half, -ny * half);
+      const bMoved = nudge(map, b.pos, nx * half, ny * half);
+      // One blocked by a wall: the free one absorbs the full correction.
+      if (aMoved && !bMoved) nudge(map, a.pos, -nx * half, -ny * half);
+      if (bMoved && !aMoved) nudge(map, b.pos, nx * half, ny * half);
+    }
   }
 }
 

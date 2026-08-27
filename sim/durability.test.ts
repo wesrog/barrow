@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { step } from "./tick";
-import { createGameOn, playerZone, spawnAt } from "./test-helpers";
+import { stepSolo } from "./tick";
+import { createGameOn, player, spawnAt } from "./test-helpers";
 import { rollItem } from "./items/generate";
 import { createRng } from "./rng";
 import { BASE_STATS } from "./character";
@@ -26,7 +26,7 @@ describe("durability", () => {
 
   test("swinging wears the weapon down over time", () => {
     const state = createGameOn(2, arena());
-    const weapon = state.player.equipment.weapon!;
+    const weapon = player(state).equipment.weapon!;
     expect(weapon.durability).toBeDefined();
     const start = weapon.durability!.cur;
     // An immortal target to swing at forever
@@ -34,32 +34,32 @@ describe("durability", () => {
     m.life = 1000000;
     m.dmgMin = 0;
     m.dmgMax = 0;
-    step(state, { attack: m.id });
-    for (let i = 0; i < 3000; i++) step(state, {});
+    stepSolo(state, { attack: m.id });
+    for (let i = 0; i < 3000; i++) stepSolo(state, {});
     expect(weapon.durability!.cur).toBeLessThan(start);
     expect(weapon.durability!.cur).toBeGreaterThanOrEqual(0);
   });
 
   test("a broken weapon fights like bare fists until repaired", () => {
     const state = createGameOn(1, arena());
-    const weapon = state.player.equipment.weapon!;
+    const weapon = player(state).equipment.weapon!;
     weapon.durability!.cur = 0;
-    recomputePlayerStats(state);
-    expect(state.player.dmgMax).toBe(BASE_STATS.dmgMax);
-    state.player.gold = 1000;
-    const cost = repairAllCost(state);
+    recomputePlayerStats(state, player(state));
+    expect(player(state).dmgMax).toBe(BASE_STATS.dmgMax);
+    player(state).gold = 1000;
+    const cost = repairAllCost(state, player(state));
     expect(cost).toBeGreaterThan(0);
-    repairAll(state);
-    expect(state.player.gold).toBe(1000 - cost);
+    repairAll(state, player(state));
+    expect(player(state).gold).toBe(1000 - cost);
     expect(weapon.durability!.cur).toBe(weapon.durability!.max);
-    expect(state.player.dmgMax).toBe(6); // blade again
+    expect(player(state).dmgMax).toBe(6); // blade again
   });
 
   test("repair does nothing when gold is short", () => {
     const state = createGameOn(1, arena());
-    state.player.equipment.weapon!.durability!.cur = 0;
-    state.player.gold = 0;
-    repairAll(state);
-    expect(state.player.equipment.weapon!.durability!.cur).toBe(0);
+    player(state).equipment.weapon!.durability!.cur = 0;
+    player(state).gold = 0;
+    repairAll(state, player(state));
+    expect(player(state).equipment.weapon!.durability!.cur).toBe(0);
   });
 });

@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import { zoneOf, type GameState, type SimEvent } from "../../sim/state";
@@ -441,31 +442,31 @@ export function createScene(
 
   return {
     render(state, prevPlayerPos, alpha) {
-      const px = prevPlayerPos.x + (state.player.pos.x - prevPlayerPos.x) * alpha;
-      const py = prevPlayerPos.y + (state.player.pos.y - prevPlayerPos.y) * alpha;
+      const px = prevPlayerPos.x + (localPlayer(state).pos.x - prevPlayerPos.x) * alpha;
+      const py = prevPlayerPos.y + (localPlayer(state).pos.y - prevPlayerPos.y) * alpha;
       hero.position.set(px + heroFxOffset.x, 0, py + heroFxOffset.z);
       heroLight.position.set(px, 1.6, py);
 
       const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);
       lastFrameNow = performance.now();
 
-      const dx = state.player.pos.x - prevPlayerPos.x;
-      const dy = state.player.pos.y - prevPlayerPos.y;
+      const dx = localPlayer(state).pos.x - prevPlayerPos.x;
+      const dy = localPlayer(state).pos.y - prevPlayerPos.y;
       if (dx * dx + dy * dy > 1e-6) {
         facing.set(dx, 0, dy).normalize();
         heroTargetYaw = Math.atan2(facing.x, facing.z);
       }
       hero.rotation.y = approachAngle(hero.rotation.y, heroTargetYaw, frameDt * 14);
       // Death and revival play through animation clips, not a rotation hack.
-      if (state.player.dead && !heroWasDead) {
+      if (localPlayer(state).dead && !heroWasDead) {
         heroRig.oneShot("Death_A", { hold: true });
-      } else if (!state.player.dead && heroWasDead) {
+      } else if (!localPlayer(state).dead && heroWasDead) {
         heroRig.release();
       }
-      heroWasDead = state.player.dead;
+      heroWasDead = localPlayer(state).dead;
 
       // Rebuild visible gear when equipment changes.
-      const eq = state.player.equipment;
+      const eq = localPlayer(state).equipment;
       const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
         .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
         .join("|");
@@ -485,7 +486,7 @@ export function createScene(
 
       // Sync monster rigs with sim state
       for (const [id, rig] of monsterRigs) {
-        if (!zoneOf(state, state.player).monsters.has(id)) {
+        if (!zoneOf(state, localPlayer(state)).monsters.has(id)) {
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
@@ -494,7 +495,7 @@ export function createScene(
       }
       const tickAdvanced = state.tick !== lastSimTick;
       lastSimTick = state.tick;
-      for (const monster of zoneOf(state, state.player).monsters.values()) {
+      for (const monster of zoneOf(state, localPlayer(state)).monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
           rig = makeMonsterModelRig(assets, monster.typeId);
@@ -527,7 +528,7 @@ export function createScene(
         if (tickDist > 0.02) {
           lerp.yaw = Math.atan2(vx, vy);
         } else if (monster.ai === "chasing") {
-          lerp.yaw = Math.atan2(state.player.pos.x - monster.pos.x, state.player.pos.y - monster.pos.y);
+          lerp.yaw = Math.atan2(localPlayer(state).pos.x - monster.pos.x, localPlayer(state).pos.y - monster.pos.y);
         }
         rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 9);
         const anim = monsterAnim.get(monster.id)!;
@@ -558,7 +559,7 @@ export function createScene(
         }
       }
       for (const [id, bar] of healthBars) {
-        if (!zoneOf(state, state.player).monsters.has(id)) {
+        if (!zoneOf(state, localPlayer(state)).monsters.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
         }
@@ -566,13 +567,13 @@ export function createScene(
 
       // Sync ground items
       for (const [id, v] of groundItemVisuals) {
-        if (!zoneOf(state, state.player).groundItems.has(id)) {
+        if (!zoneOf(state, localPlayer(state)).groundItems.has(id)) {
           scene.remove(v.mesh);
           v.label.remove();
           groundItemVisuals.delete(id);
         }
       }
-      for (const gi of zoneOf(state, state.player).groundItems.values()) {
+      for (const gi of zoneOf(state, localPlayer(state)).groundItems.values()) {
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
@@ -611,12 +612,12 @@ export function createScene(
 
       // Sync breakables (smash effects remove theirs via the broken event)
       for (const [id, g] of breakableVisuals) {
-        if (!zoneOf(state, state.player).breakables.has(id)) {
+        if (!zoneOf(state, localPlayer(state)).breakables.has(id)) {
           scene.remove(g);
           breakableVisuals.delete(id);
         }
       }
-      for (const b of zoneOf(state, state.player).breakables.values()) {
+      for (const b of zoneOf(state, localPlayer(state)).breakables.values()) {
         if (!breakableVisuals.has(b.id)) {
           const g = makeBreakable(b.kind, b.id);
           g.position.set(b.pos.x, 0, b.pos.y);
@@ -627,12 +628,12 @@ export function createScene(
 
       // Sync gold piles
       for (const [id, g] of goldVisuals) {
-        if (!zoneOf(state, state.player).goldPiles.has(id)) {
+        if (!zoneOf(state, localPlayer(state)).goldPiles.has(id)) {
           scene.remove(g);
           goldVisuals.delete(id);
         }
       }
-      for (const pile of zoneOf(state, state.player).goldPiles.values()) {
+      for (const pile of zoneOf(state, localPlayer(state)).goldPiles.values()) {
         if (!goldVisuals.has(pile.id)) {
           const g = makeGoldPile();
           g.position.set(pile.pos.x, 0, pile.pos.y);
@@ -646,14 +647,14 @@ export function createScene(
       vendorRig?.animate(frameNow, 0, 0);
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
-      if (zoneOf(state, state.player).corpses.length < corpseCount) {
+      if (zoneOf(state, localPlayer(state)).corpses.length < corpseCount) {
         for (const mesh of corpseMeshes) scene.remove(mesh);
         corpseMeshes.length = 0;
         corpseCount = 0;
       }
       // Corpses: add newly dead
-      while (corpseCount < zoneOf(state, state.player).corpses.length) {
-        const c = zoneOf(state, state.player).corpses[corpseCount++]!;
+      while (corpseCount < zoneOf(state, localPlayer(state)).corpses.length) {
+        const c = zoneOf(state, localPlayer(state)).corpses[corpseCount++]!;
         const mat = corpseMatByType[c.typeId] ?? flatMat(0x2a2a2a);
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.4), mat);
         mesh.position.set(c.pos.x, 0.04, c.pos.y);
@@ -708,7 +709,7 @@ export function createScene(
         let bestId: number | null = null;
         let bestD = 30; // px
         for (const [id] of monsterRigs) {
-          const monster = zoneOf(state, state.player).monsters.get(id);
+          const monster = zoneOf(state, localPlayer(state)).monsters.get(id);
           if (!monster) continue;
           const at = worldToScreen(monster.pos, 0.55);
           const d = Math.hypot(at.x - cx, at.y - cy);
@@ -780,7 +781,7 @@ export function createScene(
           break;
         }
         case "player_swing": {
-          const p = state.player.pos;
+          const p = localPlayer(state).pos;
           const dx = event.to.x - p.x;
           const dy = event.to.y - p.y;
           if (dx * dx + dy * dy > 1e-6) heroTargetYaw = Math.atan2(dx, dy);
@@ -794,7 +795,7 @@ export function createScene(
         }
         case "monster_swing": {
           const swingRig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
-          const typeId = zoneOf(state, state.player).monsters.get(event.id)?.typeId;
+          const typeId = zoneOf(state, localPlayer(state)).monsters.get(event.id)?.typeId;
           if (typeId) swingRig?.oneShot?.(monsterAttackClip(typeId), { timeScale: 1.4 });
           if (event.ranged) {
             const glob = new THREE.Mesh(
@@ -847,7 +848,7 @@ export function createScene(
         }
         case "player_hit": {
           fx.flash(hero, 0xc03030, 110);
-          fx.burst(state.player.pos.x, 0.7, state.player.pos.y, 0xc03030, 5, 1.6);
+          fx.burst(localPlayer(state).pos.x, 0.7, localPlayer(state).pos.y, 0xc03030, 5, 1.6);
           fx.shake(0.06);
           break;
         }

@@ -11,15 +11,14 @@ import {
   leapStunTicks,
   type SkillId,
 } from "../skills";
-import { zoneOf, type GameState, type PlayerInput } from "../state";
+import { zoneOf, type GameState, type Player, type PlayerInput } from "../state";
 import { computeHitChance, rollDamage } from "./combat";
 
-const MANA_REGEN_PER_TICK = 0.05; // 1.25/s at 25 Hz
+export const MANA_REGEN_PER_TICK = 0.05; // 1.25/s at 25 Hz
 
-export function applySpendSkillInput(state: GameState, input: PlayerInput): void {
+export function applySpendSkillInput(state: GameState, p: Player, input: PlayerInput): void {
   const id = input.spendSkill;
   if (!id) return;
-  const p = state.player;
   const def = SKILLS[id];
   if (!def || p.skillPoints <= 0 || p.level < def.levelReq) return;
   p.skills[id]++;
@@ -27,8 +26,7 @@ export function applySpendSkillInput(state: GameState, input: PlayerInput): void
 }
 
 /** Rank, mana, and the shared action cooldown all gate a cast; success starts it. */
-function spendMana(state: GameState, id: SkillId): boolean {
-  const p = state.player;
+function spendMana(p: Player, id: SkillId): boolean {
   if (p.skills[id] <= 0) return false;
   if (p.swingCooldown > 0) return false;
   const cost = SKILLS[id].manaCost;
@@ -38,19 +36,14 @@ function spendMana(state: GameState, id: SkillId): boolean {
   return true;
 }
 
-function rollSkillDamage(state: GameState, multiplier: number): number {
-  const p = state.player;
-  const total = multiplier * damageMultiplier(state);
-  return Math.max(
-    1,
-    Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * total),
-  );
+function rollSkillDamage(state: GameState, p: Player, multiplier: number): number {
+  const total = multiplier * damageMultiplier(state, p);
+  return Math.max(1, Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * total));
 }
 
-export function applyCastInput(state: GameState, input: PlayerInput): void {
+export function applyCastInput(state: GameState, p: Player, input: PlayerInput): void {
   const cast = input.cast;
   if (!cast) return;
-  const p = state.player;
   const zone = zoneOf(state, p);
 
   switch (cast.skill) {
@@ -59,16 +52,29 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
         (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= CLEAVE_RADIUS,
       );
       if (targets.length === 0) return;
-      if (!spendMana(state, "cleave")) return;
+      if (!spendMana(p, "cleave")) return;
       const mult = cleaveMultiplier(p.skills.cleave, p.skills.warcry);
       for (const m of targets) {
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
-          const amount = rollSkillDamage(state, mult);
+          const amount = rollSkillDamage(state, p, mult);
           m.life -= amount;
-          state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+          m.lastHitBy = p.id;
+          state.events.push({
+            type: "monster_hit",
+            id: m.id,
+            amount,
+            pos: { ...m.pos },
+            zone: zone.id,
+          });
         }
       }
-      state.events.push({ type: "skill_cast", skill: "cleave", pos: { ...p.pos }, zone: zone.id });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "cleave",
+        pos: { ...p.pos },
+        zone: zone.id,
+      });
       break;
     }
     case "crush": {
@@ -76,17 +82,30 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
       const m = zone.monsters.get(cast.target);
       if (!m) return;
       if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) > CRUSH_RANGE) return;
-      if (!spendMana(state, "crush")) return;
-      const amount = rollSkillDamage(state, crushMultiplier(p.skills.crush));
+      if (!spendMana(p, "crush")) return;
+      const amount = rollSkillDamage(state, p, crushMultiplier(p.skills.crush));
       m.life -= amount;
+      m.lastHitBy = p.id;
       state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
-      state.events.push({ type: "skill_cast", skill: "crush", pos: { ...m.pos }, zone: zone.id });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "crush",
+        pos: { ...m.pos },
+        zone: zone.id,
+      });
       break;
     }
     case "warcry": {
-      if (!spendMana(state, "warcry")) return;
+      if (!spendMana(p, "warcry")) return;
       p.warcryUntil = state.tick + SKILLS.warcry.buffTicks;
-      state.events.push({ type: "skill_cast", skill: "warcry", pos: { ...p.pos }, zone: zone.id });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "warcry",
+        pos: { ...p.pos },
+        zone: zone.id,
+      });
       break;
     }
     case "leap": {
@@ -94,7 +113,7 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
       const cell = { x: Math.floor(cast.at.x), y: Math.floor(cast.at.y) };
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > LEAP_RANGE) return;
-      if (!spendMana(state, "leap")) return;
+      if (!spendMana(p, "leap")) return;
       p.pos = { x: cell.x + 0.5, y: cell.y + 0.5 };
       p.path = [];
       p.attackTarget = null;
@@ -104,13 +123,18 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
           m.stunnedUntil = state.tick + stunFor;
         }
       }
-      state.events.push({ type: "skill_cast", skill: "leap", pos: { ...p.pos }, zone: zone.id });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "leap",
+        pos: { ...p.pos },
+        zone: zone.id,
+      });
       break;
     }
   }
 }
 
-export function manaRegenSystem(state: GameState): void {
-  const p = state.player;
-  p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_PER_TICK);
+export function manaRegenSystem(players: Player[]): void {
+  for (const p of players) p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_PER_TICK);
 }

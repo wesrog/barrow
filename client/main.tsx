@@ -2,12 +2,13 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createGame, step, TICK_RATE } from "../sim/tick";
 import { zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { LOCAL, localPlayer } from "./local";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
-import { loadFromStorage, saveToStorage, wipeStorage } from "./save";
+import { loadRaw, saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
 import { MiniMap } from "./ui/MiniMap";
 import { ShopPanel } from "./ui/ShopPanel";
@@ -41,7 +42,12 @@ function Game() {
       setLoading(false);
       setAssets(assets);
       const game = createGame(Date.now() >>> 0);
-      loadFromStorage(game);
+      // The local hero joins on the first frame, carrying any saved character.
+      step(game, {
+        tick: game.tick,
+        inputs: {},
+        joins: [{ id: LOCAL, character: loadRaw() ?? undefined }],
+      });
       gameRef.current = game;
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
@@ -50,11 +56,11 @@ function Game() {
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
       };
-      let scene = createScene(mount, zoneOf(game, game.player).map, assets, onItemClick);
-      let sceneMap = zoneOf(game, game.player).map;
+      let scene = createScene(mount, zoneOf(game, localPlayer(game)).map, assets, onItemClick);
+      let sceneMap = zoneOf(game, localPlayer(game)).map;
 
     let pending: PlayerInput = {};
-    let prevPlayerPos = { ...game.player.pos };
+    let prevPlayerPos = { ...localPlayer(game).pos };
     let mouseDown = false;
     let lastPointer: { x: number; y: number } | null = null;
 
@@ -69,7 +75,7 @@ function Game() {
           picked.kind === "ground"
             ? picked.world
             : picked.kind === "monster"
-              ? zoneOf(game, game.player).monsters.get(picked.id)?.pos
+              ? zoneOf(game, localPlayer(game)).monsters.get(picked.id)?.pos
               : undefined;
         if (at) {
           pending.swingAt = { ...at };
@@ -145,10 +151,10 @@ function Game() {
     mount.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
-    const saveTimer = setInterval(() => saveToStorage(game), 5000);
+    const saveTimer = setInterval(() => saveToStorage(game, LOCAL), 5000);
     // The bottom bar re-reads game state on a light heartbeat.
     const hudTimer = setInterval(() => setVersion((v) => v + 1), 100);
-    const onUnload = () => saveToStorage(game);
+    const onUnload = () => saveToStorage(game, LOCAL);
     window.addEventListener("beforeunload", onUnload);
 
     let raf = 0;
@@ -163,10 +169,12 @@ function Game() {
         if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(!shiftDown ? false : true);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
-        prevPlayerPos = { ...game.player.pos };
-        step(game, pending);
+        prevPlayerPos = { ...localPlayer(game).pos };
+        step(game, { tick: game.tick, inputs: { [LOCAL]: pending } });
         pending = {};
         for (const e of game.events) {
+          // Someone else's business: the HUD only reacts to the local hero.
+          if ("playerId" in e && e.playerId !== LOCAL) continue;
           scene.handleEvent(e, game);
           switch (e.type) {
             case "monster_hit":
@@ -174,7 +182,7 @@ function Game() {
               play("hit");
               break;
             case "player_hit":
-              scene.addDamageNumber(game.player.pos, String(e.amount), "#e05252");
+              scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
               break;
             case "player_swing":
@@ -199,11 +207,11 @@ function Game() {
               play("pickup");
               break;
             case "potion_drunk":
-              scene.addDamageNumber(game.player.pos, `+${e.healed}`, "#7fd97f");
+              scene.addDamageNumber(localPlayer(game).pos, `+${e.healed}`, "#7fd97f");
               play("potion");
               break;
             case "level_up":
-              scene.addDamageNumber(game.player.pos, `level ${e.level}!`, "#f0c96a");
+              scene.addDamageNumber(localPlayer(game).pos, `level ${e.level}!`, "#f0c96a");
               play("levelup");
               break;
             case "exploded":
@@ -221,11 +229,11 @@ function Game() {
               setShopOpen(true);
               break;
             case "item_broke":
-              scene.addDamageNumber(game.player.pos, `${e.name} broke!`, "#e05252");
+              scene.addDamageNumber(localPlayer(game).pos, `${e.name} broke!`, "#e05252");
               play("die");
               break;
             case "repaired":
-              scene.addDamageNumber(game.player.pos, `repaired (-${e.cost}g)`, "#c9a84c");
+              scene.addDamageNumber(localPlayer(game).pos, `repaired (-${e.cost}g)`, "#c9a84c");
               play("coin");
               break;
             case "bought":
@@ -234,7 +242,7 @@ function Game() {
               break;
             case "skill_cast":
               if (e.skill === "warcry") {
-                scene.addDamageNumber(game.player.pos, "warcry!", "#9ad1f5");
+                scene.addDamageNumber(localPlayer(game).pos, "warcry!", "#9ad1f5");
                 play("warcry");
               } else if (e.skill === "cleave") play("cleave");
               else if (e.skill === "crush") play("crush");
@@ -247,12 +255,12 @@ function Game() {
       }
       if (sawEvents) setVersion((v) => v + 1);
       // Traveling swaps the zone map — rebuild the whole scene around it.
-      const currentMap = zoneOf(game, game.player).map;
+      const currentMap = zoneOf(game, localPlayer(game)).map;
       if (currentMap !== sceneMap) {
         scene.dispose();
         scene = createScene(mount, currentMap, assets, onItemClick);
         sceneMap = currentMap;
-        prevPlayerPos = { ...game.player.pos };
+        prevPlayerPos = { ...localPlayer(game).pos };
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPlayerPos, acc / TICK_MS);
@@ -311,7 +319,7 @@ function Game() {
         />
       )}
       {gameRef.current && <MiniMap game={gameRef.current} />}
-      {shopOpen && gameRef.current && gameRef.current.player.zoneId === "camp" && (
+      {shopOpen && gameRef.current && localPlayer(gameRef.current).zoneId === "camp" && (
         <ShopPanel
           game={gameRef.current}
           onBuy={(index) => {

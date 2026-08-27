@@ -35,7 +35,35 @@ export function zoneOf(state: GameState, p: Player): ZoneState {
   return getZone(state, p.zoneId);
 }
 
+/** Every player id, ascending — the one iteration order the sim ever uses. */
+export function playerIds(state: GameState): PlayerId[] {
+  return [...state.players.keys()].sort((a, b) => a - b);
+}
+
+/** Every player, ascending by id. */
+export function allPlayers(state: GameState): Player[] {
+  return playerIds(state).map((id) => state.players.get(id)!);
+}
+
+/** 0..3, assigned by the host as players join. */
+export type PlayerId = number;
+
+export interface PlayerJoin {
+  id: PlayerId;
+  /** CharacterSave JSON, when the joiner brings an existing hero. */
+  character?: string;
+}
+
+/** One tick's worth of the world's input: what every player did, plus roster churn. */
+export interface Frame {
+  tick: number;
+  inputs: Partial<Record<PlayerId, PlayerInput>>;
+  joins?: PlayerJoin[];
+  leaves?: PlayerId[];
+}
+
 export interface Player {
+  id: PlayerId;
   /** Which zone this player is standing in. */
   zoneId: ZoneId;
   pos: Vec;
@@ -94,30 +122,33 @@ export interface GoldPile {
 }
 
 export type SimEvent =
-  | { type: "player_swing"; to: Vec; zone: ZoneId }
+  | { type: "player_swing"; playerId: PlayerId; to: Vec; zone: ZoneId }
   | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean; zone: ZoneId }
   | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
-  | { type: "player_hit"; amount: number }
+  | { type: "player_hit"; playerId: PlayerId; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number; zone: ZoneId }
-  | { type: "level_up"; level: number }
-  | { type: "skill_cast"; skill: SkillId; pos: Vec; zone: ZoneId }
+  | { type: "level_up"; playerId: PlayerId; level: number }
+  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
-  | { type: "potion_drunk"; healed: number }
-  | { type: "traveled"; to: ZoneId }
+  | { type: "potion_drunk"; playerId: PlayerId; healed: number }
+  | { type: "traveled"; playerId: PlayerId; to: ZoneId }
   | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
-  | { type: "gold_picked"; amount: number }
-  | { type: "item_broke"; name: string }
-  | { type: "repaired"; cost: number }
-  | { type: "shop_opened" }
-  | { type: "bought"; name: string; price: number }
-  | { type: "sold"; name: string; price: number }
+  | { type: "gold_picked"; playerId: PlayerId; amount: number }
+  | { type: "item_broke"; playerId: PlayerId; name: string }
+  | { type: "repaired"; playerId: PlayerId; cost: number }
+  | { type: "shop_opened"; playerId: PlayerId }
+  | { type: "bought"; playerId: PlayerId; name: string; price: number }
+  | { type: "sold"; playerId: PlayerId; name: string; price: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec; zone: ZoneId }
-  | { type: "item_picked"; id: number; name: string }
-  | { type: "item_equipped"; slot: EquipSlot }
-  | { type: "item_unequipped"; slot: EquipSlot }
-  | { type: "inventory_full" };
+  | { type: "item_picked"; playerId: PlayerId; id: number; name: string }
+  | { type: "item_equipped"; playerId: PlayerId; slot: EquipSlot }
+  | { type: "item_unequipped"; playerId: PlayerId; slot: EquipSlot }
+  | { type: "inventory_full"; playerId: PlayerId }
+  | { type: "player_joined"; playerId: PlayerId }
+  | { type: "player_left"; playerId: PlayerId }
+  | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec };
 
 export interface ShopEntry {
   item: Item;
@@ -131,7 +162,8 @@ export interface GameState {
   zones: Map<ZoneId, ZoneState>;
   /** The vendor's current stock; restocked each camp arrival. */
   shop: ShopEntry[];
-  player: Player;
+  /** Everyone in the game, keyed by host-assigned id. */
+  players: Map<PlayerId, Player>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;

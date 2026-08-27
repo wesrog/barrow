@@ -47,6 +47,46 @@ describe("character save", () => {
     expect(player(state).level).toBe(level);
   });
 
+  test("a save with a shapeless inventory is rejected", () => {
+    // `inventory: {}` used to sail through the guard and then blow up inside
+    // step() at the entries loop — a deterministic crash on every client.
+    const state = soloGame(1);
+    const raw = serializeCharacter(state, 0);
+    const save = JSON.parse(raw);
+    save.inventory = {};
+    expect(applyCharacter(state, 0, JSON.stringify(save))).toBe(false);
+
+    save.inventory = { entries: "nope" };
+    expect(applyCharacter(state, 0, JSON.stringify(save))).toBe(false);
+  });
+
+  test("non-numeric core fields are rejected", () => {
+    const state = soloGame(1);
+    const save = JSON.parse(serializeCharacter(state, 0));
+    for (const field of ["level", "xp", "skillPoints", "belt"]) {
+      const bad = { ...save, [field]: "3" };
+      expect(applyCharacter(state, 0, JSON.stringify(bad))).toBe(false);
+    }
+  });
+
+  test("skills must be an object; missing ranks fill in as 0", () => {
+    const state = soloGame(1);
+    const save = JSON.parse(serializeCharacter(state, 0));
+
+    // A non-object skills field is unusable — reject.
+    expect(applyCharacter(state, 0, JSON.stringify({ ...save, skills: null }))).toBe(false);
+    expect(applyCharacter(state, 0, JSON.stringify({ ...save, skills: 5 }))).toBe(false);
+    // So is a rank that won't coerce to a finite number.
+    expect(
+      applyCharacter(state, 0, JSON.stringify({ ...save, skills: { cleave: "lots" } })),
+    ).toBe(false);
+
+    // A partial object is fine: the ranks it omits are simply 0, never undefined.
+    const partial = { ...save, skills: { cleave: 2 } };
+    expect(applyCharacter(state, 0, JSON.stringify(partial))).toBe(true);
+    expect(player(state).skills).toEqual({ cleave: 2, crush: 0, warcry: 0, leap: 0 });
+  });
+
   test("a character joining through a frame arrives with its gear", () => {
     const a = soloGame(1);
     player(a).level = 4;

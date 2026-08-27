@@ -7,13 +7,13 @@ import {
   type Player,
   type PlayerInput,
   type Portal,
+  type ZoneId,
   type ZoneState,
 } from "../state";
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
 import { findPath, smoothPath } from "../path";
 import { isWalkable } from "../map";
-import { travel } from "../tick";
 
 /** How close you must stand to Maren before he'll talk shop. */
 const TALK_RANGE = 1.4;
@@ -156,7 +156,10 @@ export function removePortalsOwnedBy(state: GameState, owner: number): void {
   }
 }
 
-/** Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets. */
+/**
+ * Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets.
+ * Only avoids other portals — camp has no monsters or breakables to dodge.
+ */
 function findCampPortalSpot(camp: ZoneState): { x: number; y: number } {
   const spawn = camp.map.spawn;
   const cx = Math.floor(spawn.x);
@@ -222,8 +225,19 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.path = [];
 }
 
-/** Walk toward a targeted portal; riding it teleports to the linked end (persistent — not consumed). */
-export function portalSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+/**
+ * Walk toward a targeted portal; riding it teleports to the linked end (persistent —
+ * not consumed). `travel` is injected by the caller (defined in `tick.ts`, which is
+ * also where this system is wired in) so this module never has to import upward from
+ * the orchestrator — the same reason `stairsSystem`/`travelPadSystem` live in tick.ts
+ * itself rather than here.
+ */
+export function portalSystem(
+  state: GameState,
+  zone: ZoneState,
+  players: Player[],
+  travel: (state: GameState, p: Player, to: ZoneId) => void,
+): void {
   for (const p of players) {
     if (p.portalTarget === null) continue;
     const target = zone.portals.get(p.portalTarget);

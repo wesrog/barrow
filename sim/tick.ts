@@ -282,7 +282,7 @@ export function step(state: GameState, frame: Frame): void {
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
     vendorSystem(state, zone, acting());
-    portalSystem(state, zone, acting());
+    portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
     movementSystem(acting());
     travelPadSystem(state, zone, acting());

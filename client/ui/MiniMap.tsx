@@ -1,7 +1,8 @@
 import { localPlayer } from "../local";
 import { useEffect, useRef } from "react";
 import { isWalkable } from "../../sim/map";
-import { zoneOf, type GameState } from "../../sim/state";
+import { allPlayers, zoneOf, type GameState } from "../../sim/state";
+import { playerCss } from "../render/tints";
 import { RARITY_CSS } from "./InventoryPanel";
 
 const SCALE = 4;
@@ -52,9 +53,19 @@ export function MiniMap({ game }: { game: GameState }) {
         const r = boss ? 3 : 2;
         ctx.fillRect(m.pos.x * SCALE - r / 2, m.pos.y * SCALE - r / 2, r, r);
       }
+      // Party members sharing this zone, each in their seat colour…
+      const me = localPlayer(game);
+      for (const p of allPlayers(game)) {
+        if (p.id === me.id || p.zoneId !== me.zoneId) continue;
+        ctx.fillStyle = playerCss(p.id);
+        ctx.beginPath();
+        ctx.arc(p.pos.x * SCALE, p.pos.y * SCALE, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // …and us, always the bright one.
       ctx.fillStyle = "#f0e9dc";
       ctx.beginPath();
-      ctx.arc(localPlayer(game).pos.x * SCALE, localPlayer(game).pos.y * SCALE, 2.2, 0, Math.PI * 2);
+      ctx.arc(me.pos.x * SCALE, me.pos.y * SCALE, 2.2, 0, Math.PI * 2);
       ctx.fill();
     };
     draw();

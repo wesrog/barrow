@@ -1,16 +1,24 @@
 import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
-import { zoneOf, type GameState, type SimEvent } from "../../sim/state";
-import { localPlayer } from "../local";
+import {
+  allPlayers,
+  zoneOf,
+  type GameState,
+  type PlayerId,
+  type SimEvent,
+} from "../../sim/state";
+import { localId, localPlayer } from "../local";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
   makeHeroModelRig,
   makeMonsterModelRig,
   monsterAttackClip,
+  type HeroModelRig,
   type ModelRig,
 } from "./modelRigs";
 import type { GameAssets } from "./models";
+import { playerCss, playerTint } from "./tints";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -18,13 +26,19 @@ export type PickResult =
   | { kind: "monster"; id: number }
   | { kind: "item"; id: number }
   | { kind: "breakable"; id: number }
+  | { kind: "portal"; id: number }
+  | { kind: "corpse"; id: number }
   | { kind: "vendor" }
   | { kind: "ground"; world: Vec }
   | null;
 
 export interface SceneHandle {
-  /** Draw the current sim state; alpha ∈ [0,1] interpolates from the previous tick. */
-  render(state: GameState, prevPlayerPos: Vec, alpha: number): void;
+  /**
+   * Draw the current sim state; alpha ∈ [0,1] interpolates from the previous
+   * tick. `prevPositions` holds every player's pre-step position, so the whole
+   * party moves smoothly, not just the local hero.
+   */
+  render(state: GameState, prevPositions: Map<PlayerId, Vec>, alpha: number): void;
   /** What is under the pointer: a monster, or a spot on the ground. */
   pick(state: GameState, clientX: number, clientY: number): PickResult;
   /** Spawn a floating damage number at a world position. */
@@ -327,16 +341,67 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
-  // --- Hero: animated KayKit barbarian with weapon in the hand slot ---
-  const heroRig = makeHeroModelRig(assets);
-  const hero = heroRig.group;
-  scene.add(hero);
-  let heroWasDead = false;
-  // Renderer-side displacement for lunges; sim position stays authoritative.
-  const heroFxOffset = new THREE.Vector3();
-  let heroPhase = 0;
-  let lastHeroPos: { x: number; y: number } | null = null;
-  let equipSignature = "";
+  // --- Heroes: one animated KayKit barbarian per player standing in this zone ---
+  interface HeroEntry {
+    rig: HeroModelRig;
+    /** Renderer-side displacement for lunges; sim position stays authoritative. */
+    fxOffset: THREE.Vector3;
+    phase: number;
+    lastPos: { x: number; y: number } | null;
+    equipSignature: string;
+    targetYaw: number;
+    wasDead: boolean;
+    /** "P2" over the head — remote party members only. */
+    nameplate: HTMLDivElement | null;
+  }
+  const heroes = new Map<PlayerId, HeroEntry>();
+
+  /** Blend a rig's materials toward a seat colour so party members read apart. */
+  const tintRig = (root: THREE.Object3D, color: number, amount: number) => {
+    const target = new THREE.Color(color);
+    root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.lerp(target, amount);
+      }
+    });
+  };
+
+  const makeHero = (id: PlayerId): HeroEntry => {
+    const rig = makeHeroModelRig(assets);
+    scene.add(rig.group);
+    let plate: HTMLDivElement | null = null;
+    if (id !== localId()) {
+      // Remote heroes wear their seat colour; the local one keeps its own look.
+      tintRig(rig.group, playerTint(id), 0.4);
+      plate = document.createElement("div");
+      plate.textContent = `P${id + 1}`;
+      plate.style.cssText = `position:absolute;color:${playerCss(id)};font-size:11.5px;font-weight:700;letter-spacing:1px;transform:translate(-50%,-100%);text-shadow:0 1px 3px #000;`;
+      overlay.appendChild(plate);
+    }
+    const entry: HeroEntry = {
+      rig,
+      fxOffset: new THREE.Vector3(),
+      phase: 0,
+      lastPos: null,
+      equipSignature: "",
+      targetYaw: 0,
+      wasDead: false,
+      nameplate: plate,
+    };
+    heroes.set(id, entry);
+    return entry;
+  };
+
+  const dropHero = (id: PlayerId) => {
+    const entry = heroes.get(id);
+    if (!entry) return;
+    scene.remove(entry.rig.group);
+    entry.nameplate?.remove();
+    heroes.delete(id);
+  };
+
+  /** The rig a player-scoped event should play on, if that player is on screen. */
+  const heroOf = (id: PlayerId): HeroEntry | undefined => heroes.get(id);
 
   // --- Ground items ---
   const RARITY_COLORS: Record<string, { hex: number; css: string }> = {
@@ -355,7 +420,6 @@ export function createScene(
   const monsterLerp = new Map<number, { px: number; py: number; cx: number; cy: number; yaw: number }>();
   let lastSimTick = -1;
   let lastFrameNow = performance.now();
-  let heroTargetYaw = 0;
 
   /** Ease an angle toward a target along the shortest arc. */
   const approachAngle = (current: number, target: number, maxStep: number): number => {
@@ -368,7 +432,8 @@ export function createScene(
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
   // --- Hover highlight: brighten the rig under the cursor ---
-  let hoveredId: number | null = null;
+  // Keyed by kind:id — monster 3 and portal 3 are different things.
+  let hoveredKey: string | null = null;
   const hoverTint = (root: THREE.Object3D | undefined, on: boolean) => {
     root?.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
@@ -391,6 +456,44 @@ export function createScene(
     tomb_bloat: flatMat(0x4a4028),
     barrow_lord: flatMat(0x272a38),
   };
+
+  // --- Town portals: a flat glowing ring you can step into ---
+  const portalVisuals = new Map<number, THREE.Group>();
+  const makePortalMesh = (): THREE.Group => {
+    const g = new THREE.Group();
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(0.42, 0.08, 6, 18),
+      new THREE.MeshStandardMaterial({
+        color: 0x7fb8c9,
+        emissive: 0x4f9ab0,
+        emissiveIntensity: 1.6,
+        roughness: 0.4,
+        flatShading: true,
+      }),
+    );
+    torus.rotation.x = -Math.PI / 2;
+    torus.position.y = 0.12;
+    g.add(torus);
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.42, 18),
+      new THREE.MeshBasicMaterial({
+        color: 0x7fb8c9,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+      }),
+    );
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = 0.1;
+    g.add(disc);
+    const light = new THREE.PointLight(0x7fb8c9, 2.6, 5, 1.8);
+    light.position.y = 0.8;
+    g.add(light);
+    return g;
+  };
+
+  // --- Player corpses: the owner's hero, face down, still wearing their gear ---
+  const playerCorpseVisuals = new Map<number, { rig: HeroModelRig; group: THREE.Group }>();
 
   // --- Expanding ground rings (explosions, cleave arcs, warcry) ---
   const ring = (pos: Vec, radius: number, color: number, dur = 400) => {
@@ -441,49 +544,77 @@ export function createScene(
   };
 
   return {
-    render(state, prevPlayerPos, alpha) {
+    render(state, prevPositions, alpha) {
       const me = localPlayer(state);
-      const px = prevPlayerPos.x + (me.pos.x - prevPlayerPos.x) * alpha;
-      const py = prevPlayerPos.y + (me.pos.y - prevPlayerPos.y) * alpha;
-      hero.position.set(px + heroFxOffset.x, 0, py + heroFxOffset.z);
-      heroLight.position.set(px, 1.6, py);
-
       const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);
       lastFrameNow = performance.now();
-
-      const dx = me.pos.x - prevPlayerPos.x;
-      const dy = me.pos.y - prevPlayerPos.y;
-      if (dx * dx + dy * dy > 1e-6) {
-        facing.set(dx, 0, dy).normalize();
-        heroTargetYaw = Math.atan2(facing.x, facing.z);
-      }
-      hero.rotation.y = approachAngle(hero.rotation.y, heroTargetYaw, frameDt * 14);
-      // Death and revival play through animation clips, not a rotation hack.
-      if (me.dead && !heroWasDead) {
-        heroRig.oneShot("Death_A", { hold: true });
-      } else if (!me.dead && heroWasDead) {
-        heroRig.release();
-      }
-      heroWasDead = me.dead;
-
-      // Rebuild visible gear when equipment changes.
-      const eq = me.equipment;
-      const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
-        .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
-        .join("|");
-      if (signature !== equipSignature) {
-        equipSignature = signature;
-        heroRig.setEquipment(eq);
-      }
-
-      // Drive the walk cycle from actual movement so feet never slide.
       const frameNow = performance.now();
-      if (lastHeroPos) {
-        const step = Math.hypot(px - lastHeroPos.x, py - lastHeroPos.y);
-        heroPhase += step * 7;
-        heroRig.animate(frameNow, heroPhase, step * 60);
+
+      // Retire rigs for players who left the game or walked into another zone.
+      for (const id of [...heroes.keys()]) {
+        const p = state.players.get(id);
+        if (!p || p.zoneId !== me.zoneId) dropHero(id);
       }
-      lastHeroPos = { x: px, y: py };
+
+      let px = me.pos.x;
+      let py = me.pos.y;
+      for (const p of allPlayers(state)) {
+        if (p.zoneId !== me.zoneId) continue;
+        const entry = heroes.get(p.id) ?? makeHero(p.id);
+        // A player who just arrived (or teleported) has no meaningful previous
+        // position — snap rather than sliding across the whole map.
+        const prev = prevPositions.get(p.id) ?? p.pos;
+        const jumped = Math.hypot(p.pos.x - prev.x, p.pos.y - prev.y) > 1;
+        const from = jumped ? p.pos : prev;
+        const x = from.x + (p.pos.x - from.x) * alpha;
+        const y = from.y + (p.pos.y - from.y) * alpha;
+        const group = entry.rig.group;
+        group.position.set(x + entry.fxOffset.x, 0, y + entry.fxOffset.z);
+
+        const dx = p.pos.x - from.x;
+        const dy = p.pos.y - from.y;
+        if (dx * dx + dy * dy > 1e-6) {
+          facing.set(dx, 0, dy).normalize();
+          entry.targetYaw = Math.atan2(facing.x, facing.z);
+        }
+        group.rotation.y = approachAngle(group.rotation.y, entry.targetYaw, frameDt * 14);
+        // Death and revival play through animation clips, not a rotation hack.
+        if (p.dead && !entry.wasDead) {
+          entry.rig.oneShot("Death_A", { hold: true });
+        } else if (!p.dead && entry.wasDead) {
+          entry.rig.release();
+        }
+        entry.wasDead = p.dead;
+
+        // Rebuild visible gear when equipment changes.
+        const eq = p.equipment;
+        const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
+          .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
+          .join("|");
+        if (signature !== entry.equipSignature) {
+          entry.equipSignature = signature;
+          entry.rig.setEquipment(eq);
+        }
+
+        // Drive the walk cycle from actual movement so feet never slide.
+        if (entry.lastPos) {
+          const step = Math.hypot(x - entry.lastPos.x, y - entry.lastPos.y);
+          entry.phase += step * 7;
+          entry.rig.animate(frameNow, entry.phase, step * 60);
+        }
+        entry.lastPos = { x, y };
+
+        if (entry.nameplate) {
+          const at = worldToScreen({ x, y }, 1.9);
+          entry.nameplate.style.left = `${at.x}px`;
+          entry.nameplate.style.top = `${at.y}px`;
+        }
+        if (p.id === localId()) {
+          px = x;
+          py = y;
+        }
+      }
+      heroLight.position.set(px, 1.6, py);
 
       // Sync monster rigs with sim state
       for (const [id, rig] of monsterRigs) {
@@ -643,6 +774,48 @@ export function createScene(
         }
       }
 
+      // Sync cast portals — both ends of a pair live in their own zone
+      for (const [id, g] of portalVisuals) {
+        if (!zoneOf(state, me).portals.has(id)) {
+          scene.remove(g);
+          portalVisuals.delete(id);
+        }
+      }
+      for (const portal of zoneOf(state, me).portals.values()) {
+        let g = portalVisuals.get(portal.id);
+        if (!g) {
+          g = makePortalMesh();
+          g.position.set(portal.pos.x, 0, portal.pos.y);
+          scene.add(g);
+          portalVisuals.set(portal.id, g);
+        }
+        g.rotation.y = frameNow / 1600;
+      }
+
+      // Sync player corpses — a hero lying where they fell, gear and all
+      for (const [id, v] of playerCorpseVisuals) {
+        if (!zoneOf(state, me).playerCorpses.has(id)) {
+          scene.remove(v.group);
+          playerCorpseVisuals.delete(id);
+        }
+      }
+      for (const pc of zoneOf(state, me).playerCorpses.values()) {
+        let v = playerCorpseVisuals.get(pc.id);
+        if (!v) {
+          const rig = makeHeroModelRig(assets);
+          rig.setEquipment(pc.equipment);
+          tintRig(rig.group, playerTint(pc.playerId), 0.4);
+          // The death clip ends face down; hold it so the body just lies there.
+          rig.oneShot("Death_A", { hold: true });
+          rig.group.position.set(pc.pos.x, 0, pc.pos.y);
+          rig.group.rotation.y = (pc.id * 1.7) % (Math.PI * 2);
+          scene.add(rig.group);
+          v = { rig, group: rig.group };
+          playerCorpseVisuals.set(pc.id, v);
+        }
+        v.rig.animate(frameNow, 0, 0);
+      }
+
       // Town dressing: the portal ring turns, the vendor idles
       if (portalRing) portalRing.rotation.z = performance.now() / 1400;
       vendorRig?.animate(frameNow, 0, 0);
@@ -702,15 +875,35 @@ export function createScene(
           if (rig.group === obj) return { kind: "monster", id };
         }
       }
+      const zone = zoneOf(state, localPlayer(state));
+      const portalHits = raycaster.intersectObjects([...portalVisuals.values()], true);
+      if (portalHits.length > 0) {
+        let obj: THREE.Object3D | null = portalHits[0]!.object;
+        while (obj && obj.parent !== scene) obj = obj.parent;
+        for (const [id, g] of portalVisuals) {
+          if (g === obj) return { kind: "portal", id };
+        }
+      }
+      const pcHits = raycaster.intersectObjects(
+        [...playerCorpseVisuals.values()].map((v) => v.group),
+        true,
+      );
+      if (pcHits.length > 0) {
+        let obj: THREE.Object3D | null = pcHits[0]!.object;
+        while (obj && obj.parent !== scene) obj = obj.parent;
+        for (const [id, v] of playerCorpseVisuals) {
+          if (v.group === obj) return { kind: "corpse", id };
+        }
+      }
+      const rect = renderer.domElement.getBoundingClientRect();
+      const cx = clientX - rect.left;
+      const cy = clientY - rect.top;
       // Forgiving fallback: nearest monster within a generous screen radius.
       {
-        const rect = renderer.domElement.getBoundingClientRect();
-        const cx = clientX - rect.left;
-        const cy = clientY - rect.top;
         let bestId: number | null = null;
         let bestD = 30; // px
         for (const [id] of monsterRigs) {
-          const monster = zoneOf(state, localPlayer(state)).monsters.get(id);
+          const monster = zone.monsters.get(id);
           if (!monster) continue;
           const at = worldToScreen(monster.pos, 0.55);
           const d = Math.hypot(at.x - cx, at.y - cy);
@@ -720,6 +913,29 @@ export function createScene(
           }
         }
         if (bestId !== null) return { kind: "monster", id: bestId };
+      }
+      // Portals and bodies lie flat, so their silhouettes are thin — allow the
+      // same near-miss slack the monsters get.
+      {
+        let best: PickResult = null;
+        let bestD = 22; // px
+        for (const portal of zone.portals.values()) {
+          const at = worldToScreen(portal.pos, 0.3);
+          const d = Math.hypot(at.x - cx, at.y - cy);
+          if (d < bestD) {
+            bestD = d;
+            best = { kind: "portal", id: portal.id };
+          }
+        }
+        for (const pc of zone.playerCorpses.values()) {
+          const at = worldToScreen(pc.pos, 0.2);
+          const d = Math.hypot(at.x - cx, at.y - cy);
+          if (d < bestD) {
+            bestD = d;
+            best = { kind: "corpse", id: pc.id };
+          }
+        }
+        if (best) return best;
       }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
@@ -755,23 +971,32 @@ export function createScene(
 
     updateHover(state, clientX, clientY) {
       const picked = this.pick(state, clientX, clientY);
-      const id = picked?.kind === "monster" || picked?.kind === "breakable" ? picked.id : null;
-      const tintable = (targetId: number | null) =>
-        targetId === null
-          ? undefined
-          : (monsterRigs.get(targetId)?.group ?? breakableVisuals.get(targetId));
-      if (id !== hoveredId) {
-        hoverTint(tintable(hoveredId), false);
-        hoverTint(tintable(id), true);
-        hoveredId = id;
+      const HIGHLIGHT = ["monster", "breakable", "portal", "corpse"];
+      const key =
+        picked && HIGHLIGHT.includes(picked.kind) && "id" in picked
+          ? `${picked.kind}:${picked.id}`
+          : null;
+      const tintable = (k: string | null): THREE.Object3D | undefined => {
+        if (!k) return undefined;
+        const [kind, raw] = k.split(":");
+        const id = Number(raw);
+        if (kind === "monster") return monsterRigs.get(id)?.group;
+        if (kind === "breakable") return breakableVisuals.get(id);
+        if (kind === "portal") return portalVisuals.get(id);
+        return playerCorpseVisuals.get(id)?.group;
+      };
+      if (key !== hoveredKey) {
+        hoverTint(tintable(hoveredKey), false);
+        hoverTint(tintable(key), true);
+        hoveredKey = key;
       }
       renderer.domElement.style.cursor =
-        picked?.kind === "monster" || picked?.kind === "item" || picked?.kind === "breakable"
-          ? "pointer"
-          : "default";
+        picked && picked.kind !== "ground" ? "pointer" : "default";
     },
 
     handleEvent(event, state) {
+      // Nothing happening in another zone is ours to draw.
+      if ("zone" in event && event.zone !== localPlayer(state).zoneId) return;
       switch (event.type) {
         case "monster_windup": {
           // The boss telegraphs: a taunt, a growing blood ring, a darkening body.
@@ -782,16 +1007,18 @@ export function createScene(
           break;
         }
         case "player_swing": {
-          const p = localPlayer(state).pos;
-          const dx = event.to.x - p.x;
-          const dy = event.to.y - p.y;
-          if (dx * dx + dy * dy > 1e-6) heroTargetYaw = Math.atan2(dx, dy);
+          const entry = heroOf(event.playerId);
+          const swinger = state.players.get(event.playerId);
+          if (!entry || !swinger) break;
+          const dx = event.to.x - swinger.pos.x;
+          const dy = event.to.y - swinger.pos.y;
+          if (dx * dx + dy * dy > 1e-6) entry.targetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
-          heroRig.oneShot(heroRig.attackClip(), { timeScale: 1.6 });
+          entry.rig.oneShot(entry.rig.attackClip(), { timeScale: 1.6 });
           fx.tween(200, (t) => {
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
-            heroFxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
-          }, () => heroFxOffset.set(0, 0, 0));
+            entry.fxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
+          }, () => entry.fxOffset.set(0, 0, 0));
           break;
         }
         case "monster_swing": {
@@ -848,9 +1075,12 @@ export function createScene(
           break;
         }
         case "player_hit": {
-          fx.flash(hero, 0xc03030, 110);
-          fx.burst(localPlayer(state).pos.x, 0.7, localPlayer(state).pos.y, 0xc03030, 5, 1.6);
-          fx.shake(0.06);
+          const entry = heroOf(event.playerId);
+          const victim = state.players.get(event.playerId);
+          if (!entry || !victim) break;
+          fx.flash(entry.rig.group, 0xc03030, 110);
+          fx.burst(victim.pos.x, 0.7, victim.pos.y, 0xc03030, 5, 1.6);
+          if (event.playerId === localId()) fx.shake(0.06);
           break;
         }
         case "monster_died": {
@@ -896,22 +1126,27 @@ export function createScene(
           break;
         }
         case "skill_cast": {
+          const caster = heroOf(event.playerId)?.rig;
+          // Only the local hero's casts rattle the camera.
+          const shake = (amount: number) => {
+            if (event.playerId === localId()) fx.shake(amount);
+          };
           if (event.skill === "cleave") {
-            heroRig.oneShot("2H_Melee_Attack_Spin", { timeScale: 1.5 });
+            caster?.oneShot("2H_Melee_Attack_Spin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
-            fx.shake(0.08);
+            shake(0.08);
           } else if (event.skill === "warcry") {
-            heroRig.oneShot("Cheer", { timeScale: 1.4 });
+            caster?.oneShot("Cheer", { timeScale: 1.4 });
             ring(event.pos, 2.6, 0x6a9ad1, 500);
           } else if (event.skill === "leap") {
             // The leap's own motion spike must not cancel its jump clip.
-            heroRig.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
+            caster?.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
             ring(event.pos, 1.6, 0x8a8478, 260);
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
-            fx.shake(0.18);
+            shake(0.18);
           } else if (event.skill === "crush") {
-            heroRig.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
-            fx.shake(0.12);
+            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
+            shake(0.12);
           }
           break;
         }

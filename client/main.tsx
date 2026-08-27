@@ -64,7 +64,11 @@ function Game() {
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
     let pending: PlayerInput = {};
-    let prevPlayerPos = { ...localPlayer(game).pos };
+    // Every player's position as of the last tick — the scene interpolates the
+    // whole party, not just us.
+    const snapshotPositions = () =>
+      new Map([...game.players].map(([id, p]) => [id, { ...p.pos }] as const));
+    let prevPositions = snapshotPositions();
     let mouseDown = false;
     let lastPointer: { x: number; y: number } | null = null;
 
@@ -98,6 +102,12 @@ function Game() {
         delete pending.moveTo;
       } else if (picked.kind === "vendor" && allowAttack) {
         pending.talkVendor = true;
+        delete pending.moveTo;
+      } else if (picked.kind === "portal" && allowAttack) {
+        pending.usePortal = picked.id;
+        delete pending.moveTo;
+      } else if (picked.kind === "corpse" && allowAttack) {
+        pending.reclaim = picked.id;
         delete pending.moveTo;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
@@ -172,10 +182,14 @@ function Game() {
 
     const drainEvents = () => {
       if (game.events.length > 0) sawEvents = true;
+      const localZone = localPlayer(game).zoneId;
       for (const e of game.events) {
-          // Someone else's business: the HUD only reacts to the local hero.
-          if ("playerId" in e && e.playerId !== localId()) continue;
+          // Another zone entirely: neither the scene nor the HUD cares.
+          if ("zone" in e && e.zone !== localZone) continue;
+          // The scene animates every hero on screen; the HUD and the sound
+          // effects only react to the local one.
           scene.handleEvent(e, game);
+          if ("playerId" in e && e.playerId !== localId()) continue;
           switch (e.type) {
             case "monster_hit":
               scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
@@ -269,7 +283,7 @@ function Game() {
         pending = {};
       }
       driver.requestTick?.(); // solo: we are our own frame source
-      prevPlayerPos = { ...localPlayer(game).pos };
+      prevPositions = snapshotPositions();
       if (!session.tryStep()) return false;
       drainEvents();
       return true;
@@ -303,10 +317,10 @@ function Game() {
         scene.dispose();
         scene = createScene(mount, currentMap, assets, onItemClick);
         sceneMap = currentMap;
-        prevPlayerPos = { ...localPlayer(game).pos };
+        prevPositions = snapshotPositions();
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
-      scene.render(game, prevPlayerPos, acc / TICK_MS);
+      scene.render(game, prevPositions, acc / TICK_MS);
     };
     raf = requestAnimationFrame(frame);
 

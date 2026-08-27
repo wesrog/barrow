@@ -336,6 +336,7 @@ export function deathSystem(
       pos: { ...m.pos },
       xp: m.xp,
       zone: zone.id,
+      killer: m.lastHitBy,
     });
     const item = rollDrop(
       state.rng,

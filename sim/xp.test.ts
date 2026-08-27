@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { stepSolo } from "./tick";
+import { createGame, joinPlayer, stepSolo } from "./tick";
 import { createGameOn, player, spawnAt } from "./test-helpers";
 import { xpForLevel, LIFE_PER_LEVEL } from "./character";
+import { xpSystem } from "./systems/xp";
 import type { GameState } from "./state";
 
 const openMap = () =>
@@ -61,5 +62,107 @@ describe("xp and leveling", () => {
     const after = player(state).maxLife;
     stepSolo(state, { unequip: "weapon" });
     expect(player(state).maxLife).toBe(after);
+  });
+});
+
+describe("xp split", () => {
+  test("solo killer gets full xp", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 12,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(12);
+  });
+
+  test("two players in range split with party bonus", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p1.pos = { ...p0.pos };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 100,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    // floor(100 / 2 * 1.35) = 67
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
+  });
+
+  test("killer is included even when out of radius; distant non-killers are not", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 }); // killer, far away
+    const p1 = joinPlayer(state, { id: 1 }); // bystander, adjacent
+    const p2 = joinPlayer(state, { id: 2 }); // far away, not killer
+    const killPos = { x: 0, y: 0 };
+    p0.pos = { x: 30, y: 0 };
+    p1.pos = { x: 1, y: 0 };
+    p2.pos = { x: 30, y: 5 };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: killPos,
+      xp: 100,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    // n=2 (killer + bystander): floor(100 / 2 * 1.35) = 67
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
+    expect(p2.xp).toBe(0);
+  });
+
+  test("players in other zones never share", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p0.zoneId = "floor:1";
+    // p1 stays in camp
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 50,
+      zone: "floor:1",
+      killer: p0.id,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(50);
+    expect(p1.xp).toBe(0);
+  });
+
+  test("null killer (explosion chain): everyone in radius splits", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p1.pos = { ...p0.pos };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 100,
+      zone: p0.zoneId,
+      killer: null,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
   });
 });

@@ -149,7 +149,15 @@ export type SimEvent =
   | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
   | { type: "player_hit"; playerId: PlayerId; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
-  | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number; zone: ZoneId }
+  | {
+      type: "monster_died";
+      id: number;
+      typeId: string;
+      pos: Vec;
+      xp: number;
+      zone: ZoneId;
+      killer: PlayerId | null;
+    }
   | { type: "level_up"; playerId: PlayerId; level: number }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }

@@ -11,6 +11,11 @@ const ICE_CONFIG: RTCConfiguration = {
 
 const CHUNK_SIZE = 60_000;
 
+/** How long a join may sit in negotiation before we call it a dead end. Covers
+ * the hostile-NAT case (ICE never completes and never reports "failed") and a
+ * host that opened a room and then walked away. */
+const JOIN_TIMEOUT_MS = 15_000;
+
 type SignalPayload = { sdp: RTCSessionDescriptionInit } | { ice: RTCIceCandidateInit };
 
 type ServerMessage =
@@ -141,7 +146,12 @@ export function hostGame(
     };
 
     ws.onmessage = async (ev) => {
-      const msg: ServerMessage = JSON.parse(String(ev.data));
+      let msg: ServerMessage;
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
 
       if (msg.type === "room") {
         settled = true;
@@ -162,16 +172,36 @@ export function hostGame(
           if (iceEv.candidate) wsSend(ws, peerId, { ice: iceEv.candidate.toJSON() });
         };
 
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        wsSend(ws, peerId, { sdp: offer });
+        // One peer that can't get through is that peer's problem: drop the
+        // half-built connection and keep hosting. If the channel had opened,
+        // the link's own onclose tells the game the seat is free.
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState !== "failed") return;
+          peers.delete(peerId);
+          pc.close();
+        };
+
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          wsSend(ws, peerId, { sdp: offer });
+        } catch (err) {
+          console.warn("barrow: offer to peer failed", err);
+          peers.delete(peerId);
+          pc.close();
+        }
         return;
       }
 
       if (msg.type === "signal") {
         const peer = peers.get(msg.from);
         if (!peer) return;
-        await applySignal(peer.pc, peer.iceQueue, msg.payload);
+        // Relayed from another browser: never trust it to be well-formed SDP.
+        try {
+          await applySignal(peer.pc, peer.iceQueue, msg.payload);
+        } catch (err) {
+          console.warn("barrow: dropping bad signal payload", err);
+        }
         return;
       }
 
@@ -191,13 +221,32 @@ export function joinGame(signalUrl: string, code: string): Promise<PeerLink> {
     const iceQueue: RTCIceCandidateInit[] = [];
     let settled = false;
 
+    /** Give up: tear the half-built connection down and tell the lobby. */
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pc.close();
+      ws.close();
+      reject(new Error(message));
+    };
+
+    const succeed = (link: PeerLink) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(link);
+    };
+
+    const timer = setTimeout(() => fail("couldn't connect"), JOIN_TIMEOUT_MS);
+
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", code }));
 
-    ws.onerror = () => {
-      if (!settled) {
-        settled = true;
-        reject(new Error("signal connection failed"));
-      }
+    ws.onerror = () => fail("signal connection failed");
+
+    // ICE gave up: no candidate pair works (symmetric NAT with only STUN, say).
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed") fail("couldn't connect");
     };
 
     pc.onicecandidate = (ev) => {
@@ -206,32 +255,34 @@ export function joinGame(signalUrl: string, code: string): Promise<PeerLink> {
 
     pc.ondatachannel = (ev) => {
       const channel = ev.channel;
-      channel.onopen = () => {
-        if (!settled) {
-          settled = true;
-          resolve(wrapChannel(channel, pc));
-        }
-      };
+      channel.onopen = () => succeed(wrapChannel(channel, pc));
     };
 
     ws.onmessage = async (ev) => {
-      const msg: ServerMessage = JSON.parse(String(ev.data));
+      let msg: ServerMessage;
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
 
       if (msg.type === "error") {
-        if (!settled) {
-          settled = true;
-          reject(new Error(msg.reason));
-        }
-        ws.close();
+        fail(msg.reason);
         return;
       }
 
       if (msg.type === "signal") {
-        await applySignal(pc, iceQueue, msg.payload, async (offer) => {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          wsSend(ws, 0, { sdp: answer });
-        });
+        // Relayed SDP/ICE is whatever the other side sent; a malformed payload
+        // must not surface as an unhandled rejection out of this handler.
+        try {
+          await applySignal(pc, iceQueue, msg.payload, async () => {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            wsSend(ws, 0, { sdp: answer });
+          });
+        } catch (err) {
+          console.warn("barrow: dropping bad signal payload", err);
+        }
       }
     };
   });

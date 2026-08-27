@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { hostCore, localDriver, mismatchedPlayers } from "./driver";
+import { Session } from "../../net/session";
 import { INPUT_DELAY_TICKS } from "../../net/protocol";
 import type { ClientMsg, HostMsg } from "../../net/protocol";
 import type { PeerLink } from "./rtc";
@@ -88,6 +89,32 @@ test("hostCore seats a peer, welcomes it, and fans frames out", () => {
   core.driver.session.tryStep();
   core.driver.session.tryStep();
   expect(core.driver.session.state!.players.has(1)).toBe(true);
+  core.driver.stop();
+});
+
+test("a peer joining a host whose session lags still gets a snapshot it can step from", () => {
+  // Backgrounded host tab: the 25 Hz interval keeps pumping frames, but rAF is
+  // paused so nothing drives session.tryStep(). The snapshot must still be taken
+  // at the sequencer's tick, or the joiner waits forever on a frame it never gets.
+  const core = hostCore(99);
+  core.pump();
+  core.pump();
+  expect(core.driver.session.state!.tick).toBe(0); // host hasn't stepped
+
+  const peer = fakeLink();
+  core.onPeer(peer.link);
+  peer.deliver({ type: "hello" });
+  core.pump();
+
+  // Replay everything the link received into a fresh Session, as joinDriver does.
+  const joiner = new Session(() => {});
+  for (const msg of peer.sent) joiner.onHostMsg(msg);
+  while (joiner.tryStep());
+
+  const host = core.driver.session;
+  while (host.tryStep());
+  expect(host.state!.tick).toBe(3);
+  expect(joiner.state!.tick).toBe(host.state!.tick);
   core.driver.stop();
 });
 

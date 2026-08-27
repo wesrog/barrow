@@ -99,10 +99,14 @@ export function hostCore(seed: number, character?: string) {
     link.onMessage((msg: ClientMsg) => {
       if (msg.type === "hello") {
         if (links.get(link) !== null) return; // already seated
-        // Order matters: snapshot the world at tick T *before* queuing the
-        // join, so the join rides a frame the joiner is also going to get.
-        // The welcome goes out synchronously, before the next interval fires,
-        // so the joiner sees every frame from T onward.
+        // The link only ever receives frames broadcast from now on, so the
+        // snapshot has to sit at the sequencer's tick, not the host session's:
+        // frames already emitted are gone as far as this peer is concerned.
+        // Catching the session up first makes those two ticks equal — vital
+        // when the host tab is backgrounded and its rAF loop has stalled while
+        // the pump interval kept emitting. Only then snapshot, and only then
+        // queue the join, so the join rides a frame the joiner also gets.
+        while (session.tryStep());
         const snapshot = serializeGame(session.state!);
         const snapshotTick = session.state!.tick;
         let id: PlayerId;
@@ -122,7 +126,12 @@ export function hostCore(seed: number, character?: string) {
     });
     link.onClose(() => {
       const id = links.get(link);
-      if (id != null) sequencer.removePeer(id);
+      if (id != null) {
+        sequencer.removePeer(id);
+        // The seat can be handed to a fresh peer; clear the "already told"
+        // mark so the newcomer isn't permanently exempt from the tripwire.
+        reported.delete(id);
+      }
       links.delete(link);
     });
   };

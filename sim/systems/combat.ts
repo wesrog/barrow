@@ -80,6 +80,7 @@ export function applyAttackInput(state: GameState, p: Player, input: PlayerInput
     p.attackTarget = input.attack;
     p.pickupTarget = null;
     p.smashTarget = null;
+    p.portalTarget = null;
     p.path = [];
   }
 }
@@ -90,6 +91,7 @@ export function applySwingInPlaceInput(state: GameState, p: Player, input: Playe
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.portalTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
   state.events.push({
@@ -362,6 +364,7 @@ export function deathSystem(state: GameState, zone: ZoneState, players: Player[]
     p.pickupTarget = null;
     p.smashTarget = null;
     p.vendorTarget = false;
+    p.portalTarget = null;
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
   }
 }

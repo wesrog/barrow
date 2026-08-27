@@ -23,6 +23,15 @@ export interface ZoneState {
   goldPiles: Map<number, GoldPile>;
   breakables: Map<number, Breakable>;
   corpses: Corpse[];
+  portals: Map<number, Portal>;
+}
+
+export interface Portal {
+  id: number;
+  owner: PlayerId;
+  pos: Vec;
+  /** The far end. */
+  link: { zone: ZoneId; pos: Vec };
 }
 
 export function getZone(state: GameState, id: ZoneId): ZoneState {
@@ -93,6 +102,8 @@ export interface Player {
   smashTarget: number | null;
   /** Walking over to Maren to trade (town only). */
   vendorTarget: boolean;
+  /** Portal id being walked to for riding, if any. */
+  portalTarget: number | null;
   level: number;
   xp: number;
   skillPoints: number;
@@ -148,7 +159,8 @@ export type SimEvent =
   | { type: "inventory_full"; playerId: PlayerId }
   | { type: "player_joined"; playerId: PlayerId }
   | { type: "player_left"; playerId: PlayerId }
-  | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec };
+  | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
+  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec };
 
 export interface ShopEntry {
   item: Item;
@@ -194,8 +206,10 @@ export interface PlayerInput {
   drink?: boolean;
   /** Start a fresh run: forget the floors, revive, keep the character. */
   newGame?: boolean;
-  /** Town portal. Currently a no-op — portal pairs arrive with multiplayer travel. */
+  /** Cast a two-way portal pair between here and camp. */
   townPortal?: boolean;
+  /** Walk to and ride this portal id. */
+  usePortal?: number;
   /** Walk to the vendor and open the shop (town only). */
   talkVendor?: boolean;
   /** Buy the shop entry at this index (town only). */

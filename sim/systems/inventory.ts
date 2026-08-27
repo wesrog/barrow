@@ -127,6 +127,7 @@ export function applyPickupInput(state: GameState, p: Player, input: PlayerInput
   p.pickupTarget = input.pickup;
   p.attackTarget = null;
   p.smashTarget = null;
+  p.portalTarget = null;
   p.path = [];
 }
 

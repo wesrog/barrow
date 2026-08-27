@@ -37,7 +37,16 @@ import { cryptZone, MARKER_TYPES, townZone } from "./zone";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 import { rollDurability } from "./items/generate";
 import { durabilitySystem } from "./systems/inventory";
-import { applyShopInput, applyTalkVendorInput, restock, vendorSystem } from "./systems/town";
+import {
+  applyCastPortalInput,
+  applyShopInput,
+  applyTalkVendorInput,
+  applyUsePortalInput,
+  portalSystem,
+  removePortalsOwnedBy,
+  restock,
+  vendorSystem,
+} from "./systems/town";
 import { applySmashInput, breakSystem, spawnBreakables } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -54,6 +63,7 @@ function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
     goldPiles: new Map(),
     breakables: new Map(),
     corpses: [],
+    portals: new Map(),
   };
   state.zones.set(id, zone);
   return zone;
@@ -86,6 +96,7 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.pickupTarget = null;
   p.smashTarget = null;
   p.vendorTarget = false;
+  p.portalTarget = null;
   p.pendingStrike = null;
   if (to === "camp" && campWasEmpty) restock(state, p);
   state.events.push({ type: "traveled", playerId: p.id, to });
@@ -189,6 +200,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     pickupTarget: null,
     smashTarget: null,
     vendorTarget: false,
+    portalTarget: null,
     level: 1,
     xp: 0,
     skillPoints: 0,
@@ -229,7 +241,10 @@ export function step(state: GameState, frame: Frame): void {
   state.events = [];
   for (const j of frame.joins ?? []) joinPlayer(state, j);
   for (const id of frame.leaves ?? []) {
-    if (state.players.delete(id)) state.events.push({ type: "player_left", playerId: id });
+    if (state.players.delete(id)) {
+      removePortalsOwnedBy(state, id);
+      state.events.push({ type: "player_left", playerId: id });
+    }
   }
 
   for (const id of playerIds(state)) {
@@ -253,6 +268,8 @@ export function step(state: GameState, frame: Frame): void {
     applyTalkVendorInput(state, p, input);
     applyShopInput(state, p, input);
     applyCastInput(state, p, input);
+    applyCastPortalInput(state, p, input);
+    applyUsePortalInput(state, p, input);
   }
 
   // Rosters are snapshotted up front: a player who travels mid-tick is not
@@ -265,6 +282,7 @@ export function step(state: GameState, frame: Frame): void {
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
     vendorSystem(state, zone, acting());
+    portalSystem(state, zone, acting());
     breakSystem(state, zone, acting());
     movementSystem(acting());
     travelPadSystem(state, zone, acting());

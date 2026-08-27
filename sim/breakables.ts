@@ -59,6 +59,7 @@ export function applySmashInput(state: GameState, p: Player, input: PlayerInput)
   p.smashTarget = input.smash;
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.portalTarget = null;
   p.path = [];
 }
 

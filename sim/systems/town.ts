@@ -1,12 +1,25 @@
 import { BASES } from "../items/bases";
 import { rollItem, type Item, type Rarity } from "../items/generate";
-import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
+import {
+  getZone,
+  zoneOf,
+  type GameState,
+  type Player,
+  type PlayerInput,
+  type Portal,
+  type ZoneState,
+} from "../state";
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
 import { findPath, smoothPath } from "../path";
+import { isWalkable } from "../map";
+import { travel } from "../tick";
 
 /** How close you must stand to Maren before he'll talk shop. */
 const TALK_RANGE = 1.4;
+
+/** How close you must stand to a portal before it whisks you away. */
+const PORTAL_RANGE = 0.6;
 
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
@@ -58,6 +71,7 @@ export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerI
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
+  p.portalTarget = null;
   p.path = [];
 }
 
@@ -130,5 +144,112 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
 
   if (input.repair) {
     repairAll(state, p);
+  }
+}
+
+/** Remove both ends of every portal pair owned by this player, across all zones. */
+export function removePortalsOwnedBy(state: GameState, owner: number): void {
+  for (const zone of state.zones.values()) {
+    for (const [id, portal] of zone.portals) {
+      if (portal.owner === owner) zone.portals.delete(id);
+    }
+  }
+}
+
+/** Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets. */
+function findCampPortalSpot(camp: ZoneState): { x: number; y: number } {
+  const spawn = camp.map.spawn;
+  const cx = Math.floor(spawn.x);
+  const cy = Math.floor(spawn.y);
+  const occupied = new Set(
+    [...camp.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
+  );
+  const candidates: [number, number][] = [
+    [cx, cy],
+    [cx + 1, cy],
+    [cx - 1, cy],
+    [cx, cy + 1],
+    [cx, cy - 1],
+  ];
+  for (const [x, y] of candidates) {
+    if (!isWalkable(camp.map, x, y)) continue;
+    if (occupied.has(`${x},${y}`)) continue;
+    return { x, y };
+  }
+  // Fall back to spawn itself — shouldn't happen on real maps.
+  return { x: cx, y: cy };
+}
+
+/** `t`: cast a two-way portal pair between here and camp. No-op in camp or while dead. */
+export function applyCastPortalInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (!input.townPortal || p.dead || p.zoneId === "camp") return;
+  removePortalsOwnedBy(state, p.id);
+
+  const here = zoneOf(state, p);
+  const camp = getZone(state, "camp");
+  const spot = findCampPortalSpot(camp);
+  const campPos = { x: spot.x + 0.5, y: spot.y + 0.5 };
+  const herePos = { x: Math.floor(p.pos.x) + 0.5, y: Math.floor(p.pos.y) + 0.5 };
+
+  const hereId = state.nextId++;
+  const campId = state.nextId++;
+  const herePortal: Portal = {
+    id: hereId,
+    owner: p.id,
+    pos: herePos,
+    link: { zone: "camp", pos: campPos },
+  };
+  const campPortal: Portal = {
+    id: campId,
+    owner: p.id,
+    pos: campPos,
+    link: { zone: here.id, pos: herePos },
+  };
+  here.portals.set(hereId, herePortal);
+  camp.portals.set(campId, campPortal);
+  state.events.push({ type: "portal_cast", playerId: p.id, zone: here.id, pos: herePos });
+}
+
+/** Click a portal: start walking over to ride it. */
+export function applyUsePortalInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (input.usePortal === undefined) return;
+  if (!zoneOf(state, p).portals.has(input.usePortal)) return;
+  p.portalTarget = input.usePortal;
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.smashTarget = null;
+  p.vendorTarget = false;
+  p.path = [];
+}
+
+/** Walk toward a targeted portal; riding it teleports to the linked end (persistent — not consumed). */
+export function portalSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.portalTarget === null) continue;
+    const target = zone.portals.get(p.portalTarget);
+    if (!target) {
+      p.portalTarget = null;
+      continue;
+    }
+    const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y);
+    if (d <= PORTAL_RANGE) {
+      p.portalTarget = null;
+      p.path = [];
+      const link = target.link;
+      travel(state, p, link.zone);
+      p.pos = { ...link.pos };
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        zone.map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
+      );
+      if (cells === null) {
+        p.portalTarget = null;
+        continue;
+      }
+      p.path = smoothPath(zone.map, p.pos, cells);
+      p.path.push({ ...target.pos });
+    }
   }
 }

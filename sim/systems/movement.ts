@@ -15,6 +15,7 @@ export function applyMoveInput(state: GameState, p: Player, input: PlayerInput):
   p.pickupTarget = null;
   p.smashTarget = null;
   p.vendorTarget = false;
+  p.portalTarget = null;
   p.path = smoothPath(map, p.pos, cells);
 }
 

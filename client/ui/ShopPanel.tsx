@@ -19,6 +19,7 @@ const panelStyle: CSSProperties = {
   fontSize: 12,
   color: "#c9c2b8",
   zIndex: 6,
+  pointerEvents: "auto",
   boxShadow: "0 8px 30px rgba(0,0,0,.7)",
 };
 

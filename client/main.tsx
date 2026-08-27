@@ -15,6 +15,7 @@ import { ShopPanel } from "./ui/ShopPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
+import { Reveal } from "./ui/Reveal";
 
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -316,43 +317,49 @@ function Game() {
         />
       )}
       {gameRef.current && <MiniMap game={gameRef.current} />}
-      {shopOpen && gameRef.current && gameRef.current.town !== null && (
-        <ShopPanel
-          game={gameRef.current}
-          onBuy={(index) => {
-            uiInputRef.current.buy = index;
-          }}
-          onSell={(entryId) => {
-            uiInputRef.current.sell = entryId;
-          }}
-          onRepair={() => {
-            uiInputRef.current.repair = true;
-          }}
-        />
-      )}
-      {skillsOpen && gameRef.current && (
-        <SkillPanel
-          game={gameRef.current}
-          onSpend={(skill) => {
-            uiInputRef.current.spendSkill = skill;
-          }}
-        />
-      )}
-      {invOpen && gameRef.current && (
-        <InventoryPanel
-          game={gameRef.current}
-          assets={assets}
-          onEquip={(entryId) => {
-            uiInputRef.current.equip = entryId;
-          }}
-          onUnequip={(slot: EquipSlot) => {
-            uiInputRef.current.unequip = slot;
-          }}
-          onDrop={(entryId) => {
-            uiInputRef.current.dropItem = entryId;
-          }}
-        />
-      )}
+      <Reveal open={shopOpen && gameRef.current !== null && gameRef.current.town !== null}>
+        {gameRef.current && gameRef.current.town !== null && (
+          <ShopPanel
+            game={gameRef.current}
+            onBuy={(index) => {
+              uiInputRef.current.buy = index;
+            }}
+            onSell={(entryId) => {
+              uiInputRef.current.sell = entryId;
+            }}
+            onRepair={() => {
+              uiInputRef.current.repair = true;
+            }}
+          />
+        )}
+      </Reveal>
+      <Reveal open={skillsOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <SkillPanel
+            game={gameRef.current}
+            onSpend={(skill) => {
+              uiInputRef.current.spendSkill = skill;
+            }}
+          />
+        )}
+      </Reveal>
+      <Reveal open={invOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <InventoryPanel
+            game={gameRef.current}
+            assets={assets}
+            onEquip={(entryId) => {
+              uiInputRef.current.equip = entryId;
+            }}
+            onUnequip={(slot: EquipSlot) => {
+              uiInputRef.current.unequip = slot;
+            }}
+            onDrop={(entryId) => {
+              uiInputRef.current.dropItem = entryId;
+            }}
+          />
+        )}
+      </Reveal>
     </div>
   );
 }

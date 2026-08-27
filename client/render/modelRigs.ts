@@ -131,28 +131,35 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Armor meshes sized for the KayKit skeleton, attached straight to bones. */
+/**
+ * Armor meshes sized for the KayKit skeleton, attached straight to bones.
+ * The chibi head is huge — ~1.08 wide, top at y+0.95 above the head bone —
+ * so helms must be dome radius ~0.6+ to sit outside the skull.
+ */
 function helmMesh(baseId: string): THREE.Group {
   const g = new THREE.Group();
   if (baseId === "bone_visage") {
-    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.34, 0), flatMat(0xd9d4c4, 0.6));
-    skull.scale.y = 0.8;
-    skull.position.y = 0.16;
+    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), flatMat(0xd9d4c4, 0.6));
+    skull.scale.y = 0.85;
+    skull.position.y = 0.5;
     skull.castShadow = true;
     g.add(skull);
     for (const side of [-1, 1]) {
-      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 4), flatMat(0xc4bca8, 0.7));
-      horn.position.set(side * 0.3, 0.3, 0);
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 4), flatMat(0xc4bca8, 0.7));
+      horn.position.set(side * 0.56, 0.78, 0);
       horn.rotation.z = -side * 0.8;
+      horn.castShadow = true;
       g.add(horn);
     }
   } else {
-    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(0.33, 0), flatMat(0x7a8086, 0.5));
-    dome.scale.y = 0.75;
-    dome.position.y = 0.18;
+    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), flatMat(0x7a8086, 0.5));
+    dome.scale.y = 0.8;
+    dome.position.y = 0.55;
     dome.castShadow = true;
-    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.07, 0.6), flatMat(0x5a6066, 0.6));
-    brim.position.y = 0.02;
+    // A band ringing the dome's lower edge, not a hat brim across the face.
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.63, 0.16, 8), flatMat(0x5a6066, 0.6));
+    brim.position.y = 0.34;
+    brim.castShadow = true;
     g.add(dome, brim);
   }
   return g;

@@ -8,6 +8,7 @@
 import { Sequencer } from "../../net/sequencer";
 import { Session } from "../../net/session";
 import { serializeGame } from "../../net/snapshot";
+import { INPUT_DELAY_TICKS } from "../../net/protocol";
 import type { ClientMsg, HostMsg } from "../../net/protocol";
 import { createGame, TICK_RATE } from "../../sim/tick";
 import type { PlayerId, PlayerInput } from "../../sim/state";
@@ -16,6 +17,11 @@ import type { PeerLink } from "./rtc";
 /** What main.tsx talks to; hides solo vs host vs joined. */
 export interface NetDriver {
   readonly session: Session;
+  /** The in-process frame source, when there is one (solo/host, never a joiner).
+   * Production code must not touch it — the driver owns frame assembly. It is
+   * exposed only so tests and the DEV console hook (`window.__barrow`) can seat
+   * and drive extra players without a second browser context. */
+  readonly sequencer?: Sequencer;
   sendInput(input: PlayerInput): void;
   /** Solo only: make the next frame available, since nothing else produces one.
    * Absent for host (a 25 Hz interval pumps frames) and joiners (the host does).
@@ -47,8 +53,8 @@ function localCore(seed: number, character?: string) {
 
   /** Assemble the next frame, hand it to the local session, and return it so
    * a host can broadcast the very same frame to its peers. */
-  const emitFrame = (): HostMsg => {
-    const msg: HostMsg = { type: "frame", frame: sequencer.nextFrame() };
+  const emitFrame = (): HostMsg & { type: "frame" } => {
+    const msg = { type: "frame", frame: sequencer.nextFrame() } as const;
     session.onHostMsg(msg);
     return msg;
   };
@@ -58,22 +64,33 @@ function localCore(seed: number, character?: string) {
 
 /** Solo: an in-process Sequencer wired straight into the Session. One frame per requested tick. */
 export function localDriver(seed: number, character?: string): NetDriver {
-  const { session, emitFrame } = localCore(seed, character);
+  const { sequencer, session, emitFrame } = localCore(seed, character);
   return {
     session,
+    sequencer,
     sendInput: (input) => session.sendInput(input),
     requestTick: () => void emitFrame(),
     stop: () => {},
   };
 }
 
-/** Host: Sequencer + rtc.hostGame; emits frames on a 25 Hz interval; serves welcome snapshots. */
-export async function hostDriver(
-  seed: number,
-  signalUrl: string,
-  character?: string,
-): Promise<{ driver: NetDriver; code: string }> {
-  const { hostGame } = await import("./rtc");
+/** Players whose reported state hash for a tick disagrees with the reference —
+ * the host's own hash when it reported one, else the first hash in the map.
+ * A lone report has nothing to disagree with, so it never trips. */
+export function mismatchedPlayers(hashes: Map<PlayerId, number>): PlayerId[] {
+  if (hashes.size < 2) return [];
+  const reference = hashes.get(0) ?? [...hashes.values()][0]!;
+  const out: PlayerId[] = [];
+  for (const [id, hash] of hashes) {
+    if (hash !== reference) out.push(id);
+  }
+  return out;
+}
+
+/** The transport-independent half of the host: seats peers arriving over any
+ * PeerLink, assembles frames, and fans them out. `pump()` is one 25 Hz beat.
+ * hostDriver bolts WebRTC and a timer onto this; tests drive it directly. */
+export function hostCore(seed: number, character?: string) {
   const { sequencer, session, emitFrame } = localCore(seed, character);
   const links = new Map<PeerLink, PlayerId | null>();
 
@@ -110,14 +127,39 @@ export async function hostDriver(
     });
   };
 
-  const room = await hostGame(signalUrl, onPeer);
+  // The tick the *next* frame will carry. Clients stamp their input (and the
+  // hash riding it) for state tick + INPUT_DELAY_TICKS, so every hash for this
+  // frame's tick is already in hand — but nextFrame() drops them along with
+  // the tick's inputs, so the comparison has to happen first.
+  let nextTick = 0;
 
-  // Backgrounded tabs throttle setInterval; v1 accepts the resulting slowdown
-  // (everyone is lockstepped to the host, so the game stalls rather than desyncs).
-  const timer = setInterval(() => {
+  const reported = new Set<PlayerId>();
+
+  /** Anyone whose world disagrees with the host's is told, once, before the
+   * frame that would consume the evidence. The host raises its own banner too:
+   * a split world is over for everybody, not just the odd one out. */
+  const checkHashes = () => {
+    const mismatched = mismatchedPlayers(sequencer.hashesFor(nextTick));
+    for (const playerId of mismatched) {
+      // A diverged world stays diverged, so every later hash mismatches too:
+      // say it once per player rather than every HASH_EVERY_TICKS forever.
+      if (reported.has(playerId)) continue;
+      reported.add(playerId);
+      const msg: HostMsg = { type: "desync", tick: nextTick - INPUT_DELAY_TICKS, playerId };
+      session.onHostMsg(msg);
+      for (const [link, seat] of links) {
+        if (seat === playerId) link.send(msg);
+      }
+    }
+  };
+
+  /** One beat: compare hashes, assemble the frame, fan it out. */
+  const pump = () => {
+    checkHashes();
     const msg = emitFrame();
+    nextTick = msg.frame.tick + 1;
     for (const link of links.keys()) link.send(msg);
-  }, 1000 / TICK_RATE);
+  };
 
   // A host has no transport that can go away underneath it — the game ends
   // when it calls stop(). Callbacks are registered so callers get consistent
@@ -127,14 +169,39 @@ export async function hostDriver(
 
   const driver: NetDriver = {
     session,
+    sequencer,
     sendInput: (input) => session.sendInput(input),
     onClose: (cb) => closeCbs.push(cb),
     stop: () => {
-      clearInterval(timer);
       for (const link of links.keys()) link.close();
       links.clear();
-      room.stop();
       for (const cb of closeCbs.splice(0)) cb();
+    },
+  };
+
+  return { driver, onPeer, pump };
+}
+
+/** Host: hostCore + rtc.hostGame; emits frames on a 25 Hz interval. */
+export async function hostDriver(
+  seed: number,
+  signalUrl: string,
+  character?: string,
+): Promise<{ driver: NetDriver; code: string }> {
+  const { hostGame } = await import("./rtc");
+  const core = hostCore(seed, character);
+  const room = await hostGame(signalUrl, core.onPeer);
+
+  // Backgrounded tabs throttle setInterval; v1 accepts the resulting slowdown
+  // (everyone is lockstepped to the host, so the game stalls rather than desyncs).
+  const timer = setInterval(core.pump, 1000 / TICK_RATE);
+
+  const driver: NetDriver = {
+    ...core.driver,
+    stop: () => {
+      clearInterval(timer);
+      core.driver.stop();
+      room.stop();
     },
   };
   return { driver, code: room.code };

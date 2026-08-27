@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
-import { localDriver } from "./driver";
+import { hostCore, localDriver, mismatchedPlayers } from "./driver";
 import { INPUT_DELAY_TICKS } from "../../net/protocol";
+import type { ClientMsg, HostMsg } from "../../net/protocol";
+import type { PeerLink } from "./rtc";
 
 /** Ask the driver for one tick and consume the frame it produced — exactly
  * what the main loop does per accumulated tick. */
@@ -45,4 +47,144 @@ test("localDriver applies local input exactly INPUT_DELAY_TICKS later", () => {
   expect(tick(driver)).toBe(true);
   expect(state.players.get(0)!.pos).not.toEqual(start);
   driver.stop();
+});
+
+/** A PeerLink the test drives by hand: whatever the host sends piles up in
+ * `sent`, and `deliver` plays a client message back the other way. */
+function fakeLink() {
+  const sent: HostMsg[] = [];
+  let onMsg: ((msg: ClientMsg) => void) | null = null;
+  let onClose: (() => void) | null = null;
+  const link: PeerLink = {
+    send: (msg) => void sent.push(msg as HostMsg),
+    onMessage: (cb) => void (onMsg = cb),
+    onClose: (cb) => void (onClose = cb),
+    close: () => {},
+  };
+  return {
+    link,
+    sent,
+    deliver: (msg: ClientMsg) => onMsg?.(msg),
+    drop: () => onClose?.(),
+  };
+}
+
+test("hostCore seats a peer, welcomes it, and fans frames out", () => {
+  const core = hostCore(99);
+  core.pump(); // frame 0 seats the host
+
+  const peer = fakeLink();
+  core.onPeer(peer.link);
+  peer.deliver({ type: "hello" });
+
+  expect(peer.sent[0]).toMatchObject({ type: "welcome", playerId: 1 });
+
+  core.pump();
+  const frame = peer.sent[1];
+  expect(frame?.type).toBe("frame");
+  if (frame?.type === "frame") expect(frame.frame.joins).toEqual([{ id: 1, character: undefined }]);
+
+  // The host's own world seats the joiner off that same frame.
+  core.driver.session.tryStep();
+  core.driver.session.tryStep();
+  expect(core.driver.session.state!.players.has(1)).toBe(true);
+  core.driver.stop();
+});
+
+test("hostCore frees the seat when a peer's link closes", () => {
+  const core = hostCore(99);
+  core.pump();
+  const peer = fakeLink();
+  core.onPeer(peer.link);
+  peer.deliver({ type: "hello" });
+  core.pump();
+  const session = core.driver.session;
+  while (session.tryStep());
+  expect(session.state!.players.has(1)).toBe(true);
+
+  // A dropped link is off the fan-out list, so the leave shows up in the
+  // host's own world (and every surviving peer's), not in the dead peer's.
+  peer.drop();
+  core.pump();
+  while (session.tryStep());
+  expect(session.state!.players.has(1)).toBe(false);
+  expect(session.state!.events).toContainEqual({ type: "player_left", playerId: 1 });
+  core.driver.stop();
+});
+
+test("mismatchedPlayers names everyone who disagrees with the host", () => {
+  expect(mismatchedPlayers(new Map())).toEqual([]);
+  expect(mismatchedPlayers(new Map([[0, 7]]))).toEqual([]); // nothing to compare against
+  expect(
+    mismatchedPlayers(
+      new Map([
+        [0, 7],
+        [1, 7],
+      ]),
+    ),
+  ).toEqual([]);
+  expect(
+    mismatchedPlayers(
+      new Map([
+        [0, 7],
+        [1, 8],
+        [2, 9],
+      ]),
+    ),
+  ).toEqual([1, 2]);
+  // No host hash: the first report becomes the reference.
+  expect(
+    mismatchedPlayers(
+      new Map([
+        [1, 7],
+        [2, 8],
+      ]),
+    ),
+  ).toEqual([2]);
+});
+
+test("hostCore trips the desync tripwire when a peer's hash disagrees", () => {
+  const core = hostCore(99);
+  core.pump();
+  const peer = fakeLink();
+  core.onPeer(peer.link);
+  peer.deliver({ type: "hello" });
+
+  // Both worlds report a hash for the same future tick; the peer's differs.
+  const tick = 20;
+  core.driver.sequencer!.onInput(0, tick, {}, 0xabc);
+  peer.deliver({ type: "input", tick, input: {}, hash: 0xdef });
+
+  for (let i = 1; i <= tick; i++) core.pump();
+
+  expect(peer.sent.find((m) => m.type === "desync")).toEqual({
+    type: "desync",
+    tick: tick - INPUT_DELAY_TICKS,
+    playerId: 1,
+  });
+  // A diverged world keeps mismatching; the peer is told once, not forever.
+  core.driver.sequencer!.onInput(0, tick + 50, {}, 0x111);
+  peer.deliver({ type: "input", tick: tick + 50, input: {}, hash: 0x222 });
+  for (let i = 0; i < 51; i++) core.pump();
+  expect(peer.sent.filter((m) => m.type === "desync")).toHaveLength(1);
+  // The host's own HUD raises the banner too.
+  expect(core.driver.session.desyncAt).toBe(tick - INPUT_DELAY_TICKS);
+  core.driver.stop();
+});
+
+test("hostCore stays quiet while every hash agrees", () => {
+  const core = hostCore(99);
+  core.pump();
+  const peer = fakeLink();
+  core.onPeer(peer.link);
+  peer.deliver({ type: "hello" });
+
+  const tick = 20;
+  core.driver.sequencer!.onInput(0, tick, {}, 0xabc);
+  peer.deliver({ type: "input", tick, input: {}, hash: 0xabc });
+  for (let i = 1; i <= tick; i++) core.pump();
+
+  expect(peer.sent.some((m) => m.type === "desync")).toBe(false);
+  expect(core.driver.session.desyncAt).toBeNull();
+  core.driver.stop();
 });

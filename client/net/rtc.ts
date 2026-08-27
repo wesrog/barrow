@@ -43,6 +43,21 @@ function wsSend(ws: WebSocket, to: number, payload: SignalPayload): void {
   ws.send(JSON.stringify({ type: "signal", to, payload }));
 }
 
+/** "host" | "srflx" | "relay" | ... from a candidate line, for diagnostics. */
+function candidateType(c: RTCIceCandidateInit): string {
+  return /typ ([a-z]+)/.exec(c.candidate ?? "")?.[1] ?? "?";
+}
+
+/** Compact console diagnostics: connection states and candidate types, tagged
+ * per side. Cheap enough to leave on — this is the first thing anyone needs
+ * when "couldn't connect" strikes in the wild. */
+function diagnose(pc: RTCPeerConnection, label: string): void {
+  const log = (msg: string) => console.info(`[barrow rtc] ${label}: ${msg}`);
+  pc.addEventListener("icegatheringstatechange", () => log(`gathering ${pc.iceGatheringState}`));
+  pc.addEventListener("iceconnectionstatechange", () => log(`ice ${pc.iceConnectionState}`));
+  pc.addEventListener("connectionstatechange", () => log(`connection ${pc.connectionState}`));
+}
+
 /** Apply an incoming signal payload to a connection, queuing ICE candidates that arrive before the remote description. */
 async function applySignal(
   pc: RTCPeerConnection,
@@ -55,8 +70,10 @@ async function applySignal(
     if (payload.sdp.type === "offer" && onOffer) await onOffer(payload.sdp);
     for (const candidate of iceQueue.splice(0)) await pc.addIceCandidate(candidate);
   } else if (pc.remoteDescription) {
+    console.info(`[barrow rtc] remote ${candidateType(payload.ice)}`);
     await pc.addIceCandidate(payload.ice);
   } else {
+    console.info(`[barrow rtc] remote ${candidateType(payload.ice)} (queued)`);
     iceQueue.push(payload.ice);
   }
 }
@@ -164,12 +181,15 @@ export function hostGame(
         const pc = new RTCPeerConnection(ICE_CONFIG);
         const iceQueue: RTCIceCandidateInit[] = [];
         peers.set(peerId, { pc, iceQueue });
+        diagnose(pc, `host->peer${peerId}`);
 
         const channel = pc.createDataChannel("game");
         channel.onopen = () => onPeer(wrapChannel(channel, pc));
 
         pc.onicecandidate = (iceEv) => {
-          if (iceEv.candidate) wsSend(ws, peerId, { ice: iceEv.candidate.toJSON() });
+          if (!iceEv.candidate) return;
+          console.info(`[barrow rtc] host->peer${peerId}: local ${candidateType(iceEv.candidate)}`);
+          wsSend(ws, peerId, { ice: iceEv.candidate.toJSON() });
         };
 
         // One peer that can't get through is that peer's problem: drop the
@@ -220,6 +240,7 @@ export function joinGame(signalUrl: string, code: string): Promise<PeerLink> {
     const pc = new RTCPeerConnection(ICE_CONFIG);
     const iceQueue: RTCIceCandidateInit[] = [];
     let settled = false;
+    diagnose(pc, "joiner");
 
     /** Give up: tear the half-built connection down and tell the lobby. */
     const fail = (message: string) => {
@@ -250,7 +271,9 @@ export function joinGame(signalUrl: string, code: string): Promise<PeerLink> {
     };
 
     pc.onicecandidate = (ev) => {
-      if (ev.candidate) wsSend(ws, 0, { ice: ev.candidate.toJSON() });
+      if (!ev.candidate) return;
+      console.info(`[barrow rtc] joiner: local ${candidateType(ev.candidate)}`);
+      wsSend(ws, 0, { ice: ev.candidate.toJSON() });
     };
 
     pc.ondatachannel = (ev) => {

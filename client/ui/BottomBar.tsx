@@ -1,7 +1,8 @@
+import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
-import type { GameState } from "../../sim/state";
+import { zoneDepth, type GameState } from "../../sim/state";
 
 const mono = "ui-monospace, monospace";
 
@@ -114,7 +115,7 @@ export function BottomBar({
   game: GameState;
   onAction: (action: HudAction) => void;
 }) {
-  const p = game.player;
+  const p = localPlayer(game);
   const xpFloor = xpForLevel(p.level);
   const xpNext = xpForLevel(p.level + 1);
   const xpPct = Math.max(0, Math.min(1, (p.xp - xpFloor) / (xpNext - xpFloor)));
@@ -124,12 +125,6 @@ export function BottomBar({
       <Globe value={p.life} max={p.maxLife} color="#a32222" dark="#2a0d0d" label="life" />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-        {p.dead && (
-          <div style={{ color: "#e05252", fontSize: 13, textShadow: "0 1px 3px #000" }}>
-            you have died — press n to rise again
-          </div>
-        )}
-
         {/* Skill hotbar */}
         <div style={{ display: "flex", gap: 5 }}>
           {SKILL_KEYS.map(({ id, key, short }) => {
@@ -182,7 +177,7 @@ export function BottomBar({
             ))}
           </div>
           <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
-            {ACTION_BUTTONS.filter((b) => !b.townOnly || game.town !== null).map(
+            {ACTION_BUTTONS.filter((b) => !b.townOnly || localPlayer(game).zoneId === "camp").map(
               ({ action, key, label }) => (
                 <button
                   key={action}
@@ -233,7 +228,8 @@ export function BottomBar({
           />
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
-          lvl {p.level} · {game.town ? "the camp" : `depth ${game.depth}`} ·{" "}
+          lvl {p.level} ·{" "}
+          {localPlayer(game).zoneId === "camp" ? "the camp" : `depth ${zoneDepth(localPlayer(game).zoneId)}`} ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>
           {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}
         </div>

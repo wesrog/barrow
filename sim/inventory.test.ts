@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone } from "./test-helpers";
 import { BASE_STATS, INV_H, INV_W, placeItem } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { Item } from "./items/generate";
@@ -8,9 +9,9 @@ import type { GameState } from "./state";
 
 /** New game, but bare-handed: these tests reason about an empty weapon slot. */
 function bareGame(seed: number): GameState {
-  const state = createGame(seed, openMap());
-  state.player.equipment.weapon = null;
-  recomputePlayerStats(state);
+  const state = createGameOn(seed, openMap());
+  player(state).equipment.weapon = null;
+  recomputePlayerStats(state, player(state));
   return state;
 }
 
@@ -34,44 +35,44 @@ const plain = (baseId: string, name = baseId): Item => ({
 
 function dropAt(state: GameState, item: Item, x: number, y: number): number {
   const id = state.nextId++;
-  state.groundItems.set(id, { id, item, pos: { x, y } });
+  playerZone(state).groundItems.set(id, { id, item, pos: { x, y } });
   return id;
 }
 
 function run(state: GameState, ticks: number): void {
-  for (let i = 0; i < ticks; i++) step(state, {});
+  for (let i = 0; i < ticks; i++) stepSolo(state, {});
 }
 
 describe("pickup", () => {
   test("pickup input walks the player to the item and moves it into the inventory", () => {
-    const state = createGame(42, openMap());
+    const state = createGameOn(42, openMap());
     const id = dropAt(state, plain("rusted_blade"), 7.5, 3.5);
-    step(state, { pickup: id });
+    stepSolo(state, { pickup: id });
     run(state, 120);
-    expect(state.groundItems.size).toBe(0);
-    expect(state.player.inventory.entries).toHaveLength(1);
-    expect(state.player.inventory.entries[0]!.item.baseId).toBe("rusted_blade");
+    expect(playerZone(state).groundItems.size).toBe(0);
+    expect(player(state).inventory.entries).toHaveLength(1);
+    expect(player(state).inventory.entries[0]!.item.baseId).toBe("rusted_blade");
   });
 
   test("item stays on the ground when the inventory is full", () => {
-    const state = createGame(42, openMap());
+    const state = createGameOn(42, openMap());
     for (let i = 0; i < INV_W * INV_H; i++) {
-      placeItem(state.player.inventory, state.nextId++, plain("bone_ring"));
+      placeItem(player(state).inventory, state.nextId++, plain("bone_ring"));
     }
     const id = dropAt(state, plain("rusted_blade"), 2.5, 1.5);
-    step(state, { pickup: id });
+    stepSolo(state, { pickup: id });
     run(state, 120);
-    expect(state.groundItems.size).toBe(1);
-    expect(state.groundItems.get(id)).toBeDefined();
+    expect(playerZone(state).groundItems.size).toBe(1);
+    expect(playerZone(state).groundItems.get(id)).toBeDefined();
   });
 
   test("a move click cancels a pending pickup", () => {
-    const state = createGame(42, openMap());
+    const state = createGameOn(42, openMap());
     const id = dropAt(state, plain("rusted_blade"), 7.5, 3.5);
-    step(state, { pickup: id });
-    step(state, { moveTo: { x: 1.5, y: 3.5 } });
+    stepSolo(state, { pickup: id });
+    stepSolo(state, { moveTo: { x: 1.5, y: 3.5 } });
     run(state, 120);
-    expect(state.groundItems.size).toBe(1);
+    expect(playerZone(state).groundItems.size).toBe(1);
   });
 });
 
@@ -79,58 +80,58 @@ describe("equip", () => {
   test("equipping from the inventory applies weapon stats", () => {
     const state = bareGame(1);
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("rusted_blade"));
-    step(state, { equip: id });
-    expect(state.player.equipment.weapon?.baseId).toBe("rusted_blade");
-    expect(state.player.inventory.entries).toHaveLength(0);
-    expect(state.player.dmgMin).toBe(1);
-    expect(state.player.dmgMax).toBe(6);
+    placeItem(player(state).inventory, id, plain("rusted_blade"));
+    stepSolo(state, { equip: id });
+    expect(player(state).equipment.weapon?.baseId).toBe("rusted_blade");
+    expect(player(state).inventory.entries).toHaveLength(0);
+    expect(player(state).dmgMin).toBe(1);
+    expect(player(state).dmgMax).toBe(6);
   });
 
   test("equipping over an existing item swaps the old one into the inventory", () => {
     const state = bareGame(1);
-    state.player.level = 5; // hatchet needs level 3
+    player(state).level = 5; // hatchet needs level 3
     const blade = state.nextId++;
-    placeItem(state.player.inventory, blade, plain("rusted_blade"));
-    step(state, { equip: blade });
+    placeItem(player(state).inventory, blade, plain("rusted_blade"));
+    stepSolo(state, { equip: blade });
     const hatchet = state.nextId++;
-    placeItem(state.player.inventory, hatchet, plain("hatchet"));
-    step(state, { equip: hatchet });
-    expect(state.player.equipment.weapon?.baseId).toBe("hatchet");
-    expect(state.player.inventory.entries).toHaveLength(1);
-    expect(state.player.inventory.entries[0]!.item.baseId).toBe("rusted_blade");
+    placeItem(player(state).inventory, hatchet, plain("hatchet"));
+    stepSolo(state, { equip: hatchet });
+    expect(player(state).equipment.weapon?.baseId).toBe("hatchet");
+    expect(player(state).inventory.entries).toHaveLength(1);
+    expect(player(state).inventory.entries[0]!.item.baseId).toBe("rusted_blade");
   });
 
   test("equip and unequip emit events for the HUD", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("rusted_blade"));
-    step(state, { equip: id });
+    placeItem(player(state).inventory, id, plain("rusted_blade"));
+    stepSolo(state, { equip: id });
     expect(state.events.some((e) => e.type === "item_equipped")).toBe(true);
-    step(state, { unequip: "weapon" });
+    stepSolo(state, { unequip: "weapon" });
     expect(state.events.some((e) => e.type === "item_unequipped")).toBe(true);
   });
 
   test("equip is rejected below the base's level requirement", () => {
     const state = bareGame(1);
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("war_maul")); // levelReq 8
-    step(state, { equip: id });
-    expect(state.player.equipment.weapon).toBeNull();
-    expect(state.player.inventory.entries).toHaveLength(1);
+    placeItem(player(state).inventory, id, plain("war_maul")); // levelReq 8
+    stepSolo(state, { equip: id });
+    expect(player(state).equipment.weapon).toBeNull();
+    expect(player(state).inventory.entries).toHaveLength(1);
   });
 
   test("a +life mod raises max life without healing", () => {
-    const state = createGame(1, openMap());
-    state.player.life = 30;
+    const state = createGameOn(1, openMap());
+    player(state).life = 30;
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, {
+    placeItem(player(state).inventory, id, {
       ...plain("worn_boots"), // levelReq 1
       mods: [{ stat: "life", value: 15 }],
     });
-    step(state, { equip: id });
-    expect(state.player.maxLife).toBe(BASE_STATS.maxLife + 15);
-    expect(state.player.life).toBe(30);
+    stepSolo(state, { equip: id });
+    expect(player(state).maxLife).toBe(BASE_STATS.maxLife + 15);
+    expect(player(state).life).toBe(30);
   });
 });
 
@@ -138,43 +139,43 @@ describe("unequip", () => {
   test("unequip returns the item to the inventory and stats revert", () => {
     const state = bareGame(1);
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("rusted_blade"));
-    step(state, { equip: id });
-    step(state, { unequip: "weapon" });
-    expect(state.player.equipment.weapon).toBeNull();
-    expect(state.player.inventory.entries).toHaveLength(1);
-    expect(state.player.dmgMin).toBe(BASE_STATS.dmgMin);
+    placeItem(player(state).inventory, id, plain("rusted_blade"));
+    stepSolo(state, { equip: id });
+    stepSolo(state, { unequip: "weapon" });
+    expect(player(state).equipment.weapon).toBeNull();
+    expect(player(state).inventory.entries).toHaveLength(1);
+    expect(player(state).dmgMin).toBe(BASE_STATS.dmgMin);
   });
 
   test("unequip is refused when the inventory has no room", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("rusted_blade"));
-    step(state, { equip: id });
+    placeItem(player(state).inventory, id, plain("rusted_blade"));
+    stepSolo(state, { equip: id });
     for (let i = 0; i < INV_W * INV_H; i++) {
-      placeItem(state.player.inventory, state.nextId++, plain("bone_ring"));
+      placeItem(player(state).inventory, state.nextId++, plain("bone_ring"));
     }
-    step(state, { unequip: "weapon" });
-    expect(state.player.equipment.weapon?.baseId).toBe("rusted_blade");
+    stepSolo(state, { unequip: "weapon" });
+    expect(player(state).equipment.weapon?.baseId).toBe("rusted_blade");
   });
 });
 
 describe("dropping items", () => {
   test("a dropped inventory item lands on the ground at the player's feet", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, plain("rag_tunic"));
-    step(state, { dropItem: id });
-    expect(state.player.inventory.entries).toHaveLength(0);
-    expect(state.groundItems.size).toBe(1);
-    const gi = [...state.groundItems.values()][0]!;
+    placeItem(player(state).inventory, id, plain("rag_tunic"));
+    stepSolo(state, { dropItem: id });
+    expect(player(state).inventory.entries).toHaveLength(0);
+    expect(playerZone(state).groundItems.size).toBe(1);
+    const gi = [...playerZone(state).groundItems.values()][0]!;
     expect(gi.item.baseId).toBe("rag_tunic");
-    expect(Math.hypot(gi.pos.x - state.player.pos.x, gi.pos.y - state.player.pos.y)).toBeLessThan(1.5);
+    expect(Math.hypot(gi.pos.x - player(state).pos.x, gi.pos.y - player(state).pos.y)).toBeLessThan(1.5);
   });
 
   test("dropping an unknown entry does nothing", () => {
-    const state = createGame(1, openMap());
-    step(state, { dropItem: 999 });
-    expect(state.groundItems.size).toBe(0);
+    const state = createGameOn(1, openMap());
+    stepSolo(state, { dropItem: 999 });
+    expect(playerZone(state).groundItems.size).toBe(0);
   });
 });

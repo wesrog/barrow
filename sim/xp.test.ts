@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { createGame, joinPlayer, stepSolo } from "./tick";
+import { createGameOn, player, spawnAt } from "./test-helpers";
 import { xpForLevel, LIFE_PER_LEVEL } from "./character";
+import { xpSystem } from "./systems/xp";
 import type { GameState } from "./state";
 
 const openMap = () =>
@@ -15,17 +16,17 @@ const openMap = () =>
 
 /** Kill a monster instantly by zeroing its life and stepping once. */
 function slay(state: GameState, typeId: string): void {
-  const m = spawnMonster(state, typeId, { x: 5.5, y: 1.5 });
+  const m = spawnAt(state, typeId, { x: 5.5, y: 1.5 });
   m.life = 0;
-  step(state, {});
+  stepSolo(state, {});
 }
 
 describe("xp and leveling", () => {
   test("killing a monster grants its xp", () => {
-    const state = createGame(1, openMap());
-    expect(state.player.xp).toBe(0);
+    const state = createGameOn(1, openMap());
+    expect(player(state).xp).toBe(0);
     slay(state, "skitter"); // xp 6
-    expect(state.player.xp).toBe(6);
+    expect(player(state).xp).toBe(6);
     expect(state.events.some((e) => e.type === "monster_died")).toBe(true);
   });
 
@@ -36,30 +37,132 @@ describe("xp and leveling", () => {
   });
 
   test("crossing the threshold levels up: +1 skill point, more life, event", () => {
-    const state = createGame(1, openMap());
-    const before = state.player.maxLife;
-    state.player.xp = xpForLevel(2) - 1;
+    const state = createGameOn(1, openMap());
+    const before = player(state).maxLife;
+    player(state).xp = xpForLevel(2) - 1;
     slay(state, "skitter");
-    expect(state.player.level).toBe(2);
-    expect(state.player.skillPoints).toBe(1);
-    expect(state.player.maxLife).toBe(before + LIFE_PER_LEVEL);
+    expect(player(state).level).toBe(2);
+    expect(player(state).skillPoints).toBe(1);
+    expect(player(state).maxLife).toBe(before + LIFE_PER_LEVEL);
     expect(state.events.some((e) => e.type === "level_up")).toBe(true);
   });
 
   test("a single large xp gain can grant multiple levels", () => {
-    const state = createGame(1, openMap());
-    state.player.xp = xpForLevel(3) - 1; // one skitter's 6 xp crosses 2 and 3
+    const state = createGameOn(1, openMap());
+    player(state).xp = xpForLevel(3) - 1; // one skitter's 6 xp crosses 2 and 3
     slay(state, "skitter");
-    expect(state.player.level).toBe(3);
-    expect(state.player.skillPoints).toBe(2);
+    expect(player(state).level).toBe(3);
+    expect(player(state).skillPoints).toBe(2);
   });
 
   test("level bonus life survives equipment recompute", () => {
-    const state = createGame(1, openMap());
-    state.player.xp = xpForLevel(2) - 1;
+    const state = createGameOn(1, openMap());
+    player(state).xp = xpForLevel(2) - 1;
     slay(state, "skitter");
-    const after = state.player.maxLife;
-    step(state, { unequip: "weapon" });
-    expect(state.player.maxLife).toBe(after);
+    const after = player(state).maxLife;
+    stepSolo(state, { unequip: "weapon" });
+    expect(player(state).maxLife).toBe(after);
+  });
+});
+
+describe("xp split", () => {
+  test("solo killer gets full xp", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 12,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(12);
+  });
+
+  test("two players in range split with party bonus", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p1.pos = { ...p0.pos };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 100,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    // floor(100 / 2 * 1.35) = 67
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
+  });
+
+  test("killer is included even when out of radius; distant non-killers are not", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 }); // killer, far away
+    const p1 = joinPlayer(state, { id: 1 }); // bystander, adjacent
+    const p2 = joinPlayer(state, { id: 2 }); // far away, not killer
+    const killPos = { x: 0, y: 0 };
+    p0.pos = { x: 30, y: 0 };
+    p1.pos = { x: 1, y: 0 };
+    p2.pos = { x: 30, y: 5 };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: killPos,
+      xp: 100,
+      zone: p0.zoneId,
+      killer: p0.id,
+    });
+    xpSystem(state);
+    // n=2 (killer + bystander): floor(100 / 2 * 1.35) = 67
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
+    expect(p2.xp).toBe(0);
+  });
+
+  test("players in other zones never share", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p0.zoneId = "floor:1";
+    // p1 stays in camp
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 50,
+      zone: "floor:1",
+      killer: p0.id,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(50);
+    expect(p1.xp).toBe(0);
+  });
+
+  test("null killer (explosion chain): everyone in radius splits", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p1.pos = { ...p0.pos };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "skitter",
+      pos: { ...p0.pos },
+      xp: 100,
+      zone: p0.zoneId,
+      killer: null,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(67);
+    expect(p1.xp).toBe(67);
   });
 });

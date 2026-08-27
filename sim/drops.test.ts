@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { GameState } from "./state";
 
@@ -15,7 +15,7 @@ const arena = () =>
 
 /** Equip a one-shot test weapon so overrides survive stat recomputes. */
 function armToTheTeeth(game: GameState): void {
-  game.player.equipment.weapon = {
+  player(game).equipment.weapon = {
     baseId: "rusted_blade",
     rarity: "unique",
     name: "Test Cleaver",
@@ -27,23 +27,23 @@ function armToTheTeeth(game: GameState): void {
     ],
     ilvl: 99,
   };
-  recomputePlayerStats(game);
-  game.player.life = game.player.maxLife;
+  recomputePlayerStats(game, player(game));
+  player(game).life = player(game).maxLife;
 }
 
 describe("monster drops", () => {
   test("killing many monsters produces ground items at corpse positions", () => {
-    const game = createGame(2, arena());
+    const game = createGameOn(2, arena());
     armToTheTeeth(game);
     let kills = 0;
     for (let round = 0; round < 60; round++) {
-      const m = spawnMonster(game, "skitter", { x: 2.5, y: 1.5 });
-      step(game, { attack: m.id });
-      for (let i = 0; i < 60 && game.monsters.has(m.id); i++) step(game, {});
-      if (!game.monsters.has(m.id)) kills++;
+      const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
+      stepSolo(game, { attack: m.id });
+      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) stepSolo(game, {});
+      if (!playerZone(game).monsters.has(m.id)) kills++;
     }
     expect(kills).toBe(60);
-    const items = [...game.groundItems.values()];
+    const items = [...playerZone(game).groundItems.values()];
     // trash TC drops ~30% of the time; 60 kills should yield some but not all.
     expect(items.length).toBeGreaterThan(2);
     expect(items.length).toBeLessThan(55);
@@ -58,14 +58,14 @@ describe("monster drops", () => {
   });
 
   test("drops respect the monster's level for base selection", () => {
-    const game = createGame(3, arena());
+    const game = createGameOn(3, arena());
     armToTheTeeth(game);
     for (let round = 0; round < 80; round++) {
-      const m = spawnMonster(game, "skitter", { x: 2.5, y: 1.5 });
-      step(game, { attack: m.id });
-      for (let i = 0; i < 60 && game.monsters.has(m.id); i++) step(game, {});
+      const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
+      stepSolo(game, { attack: m.id });
+      for (let i = 0; i < 60 && playerZone(game).monsters.has(m.id); i++) stepSolo(game, {});
     }
-    for (const gi of game.groundItems.values()) {
+    for (const gi of playerZone(game).groundItems.values()) {
       expect(gi.item.ilvl).toBe(2); // skitter mlvl
     }
   });

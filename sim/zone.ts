@@ -38,22 +38,18 @@ export function cryptZone(): ZoneMap {
   ]);
 }
 
-/** What the locals call each stretch of the descent. */
+/** What the locals call each stretch of the descent. Depth 0 is the camp. */
 export function zoneName(depth: number): string {
+  if (depth <= 0) return "The Camp";
   if (depth <= 2) return "The Barrow Crypt";
   if (depth <= 4) return "The Sunken Halls";
   if (depth <= 6) return "The Bone Vaults";
   return "The Wyrm's Undercroft";
 }
 
-/** Placeholder kept for the scaffold-era tests and boot. */
-export function starterZone(): ZoneMap {
-  return cryptZone();
-}
-
 /**
- * The camp above the barrow. Safe ground: V the vendor, P the portal pad
- * back down, @ where the portal drops you.
+ * The camp above the barrow. Safe ground: V the vendor, P the travel pad
+ * down to floor 1, @ where arrivals land.
  */
 export function townZone(): ZoneMap {
   return mapFromStrings([

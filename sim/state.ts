@@ -6,7 +6,84 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { SkillId } from "./skills";
 
+export type ZoneId = "camp" | `floor:${number}`;
+
+export const floorZone = (n: number): ZoneId => `floor:${n}`;
+
+/** camp = 0; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
+export function zoneDepth(id: ZoneId): number {
+  return id === "camp" ? 0 : Number(id.slice("floor:".length));
+}
+
+export interface ZoneState {
+  id: ZoneId;
+  map: ZoneMap;
+  monsters: Map<number, Monster>;
+  groundItems: Map<number, GroundItem>;
+  goldPiles: Map<number, GoldPile>;
+  breakables: Map<number, Breakable>;
+  corpses: Corpse[];
+  portals: Map<number, Portal>;
+  playerCorpses: Map<number, PlayerCorpse>;
+}
+
+/** A dead player's stripped gear, waiting to be walked back to and reclaimed. */
+export interface PlayerCorpse {
+  id: number;
+  playerId: PlayerId;
+  pos: Vec;
+  equipment: Equipment;
+}
+
+export interface Portal {
+  id: number;
+  owner: PlayerId;
+  pos: Vec;
+  /** The far end. */
+  link: { zone: ZoneId; pos: Vec };
+}
+
+export function getZone(state: GameState, id: ZoneId): ZoneState {
+  const zone = state.zones.get(id);
+  if (!zone) throw new Error(`no such zone: ${id}`);
+  return zone;
+}
+
+export function zoneOf(state: GameState, p: Player): ZoneState {
+  return getZone(state, p.zoneId);
+}
+
+/** Every player id, ascending — the one iteration order the sim ever uses. */
+export function playerIds(state: GameState): PlayerId[] {
+  return [...state.players.keys()].sort((a, b) => a - b);
+}
+
+/** Every player, ascending by id. */
+export function allPlayers(state: GameState): Player[] {
+  return playerIds(state).map((id) => state.players.get(id)!);
+}
+
+/** 0..3, assigned by the host as players join. */
+export type PlayerId = number;
+
+export interface PlayerJoin {
+  id: PlayerId;
+  /** CharacterSave JSON, when the joiner brings an existing hero. */
+  character?: string;
+}
+
+/** One tick's worth of the world's input: what every player did, plus roster churn. */
+export interface Frame {
+  tick: number;
+  inputs: Partial<Record<PlayerId, PlayerInput>>;
+  joins?: PlayerJoin[];
+  leaves?: PlayerId[];
+}
+
 export interface Player {
+  id: PlayerId;
+  /** Which zone this player is standing in. */
+  zoneId: ZoneId;
   pos: Vec;
   /** Cells per tick. */
   speed: number;
@@ -34,6 +111,10 @@ export interface Player {
   smashTarget: number | null;
   /** Walking over to Maren to trade (town only). */
   vendorTarget: boolean;
+  /** Portal id being walked to for riding, if any. */
+  portalTarget: number | null;
+  /** Player corpse id being walked to for reclaiming, if any. */
+  reclaimTarget: number | null;
   level: number;
   xp: number;
   skillPoints: number;
@@ -63,67 +144,58 @@ export interface GoldPile {
 }
 
 export type SimEvent =
-  | { type: "player_swing"; to: Vec }
-  | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean }
-  | { type: "monster_windup"; id: number; ticks: number; pos: Vec }
-  | { type: "player_hit"; amount: number }
-  | { type: "monster_hit"; id: number; amount: number; pos: Vec }
-  | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }
-  | { type: "level_up"; level: number }
-  | { type: "skill_cast"; skill: SkillId; pos: Vec }
-  | { type: "exploded"; pos: Vec; radius: number }
-  | { type: "potion_drunk"; healed: number }
-  | { type: "descended"; depth: number }
-  | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec }
-  | { type: "gold_dropped"; id: number; amount: number; pos: Vec }
-  | { type: "gold_picked"; amount: number }
-  | { type: "item_broke"; name: string }
-  | { type: "repaired"; cost: number }
-  | { type: "portal"; to: "town" | "crypt" }
-  | { type: "shop_opened" }
-  | { type: "bought"; name: string; price: number }
-  | { type: "sold"; name: string; price: number }
-  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
-  | { type: "item_picked"; id: number; name: string }
-  | { type: "item_equipped"; slot: EquipSlot }
-  | { type: "item_unequipped"; slot: EquipSlot }
-  | { type: "inventory_full" };
+  | { type: "player_swing"; playerId: PlayerId; to: Vec; zone: ZoneId }
+  | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean; zone: ZoneId }
+  | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
+  | { type: "player_hit"; playerId: PlayerId; amount: number }
+  | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
+  | {
+      type: "monster_died";
+      id: number;
+      typeId: string;
+      pos: Vec;
+      xp: number;
+      zone: ZoneId;
+      killer: PlayerId | null;
+    }
+  | { type: "level_up"; playerId: PlayerId; level: number }
+  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; zone: ZoneId }
+  | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
+  | { type: "potion_drunk"; playerId: PlayerId; healed: number }
+  | { type: "traveled"; playerId: PlayerId; to: ZoneId }
+  | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
+  | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
+  | { type: "gold_picked"; playerId: PlayerId; amount: number }
+  | { type: "item_broke"; playerId: PlayerId; name: string }
+  | { type: "repaired"; playerId: PlayerId; cost: number }
+  | { type: "shop_opened"; playerId: PlayerId }
+  | { type: "bought"; playerId: PlayerId; name: string; price: number }
+  | { type: "sold"; playerId: PlayerId; name: string; price: number }
+  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec; zone: ZoneId }
+  | { type: "item_picked"; playerId: PlayerId; id: number; name: string }
+  | { type: "item_equipped"; playerId: PlayerId; slot: EquipSlot }
+  | { type: "item_unequipped"; playerId: PlayerId; slot: EquipSlot }
+  | { type: "inventory_full"; playerId: PlayerId }
+  | { type: "player_joined"; playerId: PlayerId }
+  | { type: "player_left"; playerId: PlayerId }
+  | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
+  | { type: "corpse_reclaimed"; playerId: PlayerId }
+  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec };
 
 export interface ShopEntry {
   item: Item;
   price: number;
 }
 
-/** Everything the dungeon holds, frozen while the player is topside. */
-export interface TownState {
-  saved: {
-    map: ZoneMap;
-    monsters: Map<number, Monster>;
-    groundItems: Map<number, GroundItem>;
-    goldPiles: Map<number, GoldPile>;
-    breakables: Map<number, Breakable>;
-    corpses: Corpse[];
-    pos: Vec;
-  };
-}
-
 export interface GameState {
   tick: number;
   rng: Rng;
-  map: ZoneMap;
-  /** Crypt floor, 1-based; deeper floors scale monsters and loot. */
-  depth: number;
-  /** Non-null while the player is up in the camp. */
-  town: TownState | null;
-  /** The vendor's current stock; restocked each town visit. */
+  /** The world: the camp plus every floor generated so far. */
+  zones: Map<ZoneId, ZoneState>;
+  /** The vendor's current stock; restocked each camp arrival. */
   shop: ShopEntry[];
-  player: Player;
-  monsters: Map<number, Monster>;
-  corpses: Corpse[];
-  groundItems: Map<number, GroundItem>;
-  goldPiles: Map<number, GoldPile>;
-  /** Smashable clutter: barrels, crates, and the floor's treasure chest. */
-  breakables: Map<number, Breakable>;
+  /** Everyone in the game, keyed by host-assigned id. */
+  players: Map<PlayerId, Player>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;
@@ -152,10 +224,14 @@ export interface PlayerInput {
   cast?: { skill: SkillId; at?: Vec; target?: number };
   /** Drink a healing potion from the belt. */
   drink?: boolean;
-  /** Start a fresh run: respawn the zone, revive, keep the character. */
+  /** Start a fresh run: forget the floors, revive, keep the character. */
   newGame?: boolean;
-  /** Open a portal and step through to the camp. */
+  /** Cast a two-way portal pair between here and camp. */
   townPortal?: boolean;
+  /** Walk to and ride this portal id. */
+  usePortal?: number;
+  /** Walk to and reclaim this player corpse id. */
+  reclaim?: number;
   /** Walk to the vendor and open the shop (town only). */
   talkVendor?: boolean;
   /** Buy the shop entry at this index (town only). */

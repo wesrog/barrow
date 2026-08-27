@@ -1,4 +1,4 @@
-import type { GameState, PlayerInput } from "../state";
+import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import {
   BELT_SIZE,
   POTION_HEAL,
@@ -6,6 +6,7 @@ import {
   placeItem,
   removeEntry,
   slotForItem,
+  type EquipSlot,
 } from "../character";
 import { BASES } from "../items/bases";
 import { findPath, smoothPath } from "../path";
@@ -13,8 +14,7 @@ import { findPath, smoothPath } from "../path";
 const PICKUP_RANGE = 1.0;
 
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
-export function recomputePlayerStats(state: GameState): void {
-  const p = state.player;
+export function recomputePlayerStats(state: GameState, p: Player): void {
   const s = computeStats(p.equipment, p.level);
   p.dmgMin = s.dmgMin;
   p.dmgMax = s.dmgMax;
@@ -29,9 +29,8 @@ export function recomputePlayerStats(state: GameState): void {
   if (p.mana > p.maxMana) p.mana = p.maxMana;
 }
 
-export function applyDropItemInput(state: GameState, input: PlayerInput): void {
+export function applyDropItemInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.dropItem === undefined) return;
-  const p = state.player;
   const entry = removeEntry(p.inventory, input.dropItem);
   if (!entry) return;
   const pos = {
@@ -39,131 +38,223 @@ export function applyDropItemInput(state: GameState, input: PlayerInput): void {
     y: p.pos.y + (state.rng.next() - 0.5) * 1.2,
   };
   const id = state.nextId++;
-  state.groundItems.set(id, { id, item: entry.item, pos });
-  state.events.push({ type: "item_dropped", id, name: entry.item.name, rarity: entry.item.rarity, pos });
+  const zone = zoneOf(state, p);
+  zone.groundItems.set(id, { id, item: entry.item, pos });
+  state.events.push({
+    type: "item_dropped",
+    id,
+    name: entry.item.name,
+    rarity: entry.item.rarity,
+    pos,
+    zone: zone.id,
+  });
 }
 
 const WEAR_CHANCE = 0.04;
 const REPAIR_PER_POINT = 2;
 
-/** Gear wears with use: swings chew the weapon, taken hits chew the armor. */
+/**
+ * Gear wears with use: swings chew the weapon, taken hits chew the armor.
+ * Runs once for the whole world, attributing each event to its own player.
+ */
 export function durabilitySystem(state: GameState): void {
-  const p = state.player;
-  let broke = false;
-  const wear = (item: { durability?: { cur: number; max: number }; name: string } | null) => {
+  const broke = new Set<Player>();
+  const wear = (
+    p: Player,
+    item: { durability?: { cur: number; max: number }; name: string } | null,
+  ) => {
     if (!item?.durability || item.durability.cur <= 0) return;
     if (state.rng.next() < WEAR_CHANCE) {
       item.durability.cur--;
       if (item.durability.cur === 0) {
-        broke = true;
-        state.events.push({ type: "item_broke", name: item.name });
+        broke.add(p);
+        state.events.push({ type: "item_broke", playerId: p.id, name: item.name });
       }
     }
   };
-  for (const e of state.events) {
-    if (e.type === "player_swing") wear(p.equipment.weapon);
-    else if (e.type === "player_hit") {
-      wear(p.equipment.helm);
-      wear(p.equipment.chest);
-      wear(p.equipment.boots);
+  // Snapshot: wear pushes item_broke events we must not re-read.
+  for (const e of [...state.events]) {
+    if (e.type !== "player_swing" && e.type !== "player_hit") continue;
+    const p = state.players.get(e.playerId);
+    if (!p) continue;
+    if (e.type === "player_swing") wear(p, p.equipment.weapon);
+    else {
+      wear(p, p.equipment.helm);
+      wear(p, p.equipment.chest);
+      wear(p, p.equipment.boots);
     }
   }
-  if (broke) recomputePlayerStats(state);
+  for (const p of broke) recomputePlayerStats(state, p);
 }
 
-export function repairAllCost(state: GameState): number {
+export function repairAllCost(state: GameState, p: Player): number {
   let missing = 0;
-  for (const item of Object.values(state.player.equipment)) {
+  for (const item of Object.values(p.equipment)) {
     if (item?.durability) missing += item.durability.max - item.durability.cur;
   }
-  for (const entry of state.player.inventory.entries) {
+  for (const entry of p.inventory.entries) {
     if (entry.item.durability) missing += entry.item.durability.max - entry.item.durability.cur;
   }
   return missing * REPAIR_PER_POINT;
 }
 
-export function repairAll(state: GameState): boolean {
-  const cost = repairAllCost(state);
-  if (cost === 0 || state.player.gold < cost) return false;
-  state.player.gold -= cost;
-  for (const item of Object.values(state.player.equipment)) {
+export function repairAll(state: GameState, p: Player): boolean {
+  const cost = repairAllCost(state, p);
+  if (cost === 0 || p.gold < cost) return false;
+  p.gold -= cost;
+  for (const item of Object.values(p.equipment)) {
     if (item?.durability) item.durability.cur = item.durability.max;
   }
-  for (const entry of state.player.inventory.entries) {
+  for (const entry of p.inventory.entries) {
     if (entry.item.durability) entry.item.durability.cur = entry.item.durability.max;
   }
-  recomputePlayerStats(state);
-  state.events.push({ type: "repaired", cost });
+  recomputePlayerStats(state, p);
+  state.events.push({ type: "repaired", playerId: p.id, cost });
   return true;
 }
 
-export function applyDrinkInput(state: GameState, input: PlayerInput): void {
+export function applyDrinkInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!input.drink) return;
-  const p = state.player;
   if (p.belt <= 0 || p.life >= p.maxLife) return;
   p.belt--;
   const healed = Math.min(POTION_HEAL, p.maxLife - p.life);
   p.life += healed;
-  state.events.push({ type: "potion_drunk", healed });
+  state.events.push({ type: "potion_drunk", playerId: p.id, healed });
 }
 
-export function applyPickupInput(state: GameState, input: PlayerInput): void {
+export function applyPickupInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.pickup === undefined) return;
-  if (!state.groundItems.has(input.pickup)) return;
-  state.player.pickupTarget = input.pickup;
-  state.player.attackTarget = null;
-  state.player.smashTarget = null;
-  state.player.path = [];
+  if (!zoneOf(state, p).groundItems.has(input.pickup)) return;
+  p.pickupTarget = input.pickup;
+  p.attackTarget = null;
+  p.smashTarget = null;
+  p.portalTarget = null;
+  p.reclaimTarget = null;
+  p.path = [];
 }
 
-export function pickupSystem(state: GameState): void {
-  const p = state.player;
-  // Gold is scooped just by walking near it.
-  for (const pile of [...state.goldPiles.values()]) {
-    if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
-      state.goldPiles.delete(pile.id);
-      p.gold += pile.amount;
-      state.events.push({ type: "gold_picked", amount: pile.amount });
+export function pickupSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    // Gold is scooped just by walking near it.
+    for (const pile of [...zone.goldPiles.values()]) {
+      if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
+        zone.goldPiles.delete(pile.id);
+        p.gold += pile.amount;
+        state.events.push({ type: "gold_picked", playerId: p.id, amount: pile.amount });
+      }
     }
-  }
-  if (p.pickupTarget === null) return;
-  const target = state.groundItems.get(p.pickupTarget);
-  if (!target) {
-    p.pickupTarget = null;
-    return;
-  }
-  const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y);
-  if (d <= PICKUP_RANGE) {
-    p.pickupTarget = null;
-    p.path = [];
-    const isPotion = BASES[target.item.baseId]!.slot === "potion";
-    if (isPotion && p.belt < BELT_SIZE) {
-      p.belt++;
-      state.groundItems.delete(target.id);
-      state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
-    } else if (placeItem(p.inventory, target.id, target.item)) {
-      state.groundItems.delete(target.id);
-      state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
-    } else {
-      state.events.push({ type: "inventory_full" });
-    }
-  } else if (p.path.length === 0) {
-    const cells = findPath(
-      state.map,
-      { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-      { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-    );
-    if (cells === null) {
+    if (p.pickupTarget === null) continue;
+    const target = zone.groundItems.get(p.pickupTarget);
+    if (!target) {
       p.pickupTarget = null;
-      return;
+      continue;
     }
-    p.path = smoothPath(state.map, p.pos, cells);
-    p.path.push({ ...target.pos });
+    const d = Math.hypot(p.pos.x - target.pos.x, p.pos.y - target.pos.y);
+    if (d <= PICKUP_RANGE) {
+      p.pickupTarget = null;
+      p.path = [];
+      const isPotion = BASES[target.item.baseId]!.slot === "potion";
+      if (isPotion && p.belt < BELT_SIZE) {
+        p.belt++;
+        zone.groundItems.delete(target.id);
+        state.events.push({
+          type: "item_picked",
+          playerId: p.id,
+          id: target.id,
+          name: target.item.name,
+        });
+      } else if (placeItem(p.inventory, target.id, target.item)) {
+        zone.groundItems.delete(target.id);
+        state.events.push({
+          type: "item_picked",
+          playerId: p.id,
+          id: target.id,
+          name: target.item.name,
+        });
+      } else {
+        state.events.push({ type: "inventory_full", playerId: p.id });
+      }
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        zone.map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
+      );
+      if (cells === null) {
+        p.pickupTarget = null;
+        continue;
+      }
+      p.path = smoothPath(zone.map, p.pos, cells);
+      p.path.push({ ...target.pos });
+    }
   }
 }
 
-export function applyEquipInput(state: GameState, input: PlayerInput): void {
-  const p = state.player;
+export function applyReclaimInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (input.reclaim === undefined) return;
+  const corpse = zoneOf(state, p).playerCorpses.get(input.reclaim);
+  if (!corpse || corpse.playerId !== p.id) return;
+  p.reclaimTarget = input.reclaim;
+  p.pickupTarget = null;
+  p.attackTarget = null;
+  p.smashTarget = null;
+  p.portalTarget = null;
+  p.vendorTarget = false;
+  p.path = [];
+}
+
+/** Walk to and reclaim a player corpse: re-equip its slots, swapping current gear back to
+ * inventory (or the ground, if the pack has no room). Range and pathing mirror pickupSystem. */
+export function reclaimSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.reclaimTarget === null) continue;
+    const corpse = zone.playerCorpses.get(p.reclaimTarget);
+    if (!corpse || corpse.playerId !== p.id) {
+      p.reclaimTarget = null;
+      continue;
+    }
+    const d = Math.hypot(p.pos.x - corpse.pos.x, p.pos.y - corpse.pos.y);
+    if (d <= PICKUP_RANGE) {
+      p.reclaimTarget = null;
+      p.path = [];
+      for (const slot of Object.keys(corpse.equipment) as EquipSlot[]) {
+        const item = corpse.equipment[slot];
+        if (!item) continue;
+        const current = p.equipment[slot];
+        p.equipment[slot] = item;
+        if (current && !placeItem(p.inventory, state.nextId++, current)) {
+          const id = state.nextId++;
+          zone.groundItems.set(id, { id, item: current, pos: { ...corpse.pos } });
+          state.events.push({
+            type: "item_dropped",
+            id,
+            name: current.name,
+            rarity: current.rarity,
+            pos: { ...corpse.pos },
+            zone: zone.id,
+          });
+        }
+      }
+      zone.playerCorpses.delete(corpse.id);
+      recomputePlayerStats(state, p);
+      state.events.push({ type: "corpse_reclaimed", playerId: p.id });
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        zone.map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(corpse.pos.x), y: Math.floor(corpse.pos.y) },
+      );
+      if (cells === null) {
+        p.reclaimTarget = null;
+        continue;
+      }
+      p.path = smoothPath(zone.map, p.pos, cells);
+      p.path.push({ ...corpse.pos });
+    }
+  }
+}
+
+export function applyEquipInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.equip !== undefined) {
     const entry = removeEntry(p.inventory, input.equip);
     if (!entry) return;
@@ -188,8 +279,8 @@ export function applyEquipInput(state: GameState, input: PlayerInput): void {
         return;
       }
     }
-    recomputePlayerStats(state);
-    state.events.push({ type: "item_equipped", slot });
+    recomputePlayerStats(state, p);
+    state.events.push({ type: "item_equipped", playerId: p.id, slot });
   }
 
   if (input.unequip !== undefined) {
@@ -197,7 +288,7 @@ export function applyEquipInput(state: GameState, input: PlayerInput): void {
     if (!item) return;
     if (!placeItem(p.inventory, state.nextId++, item)) return;
     p.equipment[input.unequip] = null;
-    recomputePlayerStats(state);
-    state.events.push({ type: "item_unequipped", slot: input.unequip });
+    recomputePlayerStats(state, p);
+    state.events.push({ type: "item_unequipped", playerId: p.id, slot: input.unequip });
   }
 }

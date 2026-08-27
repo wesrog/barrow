@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "bun test sim client"
+    "test": "bun test sim client net signal",
+    "signal": "bun signal/server.ts"
   },
   "dependencies": {
     "react": "^19.1.0",

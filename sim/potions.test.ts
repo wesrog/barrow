@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone } from "./test-helpers";
 import { BELT_SIZE, placeItem } from "./character";
 import { rollItem, type Item } from "./items/generate";
 import { createRng } from "./rng";
@@ -25,7 +26,7 @@ const potion = (): Item => ({
 
 function dropAt(state: GameState, item: Item, x: number, y: number): number {
   const id = state.nextId++;
-  state.groundItems.set(id, { id, item, pos: { x, y } });
+  playerZone(state).groundItems.set(id, { id, item, pos: { x, y } });
   return id;
 }
 
@@ -38,38 +39,38 @@ describe("potions", () => {
   });
 
   test("picked-up potions fill the belt before the inventory", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     for (let i = 0; i < BELT_SIZE + 1; i++) {
       const id = dropAt(state, potion(), 2.5, 1.5);
-      step(state, { pickup: id });
-      for (let t = 0; t < 40 && state.groundItems.has(id); t++) step(state, {});
+      stepSolo(state, { pickup: id });
+      for (let t = 0; t < 40 && playerZone(state).groundItems.has(id); t++) stepSolo(state, {});
     }
-    expect(state.player.belt).toBe(BELT_SIZE);
-    expect(state.player.inventory.entries).toHaveLength(1);
+    expect(player(state).belt).toBe(BELT_SIZE);
+    expect(player(state).inventory.entries).toHaveLength(1);
   });
 
   test("drinking heals, consumes a charge, and never overheals", () => {
-    const state = createGame(1, arena());
-    state.player.belt = 2;
-    state.player.life = 40;
-    step(state, { drink: true });
-    expect(state.player.belt).toBe(1);
-    expect(state.player.life).toBe(75); // +35
-    step(state, { drink: true });
-    expect(state.player.life).toBe(state.player.maxLife); // clamped
-    step(state, { drink: true }); // belt empty: no-op
-    expect(state.player.belt).toBe(0);
+    const state = createGameOn(1, arena());
+    player(state).belt = 2;
+    player(state).life = 40;
+    stepSolo(state, { drink: true });
+    expect(player(state).belt).toBe(1);
+    expect(player(state).life).toBe(75); // +35
+    stepSolo(state, { drink: true });
+    expect(player(state).life).toBe(player(state).maxLife); // clamped
+    stepSolo(state, { drink: true }); // belt empty: no-op
+    expect(player(state).belt).toBe(0);
   });
 
   test("clicking an inventory potion moves it to the belt", () => {
-    const state = createGame(1, arena());
-    state.player.belt = 0;
+    const state = createGameOn(1, arena());
+    player(state).belt = 0;
     const id = state.nextId++;
-    placeItem(state.player.inventory, id, potion());
-    step(state, { equip: id });
-    expect(state.player.belt).toBe(1);
-    expect(state.player.inventory.entries).toHaveLength(0);
+    placeItem(player(state).inventory, id, potion());
+    stepSolo(state, { equip: id });
+    expect(player(state).belt).toBe(1);
+    expect(player(state).inventory.entries).toHaveLength(0);
     // never lands in an equipment slot
-    expect(Object.values(state.player.equipment).every((it) => it === null || it.baseId !== "minor_potion")).toBe(true);
+    expect(Object.values(player(state).equipment).every((it) => it === null || it.baseId !== "minor_potion")).toBe(true);
   });
 });

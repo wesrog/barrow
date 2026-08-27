@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { computeHitChance, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
-import { spawnMonster } from "./monsters";
 import { createRng } from "./rng";
 
 const arena = () =>
@@ -35,22 +35,22 @@ describe("hit math", () => {
 
 describe("monster AI", () => {
   test("far-away monster stays idle; near monster aggros and chases", () => {
-    const game = createGame(1, arena());
-    const far = spawnMonster(game, "shambler", { x: 10.5, y: 3.5 });
-    step(game, {});
+    const game = createGameOn(1, arena());
+    const far = spawnAt(game, "shambler", { x: 10.5, y: 3.5 });
+    stepSolo(game, {});
     expect(far.ai).toBe("idle");
 
-    const near = spawnMonster(game, "shambler", { x: 4.5, y: 1.5 });
-    step(game, {});
+    const near = spawnAt(game, "shambler", { x: 4.5, y: 1.5 });
+    stepSolo(game, {});
     expect(near.ai).toBe("chasing");
   });
 
   test("idle monster shuffles around instead of standing frozen", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 10.5, y: 3.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 10.5, y: 3.5 });
     let moved = false;
     for (let i = 0; i < 500; i++) {
-      step(game, {});
+      stepSolo(game, {});
       expect(m.ai).toBe("idle");
       if (Math.hypot(m.pos.x - 10.5, m.pos.y - 3.5) > 0.3) moved = true;
     }
@@ -58,33 +58,33 @@ describe("monster AI", () => {
   });
 
   test("idle wander stays leashed near the spawn point", () => {
-    const game = createGame(2, arena());
-    const m = spawnMonster(game, "shambler", { x: 10.5, y: 3.5 });
+    const game = createGameOn(2, arena());
+    const m = spawnAt(game, "shambler", { x: 10.5, y: 3.5 });
     for (let i = 0; i < 2000; i++) {
-      step(game, {});
+      stepSolo(game, {});
       expect(Math.hypot(m.pos.x - 10.5, m.pos.y - 3.5)).toBeLessThanOrEqual(2.5);
     }
   });
 
   test("chasing monster closes distance and damages the player", () => {
-    const game = createGame(1, arena());
-    spawnMonster(game, "shambler", { x: 6.5, y: 1.5 });
-    const startLife = game.player.life;
+    const game = createGameOn(1, arena());
+    spawnAt(game, "shambler", { x: 6.5, y: 1.5 });
+    const startLife = player(game).life;
     let sawDamageEvent = false;
     for (let i = 0; i < 300; i++) {
-      step(game, {});
+      stepSolo(game, {});
       if (game.events.some((e) => e.type === "player_hit")) sawDamageEvent = true;
     }
-    expect(game.player.life).toBeLessThan(startLife);
+    expect(player(game).life).toBeLessThan(startLife);
     expect(sawDamageEvent).toBe(true);
   });
 
   test("monster respects its swing cooldown", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 2.1, y: 1.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
     const hitsAt: number[] = [];
     for (let i = 0; i < 500; i++) {
-      step(game, {});
+      stepSolo(game, {});
       if (game.events.some((e) => e.type === "player_hit")) hitsAt.push(game.tick);
     }
     expect(hitsAt.length).toBeGreaterThan(1);
@@ -96,26 +96,26 @@ describe("monster AI", () => {
 
 describe("player attacking", () => {
   test("attacking a monster walks into range and kills it", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "skitter", { x: 8.5, y: 2.5 });
-    step(game, { attack: m.id });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "skitter", { x: 8.5, y: 2.5 });
+    stepSolo(game, { attack: m.id });
     let died = false;
     for (let i = 0; i < 600 && !died; i++) {
-      step(game, {});
+      stepSolo(game, {});
       if (game.events.some((e) => e.type === "monster_died" && e.id === m.id)) died = true;
     }
     expect(died).toBe(true);
-    expect(game.monsters.has(m.id)).toBe(false);
-    expect(game.corpses.some((c) => c.typeId === "skitter")).toBe(true);
+    expect(playerZone(game).monsters.has(m.id)).toBe(false);
+    expect(playerZone(game).corpses.some((c) => c.typeId === "skitter")).toBe(true);
   });
 
   test("monster hits emit events with damage amounts", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "skitter", { x: 2.5, y: 1.5 });
-    step(game, { attack: m.id });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
+    stepSolo(game, { attack: m.id });
     const amounts: number[] = [];
-    for (let i = 0; i < 200 && game.monsters.has(m.id); i++) {
-      step(game, {});
+    for (let i = 0; i < 200 && playerZone(game).monsters.has(m.id); i++) {
+      stepSolo(game, {});
       for (const e of game.events) {
         if (e.type === "monster_hit" && e.id === m.id) amounts.push(e.amount);
       }
@@ -124,23 +124,24 @@ describe("player attacking", () => {
     for (const a of amounts) expect(a).toBeGreaterThan(0);
   });
 
-  test("player death sets dead flag and stops monster piling on", () => {
-    const game = createGame(1, arena());
-    game.player.life = 1;
-    spawnMonster(game, "shambler", { x: 2.1, y: 1.5 });
-    for (let i = 0; i < 200; i++) step(game, {});
-    expect(game.player.dead).toBe(true);
-    expect(game.player.life).toBe(0);
+  test("player death respawns in camp at full life instead of piling on", () => {
+    const game = createGameOn(1, arena());
+    player(game).life = 1;
+    spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
+    for (let i = 0; i < 200; i++) stepSolo(game, {});
+    expect(player(game).dead).toBe(false);
+    expect(player(game).zoneId).toBe("camp");
+    expect(player(game).life).toBe(player(game).maxLife);
   });
 });
 
 describe("swing events", () => {
   test("a player swing emits player_swing whether or not it hits", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let swings = 0;
     for (let i = 0; i < 30; i++) {
-      step(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
       swings += game.events.filter((e) => e.type === "player_swing").length;
     }
     // swingEvery is 12 ticks: at least two swings in 30
@@ -148,16 +149,16 @@ describe("swing events", () => {
   });
 
   test("melee monsters emit monster_swing at the player, not flagged ranged", () => {
-    const game = createGame(1, arena());
-    spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const game = createGameOn(1, arena());
+    spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let seen = false;
     for (let i = 0; i < 60 && !seen; i++) {
-      step(game, {});
+      stepSolo(game, {});
       for (const e of game.events) {
         if (e.type === "monster_swing") {
           seen = true;
           expect(e.ranged).toBe(false);
-          expect(e.to).toEqual(game.player.pos);
+          expect(e.to).toEqual(player(game).pos);
         }
       }
     }
@@ -165,11 +166,11 @@ describe("swing events", () => {
   });
 
   test("gravespit swings are flagged ranged with a firing origin", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "gravespit", { x: 6.5, y: 1.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "gravespit", { x: 6.5, y: 1.5 });
     let seen = false;
     for (let i = 0; i < 120 && !seen; i++) {
-      step(game, {});
+      stepSolo(game, {});
       for (const e of game.events) {
         if (e.type === "monster_swing") {
           seen = true;
@@ -184,50 +185,50 @@ describe("swing events", () => {
 
 describe("attack in place (shift-click)", () => {
   test("swings at a nearby monster without moving", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
-    const start = { ...game.player.pos };
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    const start = { ...player(game).pos };
     let hit = false;
     for (let i = 0; i < 40 && !hit; i++) {
-      step(game, { swingAt: { x: 2.2, y: 1.5 } });
+      stepSolo(game, { swingAt: { x: 2.2, y: 1.5 } });
       if (game.events.some((e) => e.type === "monster_hit" && (e as any).id === m.id)) hit = true;
-      expect(game.player.pos).toEqual(start);
-      expect(game.player.path).toHaveLength(0);
+      expect(player(game).pos).toEqual(start);
+      expect(player(game).path).toHaveLength(0);
     }
     expect(hit).toBe(true);
   });
 
   test("swinging at empty air still swings, hits nothing, never moves", () => {
-    const game = createGame(1, arena());
-    spawnMonster(game, "shambler", { x: 9.5, y: 3.5 }); // far away
-    const start = { ...game.player.pos };
+    const game = createGameOn(1, arena());
+    spawnAt(game, "shambler", { x: 9.5, y: 3.5 }); // far away
+    const start = { ...player(game).pos };
     let swings = 0;
     for (let i = 0; i < 30; i++) {
-      step(game, { swingAt: { x: 3.5, y: 1.5 } });
+      stepSolo(game, { swingAt: { x: 3.5, y: 1.5 } });
       swings += game.events.filter((e) => e.type === "player_swing").length;
       expect(game.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
     }
-    expect(game.player.pos).toEqual(start);
+    expect(player(game).pos).toEqual(start);
     expect(swings).toBeGreaterThanOrEqual(2);
   });
 
   test("a swing-in-place cancels a pending move", () => {
-    const game = createGame(1, arena());
-    step(game, { moveTo: { x: 9.5, y: 3.5 } });
-    step(game, { swingAt: { x: 3.5, y: 1.5 } });
-    expect(game.player.path).toHaveLength(0);
+    const game = createGameOn(1, arena());
+    stepSolo(game, { moveTo: { x: 9.5, y: 3.5 } });
+    stepSolo(game, { swingAt: { x: 3.5, y: 1.5 } });
+    expect(player(game).path).toHaveLength(0);
   });
 });
 
 describe("contact frames", () => {
   test("every hit lands exactly the strike delay after some swing, never instantly", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     m.life = 1000000;
     const swingTicks: number[] = [];
     const hitTicks: number[] = [];
     for (let i = 0; i < 120; i++) {
-      step(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
       for (const e of game.events) {
         if (e.type === "player_swing") swingTicks.push(game.tick);
         if (e.type === "monster_hit") hitTicks.push(game.tick);
@@ -242,28 +243,28 @@ describe("contact frames", () => {
   });
 
   test("the strike whiffs when the target escapes mid-swing", () => {
-    const game = createGame(1, arena());
-    const m = spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let swung = false;
     for (let i = 0; i < 30 && !swung; i++) {
-      step(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
       if (game.events.some((e) => e.type === "player_swing")) swung = true;
     }
     expect(swung).toBe(true);
     m.pos = { x: 9.5, y: 3.5 }; // yanked away mid-swing
     for (let i = 0; i < 10; i++) {
-      step(game, {});
+      stepSolo(game, {});
       expect(game.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
     }
   });
 
   test("monster melee damage trails its swing animation cue", () => {
-    const game = createGame(1, arena());
-    spawnMonster(game, "shambler", { x: 2.2, y: 1.5 });
+    const game = createGameOn(1, arena());
+    spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let swingTick = -1;
     let hurtTick = -1;
     for (let i = 0; i < 120 && hurtTick === -1; i++) {
-      step(game, {});
+      stepSolo(game, {});
       for (const e of game.events) {
         if (e.type === "monster_swing" && swingTick === -1) swingTick = game.tick;
         if (e.type === "player_hit" && hurtTick === -1) hurtTick = game.tick;

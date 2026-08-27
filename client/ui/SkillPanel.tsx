@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { SKILLS, type SkillId } from "../../sim/skills";
 import type { GameState } from "../../sim/state";
@@ -35,7 +36,7 @@ export function SkillPanel({
   game: GameState;
   onSpend: (skill: SkillId) => void;
 }) {
-  const p = game.player;
+  const p = localPlayer(game);
   return (
     <div style={panelStyle}>
       <div style={{ color: "#8f8778", marginBottom: 8, letterSpacing: 1 }}>

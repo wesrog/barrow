@@ -1,5 +1,5 @@
 import type { Vec } from "./map";
-import type { GameState } from "./state";
+import type { GameState, PlayerId, ZoneState } from "./state";
 
 export interface MonsterType {
   id: string;
@@ -189,6 +189,8 @@ export interface Monster {
   strikeTo: Vec | null;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
+  /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
+  lastHitBy: PlayerId | null;
 }
 
 export interface Corpse {
@@ -198,7 +200,13 @@ export interface Corpse {
   diedAt: number;
 }
 
-export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth = 1): Monster {
+export function spawnMonster(
+  state: GameState,
+  zone: ZoneState,
+  typeId: string,
+  pos: Vec,
+  depth = 1,
+): Monster {
   const table = MONSTER_TYPES[typeId];
   if (!table) throw new Error(`unknown monster type: ${typeId}`);
   const t = depth > 1 ? scaledMonsterStats(table, depth) : table;
@@ -234,7 +242,8 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth =
     strikeAt: null,
     strikeTo: null,
     stunnedUntil: 0,
+    lastHitBy: null,
   };
-  state.monsters.set(monster.id, monster);
+  zone.monsters.set(monster.id, monster);
   return monster;
 }

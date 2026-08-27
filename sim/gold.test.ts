@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { stepSolo } from "./tick";
+import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { GameState } from "./state";
 
@@ -14,25 +14,25 @@ const arena = () =>
   ]);
 
 function armed(state: GameState): void {
-  state.player.equipment.weapon!.mods = [
+  player(state).equipment.weapon!.mods = [
     { stat: "dmgMin", value: 500 },
     { stat: "dmgMax", value: 500 },
     { stat: "life", value: 100000 },
   ];
-  recomputePlayerStats(state);
-  state.player.life = state.player.maxLife;
+  recomputePlayerStats(state, player(state));
+  player(state).life = player(state).maxLife;
 }
 
 describe("gold", () => {
   test("kills sometimes drop gold piles that scale with monster level", () => {
-    const state = createGame(9, arena());
+    const state = createGameOn(9, arena());
     armed(state);
     let piles = 0;
     let total = 0;
     for (let round = 0; round < 80; round++) {
-      const m = spawnMonster(state, "skitter", { x: 5.5, y: 1.5 });
+      const m = spawnAt(state, "skitter", { x: 5.5, y: 1.5 });
       m.life = 0;
-      step(state, {});
+      stepSolo(state, {});
       for (const e of state.events) {
         if (e.type === "gold_dropped") {
           piles++;
@@ -46,11 +46,11 @@ describe("gold", () => {
   });
 
   test("walking over a pile scoops it up automatically", () => {
-    const state = createGame(1, arena());
-    state.goldPiles.set(1, { id: 1, amount: 25, pos: { x: 4.5, y: 1.5 } });
-    step(state, { moveTo: { x: 6.5, y: 1.5 } });
-    for (let i = 0; i < 60; i++) step(state, {});
-    expect(state.goldPiles.size).toBe(0);
-    expect(state.player.gold).toBe(25);
+    const state = createGameOn(1, arena());
+    playerZone(state).goldPiles.set(1, { id: 1, amount: 25, pos: { x: 4.5, y: 1.5 } });
+    stepSolo(state, { moveTo: { x: 6.5, y: 1.5 } });
+    for (let i = 0; i < 60; i++) stepSolo(state, {});
+    expect(playerZone(state).goldPiles.size).toBe(0);
+    expect(player(state).gold).toBe(25);
   });
 });

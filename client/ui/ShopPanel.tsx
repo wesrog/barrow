@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BASES } from "../../sim/items/bases";
 import { itemValue } from "../../sim/systems/town";
@@ -43,8 +44,8 @@ export function ShopPanel({
   onSell: (entryId: number) => void;
   onRepair: () => void;
 }) {
-  const p = game.player;
-  const repairCost = repairAllCost(game);
+  const p = localPlayer(game);
+  const repairCost = repairAllCost(game, p);
 
   return (
     <div style={panelStyle}>

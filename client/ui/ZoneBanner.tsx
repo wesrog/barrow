@@ -1,9 +1,10 @@
-import type { GameState } from "../../sim/state";
+import { localPlayer } from "../local";
+import { zoneDepth, type GameState } from "../../sim/state";
 import { zoneName } from "../../sim/zone";
 
 /** Top-center banner: where you are, and how deep. */
 export function ZoneBanner({ game }: { game: GameState }) {
-  const inTown = game.town !== null;
+  const depth = zoneDepth(localPlayer(game).zoneId);
   return (
     <div
       style={{
@@ -20,10 +21,10 @@ export function ZoneBanner({ game }: { game: GameState }) {
         userSelect: "none",
       }}
     >
-      <div style={{ fontSize: 15 }}>{inTown ? "The Camp" : zoneName(game.depth)}</div>
-      {!inTown && (
+      <div style={{ fontSize: 15 }}>{zoneName(depth)}</div>
+      {depth > 0 && (
         <div style={{ fontSize: 11, color: "#7fb8c9", marginTop: 2, letterSpacing: 2 }}>
-          depth {game.depth}
+          depth {depth}
         </div>
       )}
     </div>

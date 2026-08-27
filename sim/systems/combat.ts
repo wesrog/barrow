@@ -1,11 +1,21 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, isWalkable, type Vec } from "../map";
+import { hasLineOfSight, isWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
-import type { GameState, PlayerInput } from "../state";
+import {
+  zoneOf,
+  type GameState,
+  type Player,
+  type PlayerInput,
+  type PlayerCorpse,
+  type ZoneId,
+  type ZoneState,
+} from "../state";
 import type { Monster } from "../monsters";
 import { rollDrop } from "../items/treasure";
 import { damageMultiplier } from "../skills";
 import { moveAlongPath } from "./movement";
+import { createEquipment, type EquipSlot } from "../character";
+import { recomputePlayerStats } from "./inventory";
 
 export function computeHitChance(attackRating: number, defense: number): number {
   const raw = attackRating / (attackRating + defense);
@@ -17,20 +27,19 @@ export const PLAYER_STRIKE_TICKS = 5;
 export const MONSTER_STRIKE_TICKS = 4;
 
 /** Resolve the player's in-flight swing at its contact frame. */
-function resolvePlayerStrike(state: GameState): void {
-  const p = state.player;
+function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void {
   if (!p.pendingStrike || state.tick < p.pendingStrike.at) return;
   const strike = p.pendingStrike;
   p.pendingStrike = null;
   if (p.dead) return;
   let target: Monster | null = null;
   if (strike.target !== null) {
-    const m = state.monsters.get(strike.target);
+    const m = zone.monsters.get(strike.target);
     if (m && dist(p.pos, m.pos) <= p.range * 1.35) target = m;
   } else {
     // Swing-in-place: whatever is nearest within reach when the blade lands.
     let bestD = Infinity;
-    for (const m of state.monsters.values()) {
+    for (const m of zone.monsters.values()) {
       const d = dist(m.pos, p.pos);
       if (d <= p.range && d < bestD) {
         target = m;
@@ -42,10 +51,17 @@ function resolvePlayerStrike(state: GameState): void {
   if (state.rng.next() < computeHitChance(p.attackRating, target.defense)) {
     const amount = Math.max(
       1,
-      Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state)),
+      Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
     target.life -= amount;
-    state.events.push({ type: "monster_hit", id: target.id, amount, pos: { ...target.pos } });
+    target.lastHitBy = p.id;
+    state.events.push({
+      type: "monster_hit",
+      id: target.id,
+      amount,
+      pos: { ...target.pos },
+      zone: zone.id,
+    });
   }
 }
 
@@ -55,61 +71,75 @@ export function rollDamage(rng: Rng, min: number, max: number): number {
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 
-function pathToward(state: GameState, from: Vec, to: Vec): Vec[] {
+function pathToward(map: ZoneMap, from: Vec, to: Vec): Vec[] {
   const cells = findPath(
-    state.map,
+    map,
     { x: Math.floor(from.x), y: Math.floor(from.y) },
     { x: Math.floor(to.x), y: Math.floor(to.y) },
   );
   if (cells === null) return [];
-  const waypoints = smoothPath(state.map, from, cells);
+  const waypoints = smoothPath(map, from, cells);
   // Walk to the target's actual position, not just its cell center.
   waypoints.push({ ...to });
   return waypoints;
 }
 
-export function applyAttackInput(state: GameState, input: PlayerInput): void {
+export function applyAttackInput(state: GameState, p: Player, input: PlayerInput): void {
   if (input.attack === undefined) return;
-  if (state.monsters.has(input.attack)) {
-    state.player.attackTarget = input.attack;
-    state.player.pickupTarget = null;
-    state.player.smashTarget = null;
-    state.player.path = [];
+  if (zoneOf(state, p).monsters.has(input.attack)) {
+    p.attackTarget = input.attack;
+    p.pickupTarget = null;
+    p.smashTarget = null;
+    p.portalTarget = null;
+    p.reclaimTarget = null;
+    p.path = [];
   }
 }
 
 /** Shift-click: stand your ground and swing toward a point. */
-export function applySwingInPlaceInput(state: GameState, input: PlayerInput): void {
+export function applySwingInPlaceInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!input.swingAt) return;
-  const p = state.player;
   p.path = [];
   p.attackTarget = null;
   p.pickupTarget = null;
+  p.portalTarget = null;
+  p.reclaimTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
-  state.events.push({ type: "player_swing", to: { ...input.swingAt } });
+  state.events.push({
+    type: "player_swing",
+    playerId: p.id,
+    to: { ...input.swingAt },
+    zone: p.zoneId,
+  });
   p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: null };
 }
 
-export function playerCombatSystem(state: GameState): void {
-  const p = state.player;
-  if (p.swingCooldown > 0) p.swingCooldown--;
-  resolvePlayerStrike(state);
-  if (p.dead || p.attackTarget === null) return;
-  const target = state.monsters.get(p.attackTarget);
-  if (!target) {
-    p.attackTarget = null;
-    return;
-  }
-  if (dist(p.pos, target.pos) <= p.range) {
-    p.path = [];
-    if (p.swingCooldown === 0) {
-      p.swingCooldown = p.swingEvery;
-      state.events.push({ type: "player_swing", to: { ...target.pos } });
-      p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+export function playerCombatSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.swingCooldown > 0) p.swingCooldown--;
+    resolvePlayerStrike(state, zone, p);
+    if (p.dead || p.attackTarget === null) continue;
+    const target = zone.monsters.get(p.attackTarget);
+    if (!target) {
+      p.attackTarget = null;
+      continue;
     }
-  } else {
-    p.path = pathToward(state, p.pos, target.pos);
+    if (dist(p.pos, target.pos) <= p.range) {
+      p.path = [];
+      if (p.swingCooldown === 0) {
+        p.swingCooldown = p.swingEvery;
+        state.events.push({
+          type: "player_swing",
+          playerId: p.id,
+          to: { ...target.pos },
+          zone: zone.id,
+        });
+        p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+      }
+    } else {
+      p.path = pathToward(zone.map, p.pos, target.pos);
+    }
   }
 }
 
@@ -118,7 +148,7 @@ const WANDER_RADIUS = 1.5;
 const WANDER_SPEED_SCALE = 0.35;
 
 /** An idle monster ambles to a random spot near home, then loiters a while. */
-function idleWander(state: GameState, m: Monster): void {
+function idleWander(state: GameState, zone: ZoneState, m: Monster): void {
   if (m.path.length > 0) {
     moveAlongPath(m.pos, m.path, m.speed * WANDER_SPEED_SCALE);
     return;
@@ -131,21 +161,37 @@ function idleWander(state: GameState, m: Monster): void {
   const ang = state.rng.next() * Math.PI * 2;
   const r = 0.4 + state.rng.next() * (WANDER_RADIUS - 0.4);
   const to = { x: m.home.x + Math.cos(ang) * r, y: m.home.y + Math.sin(ang) * r };
-  if (!isWalkable(state.map, Math.floor(to.x), Math.floor(to.y))) return;
-  if (!hasLineOfSight(state.map, m.pos, to)) return;
+  if (!isWalkable(zone.map, Math.floor(to.x), Math.floor(to.y))) return;
+  if (!hasLineOfSight(zone.map, m.pos, to)) return;
   m.path = [to];
 }
 
-export function monsterAiSystem(state: GameState): void {
-  const p = state.player;
-  for (const m of state.monsters.values()) {
+/** Nearest living player to a point; ties go to the lower id. */
+function nearestPlayer(living: Player[], to: Vec): Player | null {
+  let best: Player | null = null;
+  let bestD = Infinity;
+  for (const q of living) {
+    const d = dist(q.pos, to);
+    if (d < bestD) {
+      best = q;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+export function monsterAiSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  const living = players.filter((q) => !q.dead);
+  for (const m of zone.monsters.values()) {
     if (m.swingCooldown > 0) m.swingCooldown--;
     if (m.stunnedUntil > state.tick) {
       m.windingUntil = null; // a stun breaks the windup
       m.strikeAt = null;
       continue;
     }
-    if (p.dead) {
+    // Nobody left standing here: idle monsters over an empty or dead zone.
+    const p = nearestPlayer(living, m.pos);
+    if (!p) {
       m.ai = "idle";
       m.path = [];
       m.windingUntil = null;
@@ -163,7 +209,7 @@ export function monsterAiSystem(state: GameState): void {
       if (connects && state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
         const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
         p.life -= amount;
-        state.events.push({ type: "player_hit", amount });
+        state.events.push({ type: "player_hit", playerId: p.id, amount });
       }
       continue;
     }
@@ -178,6 +224,7 @@ export function monsterAiSystem(state: GameState): void {
           from: { ...m.pos },
           to: { ...p.pos },
           ranged: false,
+          zone: zone.id,
         });
         m.strikeAt = state.tick + MONSTER_STRIKE_TICKS;
       }
@@ -189,13 +236,13 @@ export function monsterAiSystem(state: GameState): void {
         m.ai = "chasing";
         m.path = [];
       } else {
-        idleWander(state, m);
+        idleWander(state, zone, m);
         continue;
       }
     }
     const inReach =
       m.ranged !== undefined
-        ? d <= m.ranged && hasLineOfSight(state.map, m.pos, p.pos)
+        ? d <= m.ranged && hasLineOfSight(zone.map, m.pos, p.pos)
         : d <= m.range;
     if (inReach) {
       // Keep the path — clearing it caused stop/start jitter at the reach
@@ -205,7 +252,13 @@ export function monsterAiSystem(state: GameState): void {
         if (m.windup !== undefined && !m.ranged) {
           // Telegraph: announce the strike, land it windup ticks later.
           m.windingUntil = state.tick + m.windup;
-          state.events.push({ type: "monster_windup", id: m.id, ticks: m.windup, pos: { ...m.pos } });
+          state.events.push({
+            type: "monster_windup",
+            id: m.id,
+            ticks: m.windup,
+            pos: { ...m.pos },
+            zone: zone.id,
+          });
           continue;
         }
         state.events.push({
@@ -214,6 +267,7 @@ export function monsterAiSystem(state: GameState): void {
           from: { ...m.pos },
           to: { ...p.pos },
           ranged: m.ranged !== undefined,
+          zone: zone.id,
         });
         m.strikeAt = state.tick + MONSTER_STRIKE_TICKS;
         if (m.ranged !== undefined) m.strikeTo = { ...p.pos };
@@ -225,7 +279,7 @@ export function monsterAiSystem(state: GameState): void {
       const goal = m.path[m.path.length - 1];
       const stale = !goal || dist(goal, p.pos) > 1.2;
       if (m.path.length === 0 || (m.repathIn <= 0 && stale)) {
-        m.path = pathToward(state, m.pos, p.pos);
+        m.path = pathToward(zone.map, m.pos, p.pos);
         m.repathIn = 10;
       }
       moveAlongPath(m.pos, m.path, m.speed);
@@ -233,38 +287,57 @@ export function monsterAiSystem(state: GameState): void {
   }
 }
 
-export function deathSystem(state: GameState): void {
-  const p = state.player;
+export function deathSystem(
+  state: GameState,
+  zone: ZoneState,
+  players: Player[],
+  travel: (state: GameState, p: Player, to: ZoneId) => void,
+): void {
   // Queue-process deaths so explosions can chain into more deaths.
   const dead: Monster[] = [];
   const collectDead = () => {
-    for (const m of state.monsters.values()) {
+    for (const m of zone.monsters.values()) {
       if (m.life <= 0 && !dead.includes(m)) dead.push(m);
     }
   };
   collectDead();
   for (let i = 0; i < dead.length; i++) {
     const m = dead[i]!;
-    state.monsters.delete(m.id);
+    zone.monsters.delete(m.id);
     if (m.explode) {
       const { radius, dmgMin, dmgMax } = m.explode;
-      state.events.push({ type: "exploded", pos: { ...m.pos }, radius });
-      if (!p.dead && Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) <= radius) {
+      state.events.push({ type: "exploded", pos: { ...m.pos }, radius, zone: zone.id });
+      for (const p of players) {
+        if (p.dead || Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) > radius) continue;
         const amount = rollDamage(state.rng, dmgMin, dmgMax);
         p.life -= amount;
-        state.events.push({ type: "player_hit", amount });
+        state.events.push({ type: "player_hit", playerId: p.id, amount });
       }
-      for (const other of state.monsters.values()) {
+      for (const other of zone.monsters.values()) {
         if (Math.hypot(other.pos.x - m.pos.x, other.pos.y - m.pos.y) <= radius) {
           const amount = rollDamage(state.rng, dmgMin, dmgMax);
           other.life -= amount;
-          state.events.push({ type: "monster_hit", id: other.id, amount, pos: { ...other.pos } });
+          state.events.push({
+            type: "monster_hit",
+            id: other.id,
+            amount,
+            pos: { ...other.pos },
+            zone: zone.id,
+          });
         }
       }
       collectDead();
     }
-    state.corpses.push({ typeId: m.typeId, pos: { ...m.pos }, diedAt: state.tick });
-    state.events.push({ type: "monster_died", id: m.id, typeId: m.typeId, pos: { ...m.pos }, xp: m.xp });
+    zone.corpses.push({ typeId: m.typeId, pos: { ...m.pos }, diedAt: state.tick });
+    state.events.push({
+      type: "monster_died",
+      id: m.id,
+      typeId: m.typeId,
+      pos: { ...m.pos },
+      xp: m.xp,
+      zone: zone.id,
+      killer: m.lastHitBy,
+    });
     const item = rollDrop(
       state.rng,
       m.tc,
@@ -277,8 +350,15 @@ export function deathSystem(state: GameState): void {
         y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
       };
       const id = state.nextId++;
-      state.groundItems.set(id, { id, item, pos });
-      state.events.push({ type: "item_dropped", id, name: item.name, rarity: item.rarity, pos });
+      zone.groundItems.set(id, { id, item, pos });
+      state.events.push({
+        type: "item_dropped",
+        id,
+        name: item.name,
+        rarity: item.rarity,
+        pos,
+        zone: zone.id,
+      });
     }
     // Gold: a separate 35% roll, scaling with the monster's level
     if (state.rng.next() < 0.35) {
@@ -288,16 +368,65 @@ export function deathSystem(state: GameState): void {
         y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
       };
       const id = state.nextId++;
-      state.goldPiles.set(id, { id, amount, pos });
-      state.events.push({ type: "gold_dropped", id, amount, pos });
+      zone.goldPiles.set(id, { id, amount, pos });
+      state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });
     }
   }
-  // After explosions have resolved: did the player fall?
-  if (!p.dead && p.life <= 0) {
+  // After explosions have resolved: who fell?
+  for (const p of players) {
+    if (p.dead || p.life > 0) continue;
     p.life = 0;
     p.dead = true;
     p.path = [];
     p.attackTarget = null;
     p.pickupTarget = null;
+    p.smashTarget = null;
+    p.vendorTarget = false;
+    p.portalTarget = null;
+    p.reclaimTarget = null;
+
+    // Strip gear onto a corpse here, merging in any corpse this player already
+    // left behind elsewhere (a corpse run that ends in another death).
+    const equipment = { ...p.equipment };
+    let priorZone: ZoneState | undefined;
+    let prior: PlayerCorpse | undefined;
+    for (const z of state.zones.values()) {
+      for (const c of z.playerCorpses.values()) {
+        if (c.playerId === p.id) {
+          priorZone = z;
+          prior = c;
+          break;
+        }
+      }
+      if (prior) break;
+    }
+    if (prior) {
+      for (const slot of Object.keys(equipment) as EquipSlot[]) {
+        if (equipment[slot] === null && prior.equipment[slot] !== null) {
+          equipment[slot] = prior.equipment[slot];
+        }
+      }
+      priorZone!.playerCorpses.delete(prior.id);
+    }
+    const hasGear = Object.values(equipment).some((it) => it !== null);
+    if (hasGear) {
+      const corpse: PlayerCorpse = {
+        id: state.nextId++,
+        playerId: p.id,
+        pos: { ...p.pos },
+        equipment,
+      };
+      zone.playerCorpses.set(corpse.id, corpse);
+    }
+    p.equipment = createEquipment();
+    recomputePlayerStats(state, p);
+
+    state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
+
+    // Immediate camp respawn — there is no persistent "you are dead" state.
+    travel(state, p, "camp");
+    p.dead = false;
+    p.life = p.maxLife;
+    p.mana = p.maxMana;
   }
 }

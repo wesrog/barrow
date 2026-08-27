@@ -1,6 +1,8 @@
+import { localPlayer } from "../local";
 import { useEffect, useRef } from "react";
 import { isWalkable } from "../../sim/map";
-import type { GameState } from "../../sim/state";
+import { allPlayers, zoneOf, type GameState } from "../../sim/state";
+import { playerCss } from "../render/tints";
 import { RARITY_CSS } from "./InventoryPanel";
 
 const SCALE = 4;
@@ -10,7 +12,7 @@ export function MiniMap({ game }: { game: GameState }) {
   const wallsRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    const map = game.map;
+    const map = zoneOf(game, localPlayer(game)).map;
     // Render the static walls once
     const walls = document.createElement("canvas");
     walls.width = map.width * SCALE;
@@ -35,37 +37,47 @@ export function MiniMap({ game }: { game: GameState }) {
       const ctx = canvas.getContext("2d")!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(base, 0, 0);
-      for (const marker of game.map.markers) {
+      for (const marker of zoneOf(game, localPlayer(game)).map.markers) {
         if (marker.ch === ">") {
           ctx.fillStyle = "#7fb8c9";
           ctx.fillRect(marker.x * SCALE - 2, marker.y * SCALE - 2, 4, 4);
         }
       }
-      for (const gi of game.groundItems.values()) {
+      for (const gi of zoneOf(game, localPlayer(game)).groundItems.values()) {
         ctx.fillStyle = RARITY_CSS[gi.item.rarity] ?? "#d6d6d6";
         ctx.fillRect(gi.pos.x * SCALE - 1, gi.pos.y * SCALE - 1, 2, 2);
       }
-      for (const m of game.monsters.values()) {
+      for (const m of zoneOf(game, localPlayer(game)).monsters.values()) {
         const boss = m.typeId === "barrow_lord";
         ctx.fillStyle = boss ? "#c9a84c" : "#a03030";
         const r = boss ? 3 : 2;
         ctx.fillRect(m.pos.x * SCALE - r / 2, m.pos.y * SCALE - r / 2, r, r);
       }
+      // Party members sharing this zone, each in their seat colour…
+      const me = localPlayer(game);
+      for (const p of allPlayers(game)) {
+        if (p.id === me.id || p.zoneId !== me.zoneId) continue;
+        ctx.fillStyle = playerCss(p.id);
+        ctx.beginPath();
+        ctx.arc(p.pos.x * SCALE, p.pos.y * SCALE, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // …and us, always the bright one.
       ctx.fillStyle = "#f0e9dc";
       ctx.beginPath();
-      ctx.arc(game.player.pos.x * SCALE, game.player.pos.y * SCALE, 2.2, 0, Math.PI * 2);
+      ctx.arc(me.pos.x * SCALE, me.pos.y * SCALE, 2.2, 0, Math.PI * 2);
       ctx.fill();
     };
     draw();
     const timer = setInterval(draw, 150);
     return () => clearInterval(timer);
-  }, [game, game.map]);
+  }, [game, localPlayer(game).zoneId]);
 
   return (
     <canvas
       ref={canvasRef}
-      width={game.map.width * SCALE}
-      height={game.map.height * SCALE}
+      width={zoneOf(game, localPlayer(game)).map.width * SCALE}
+      height={zoneOf(game, localPlayer(game)).map.height * SCALE}
       style={{
         position: "absolute",
         top: 12,

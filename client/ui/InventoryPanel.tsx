@@ -1,3 +1,4 @@
+import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { INV_H, INV_W, type EquipSlot } from "../../sim/character";
@@ -88,7 +89,7 @@ export function InventoryPanel({
   onDrop: (entryId: number) => void;
 }) {
   const [hovered, setHovered] = useState<Item | null>(null);
-  const p = game.player;
+  const p = localPlayer(game);
 
   return (
     <div style={panelStyle}>

@@ -24,10 +24,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - run: bun test sim client
+      - run: bun test sim client net signal
       - run: bun run build
         env:
           GITHUB_PAGES: "true"
+          VITE_SIGNAL_URL: "wss://barrow-signal.fly.dev"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

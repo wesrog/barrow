@@ -1,7 +1,7 @@
-import { localPlayer } from "../local";
 import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import { zoneOf, type GameState, type SimEvent } from "../../sim/state";
+import { localPlayer } from "../local";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -442,31 +442,32 @@ export function createScene(
 
   return {
     render(state, prevPlayerPos, alpha) {
-      const px = prevPlayerPos.x + (localPlayer(state).pos.x - prevPlayerPos.x) * alpha;
-      const py = prevPlayerPos.y + (localPlayer(state).pos.y - prevPlayerPos.y) * alpha;
+      const me = localPlayer(state);
+      const px = prevPlayerPos.x + (me.pos.x - prevPlayerPos.x) * alpha;
+      const py = prevPlayerPos.y + (me.pos.y - prevPlayerPos.y) * alpha;
       hero.position.set(px + heroFxOffset.x, 0, py + heroFxOffset.z);
       heroLight.position.set(px, 1.6, py);
 
       const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);
       lastFrameNow = performance.now();
 
-      const dx = localPlayer(state).pos.x - prevPlayerPos.x;
-      const dy = localPlayer(state).pos.y - prevPlayerPos.y;
+      const dx = me.pos.x - prevPlayerPos.x;
+      const dy = me.pos.y - prevPlayerPos.y;
       if (dx * dx + dy * dy > 1e-6) {
         facing.set(dx, 0, dy).normalize();
         heroTargetYaw = Math.atan2(facing.x, facing.z);
       }
       hero.rotation.y = approachAngle(hero.rotation.y, heroTargetYaw, frameDt * 14);
       // Death and revival play through animation clips, not a rotation hack.
-      if (localPlayer(state).dead && !heroWasDead) {
+      if (me.dead && !heroWasDead) {
         heroRig.oneShot("Death_A", { hold: true });
-      } else if (!localPlayer(state).dead && heroWasDead) {
+      } else if (!me.dead && heroWasDead) {
         heroRig.release();
       }
-      heroWasDead = localPlayer(state).dead;
+      heroWasDead = me.dead;
 
       // Rebuild visible gear when equipment changes.
-      const eq = localPlayer(state).equipment;
+      const eq = me.equipment;
       const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
         .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
         .join("|");
@@ -486,7 +487,7 @@ export function createScene(
 
       // Sync monster rigs with sim state
       for (const [id, rig] of monsterRigs) {
-        if (!zoneOf(state, localPlayer(state)).monsters.has(id)) {
+        if (!zoneOf(state, me).monsters.has(id)) {
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
@@ -495,7 +496,7 @@ export function createScene(
       }
       const tickAdvanced = state.tick !== lastSimTick;
       lastSimTick = state.tick;
-      for (const monster of zoneOf(state, localPlayer(state)).monsters.values()) {
+      for (const monster of zoneOf(state, me).monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
           rig = makeMonsterModelRig(assets, monster.typeId);
@@ -528,7 +529,7 @@ export function createScene(
         if (tickDist > 0.02) {
           lerp.yaw = Math.atan2(vx, vy);
         } else if (monster.ai === "chasing") {
-          lerp.yaw = Math.atan2(localPlayer(state).pos.x - monster.pos.x, localPlayer(state).pos.y - monster.pos.y);
+          lerp.yaw = Math.atan2(me.pos.x - monster.pos.x, me.pos.y - monster.pos.y);
         }
         rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 9);
         const anim = monsterAnim.get(monster.id)!;
@@ -559,7 +560,7 @@ export function createScene(
         }
       }
       for (const [id, bar] of healthBars) {
-        if (!zoneOf(state, localPlayer(state)).monsters.has(id)) {
+        if (!zoneOf(state, me).monsters.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
         }
@@ -567,13 +568,13 @@ export function createScene(
 
       // Sync ground items
       for (const [id, v] of groundItemVisuals) {
-        if (!zoneOf(state, localPlayer(state)).groundItems.has(id)) {
+        if (!zoneOf(state, me).groundItems.has(id)) {
           scene.remove(v.mesh);
           v.label.remove();
           groundItemVisuals.delete(id);
         }
       }
-      for (const gi of zoneOf(state, localPlayer(state)).groundItems.values()) {
+      for (const gi of zoneOf(state, me).groundItems.values()) {
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
@@ -612,12 +613,12 @@ export function createScene(
 
       // Sync breakables (smash effects remove theirs via the broken event)
       for (const [id, g] of breakableVisuals) {
-        if (!zoneOf(state, localPlayer(state)).breakables.has(id)) {
+        if (!zoneOf(state, me).breakables.has(id)) {
           scene.remove(g);
           breakableVisuals.delete(id);
         }
       }
-      for (const b of zoneOf(state, localPlayer(state)).breakables.values()) {
+      for (const b of zoneOf(state, me).breakables.values()) {
         if (!breakableVisuals.has(b.id)) {
           const g = makeBreakable(b.kind, b.id);
           g.position.set(b.pos.x, 0, b.pos.y);
@@ -628,12 +629,12 @@ export function createScene(
 
       // Sync gold piles
       for (const [id, g] of goldVisuals) {
-        if (!zoneOf(state, localPlayer(state)).goldPiles.has(id)) {
+        if (!zoneOf(state, me).goldPiles.has(id)) {
           scene.remove(g);
           goldVisuals.delete(id);
         }
       }
-      for (const pile of zoneOf(state, localPlayer(state)).goldPiles.values()) {
+      for (const pile of zoneOf(state, me).goldPiles.values()) {
         if (!goldVisuals.has(pile.id)) {
           const g = makeGoldPile();
           g.position.set(pile.pos.x, 0, pile.pos.y);
@@ -647,14 +648,14 @@ export function createScene(
       vendorRig?.animate(frameNow, 0, 0);
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
-      if (zoneOf(state, localPlayer(state)).corpses.length < corpseCount) {
+      if (zoneOf(state, me).corpses.length < corpseCount) {
         for (const mesh of corpseMeshes) scene.remove(mesh);
         corpseMeshes.length = 0;
         corpseCount = 0;
       }
       // Corpses: add newly dead
-      while (corpseCount < zoneOf(state, localPlayer(state)).corpses.length) {
-        const c = zoneOf(state, localPlayer(state)).corpses[corpseCount++]!;
+      while (corpseCount < zoneOf(state, me).corpses.length) {
+        const c = zoneOf(state, me).corpses[corpseCount++]!;
         const mat = corpseMatByType[c.typeId] ?? flatMat(0x2a2a2a);
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.4), mat);
         mesh.position.set(c.pos.x, 0.04, c.pos.y);

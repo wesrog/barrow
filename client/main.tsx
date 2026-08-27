@@ -1,8 +1,9 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createGame, step, TICK_RATE } from "../sim/tick";
+import { TICK_RATE } from "../sim/tick";
 import { zoneOf, type GameState, type PlayerInput } from "../sim/state";
-import { LOCAL, localPlayer } from "./local";
+import { localId, localPlayer, setLocalId } from "./local";
+import { localDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { play, unlock } from "./audio";
@@ -41,17 +42,20 @@ function Game() {
       if (disposed) return;
       setLoading(false);
       setAssets(assets);
-      const game = createGame(Date.now() >>> 0);
-      // The local hero joins on the first frame, carrying any saved character.
-      step(game, {
-        tick: game.tick,
-        inputs: {},
-        joins: [{ id: LOCAL, character: loadRaw() ?? undefined }],
-      });
+      // Until the lobby lands, every session is a solo one: an in-process
+      // sequencer feeding this browser's own session.
+      const driver = localDriver(Date.now() >>> 0, loadRaw() ?? undefined);
+      const session = driver.session;
+      setLocalId(session.localId!);
+      // Frame 0 carries the local hero's join — step it before anything reads
+      // the roster, so the scene and HUD always have a player to look through.
+      driver.requestTick?.();
+      session.tryStep();
+      const game = session.state!;
       gameRef.current = game;
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
-        (window as { __barrow?: unknown }).__barrow = { game, input: uiInputRef };
+        (window as { __barrow?: unknown }).__barrow = { game, driver, input: uiInputRef };
       }
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
@@ -151,30 +155,26 @@ function Game() {
     mount.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
-    const saveTimer = setInterval(() => saveToStorage(game, LOCAL), 5000);
+    const save = () => {
+      if (session.state) saveToStorage(session.state, localId());
+    };
+    const saveTimer = setInterval(save, 5000);
     // The bottom bar re-reads game state on a light heartbeat.
     const hudTimer = setInterval(() => setVersion((v) => v + 1), 100);
-    const onUnload = () => saveToStorage(game, LOCAL);
+    const onUnload = () => save();
     window.addEventListener("beforeunload", onUnload);
 
     let raf = 0;
     let last = performance.now();
     let acc = 0;
-    const frame = (now: number) => {
-      raf = requestAnimationFrame(frame);
-      acc += Math.min(now - last, 250);
-      last = now;
-      let sawEvents = false;
-      while (acc >= TICK_MS) {
-        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(!shiftDown ? false : true);
-        Object.assign(pending, uiInputRef.current);
-        uiInputRef.current = {};
-        prevPlayerPos = { ...localPlayer(game).pos };
-        step(game, { tick: game.tick, inputs: { [LOCAL]: pending } });
-        pending = {};
-        for (const e of game.events) {
+    let sawEvents = false;
+    let lastSentTick = -1;
+
+    const drainEvents = () => {
+      if (game.events.length > 0) sawEvents = true;
+      for (const e of game.events) {
           // Someone else's business: the HUD only reacts to the local hero.
-          if ("playerId" in e && e.playerId !== LOCAL) continue;
+          if ("playerId" in e && e.playerId !== localId()) continue;
           scene.handleEvent(e, game);
           switch (e.type) {
             case "monster_hit":
@@ -248,11 +248,54 @@ function Game() {
               else if (e.skill === "crush") play("crush");
               else if (e.skill === "leap") play("leap");
               break;
-          }
         }
-        if (game.events.length > 0) sawEvents = true;
+      }
+    };
+
+    /** One lockstep tick: hand this tick's input to the driver, pull the
+     * matching frame down, step. False means we're starved — the frame for
+     * this tick hasn't arrived yet, so the world holds where it is. */
+    const runTick = (gatherInput: boolean): boolean => {
+      if (gatherInput) {
+        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(shiftDown);
+        Object.assign(pending, uiInputRef.current);
+        uiInputRef.current = {};
+      }
+      // Input is stamped for a tick INPUT_DELAY_TICKS out. Re-sending for the
+      // same tick would only overwrite itself, so send once per tick.
+      if (game.tick !== lastSentTick) {
+        driver.sendInput(pending);
+        lastSentTick = game.tick;
+        pending = {};
+      }
+      driver.requestTick?.(); // solo: we are our own frame source
+      prevPlayerPos = { ...localPlayer(game).pos };
+      if (!session.tryStep()) return false;
+      drainEvents();
+      return true;
+    };
+
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      acc += Math.min(now - last, 250);
+      last = now;
+      sawEvents = false;
+      let starved = false;
+      while (acc >= TICK_MS) {
+        if (!runTick(true)) {
+          starved = true;
+          break;
+        }
         acc -= TICK_MS;
       }
+      // Frames piled up while we were behind: burn through the backlog so the
+      // world catches up to the host instead of drifting further adrift.
+      let catchUp = 8;
+      while (!starved && session.buffered() > 4 && catchUp-- > 0) {
+        if (!runTick(false)) break;
+      }
+      // Waiting on the network: don't let the accumulator hoard the stall.
+      if (starved) acc = Math.min(acc, TICK_MS);
       if (sawEvents) setVersion((v) => v + 1);
       // Traveling swaps the zone map — rebuild the whole scene around it.
       const currentMap = zoneOf(game, localPlayer(game)).map;
@@ -276,6 +319,7 @@ function Game() {
         clearInterval(saveTimer);
         clearInterval(hudTimer);
         window.removeEventListener("beforeunload", onUnload);
+        driver.stop();
         scene.dispose();
         gameRef.current = null;
       };

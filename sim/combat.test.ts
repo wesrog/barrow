@@ -124,13 +124,14 @@ describe("player attacking", () => {
     for (const a of amounts) expect(a).toBeGreaterThan(0);
   });
 
-  test("player death sets dead flag and stops monster piling on", () => {
+  test("player death respawns in camp at full life instead of piling on", () => {
     const game = createGameOn(1, arena());
     player(game).life = 1;
     spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
     for (let i = 0; i < 200; i++) stepSolo(game, {});
-    expect(player(game).dead).toBe(true);
-    expect(player(game).life).toBe(0);
+    expect(player(game).dead).toBe(false);
+    expect(player(game).zoneId).toBe("camp");
+    expect(player(game).life).toBe(player(game).maxLife);
   });
 });
 

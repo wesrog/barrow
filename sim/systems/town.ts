@@ -72,6 +72,7 @@ export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerI
   p.pickupTarget = null;
   p.smashTarget = null;
   p.portalTarget = null;
+  p.reclaimTarget = null;
   p.path = [];
 }
 
@@ -222,6 +223,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.pickupTarget = null;
   p.smashTarget = null;
   p.vendorTarget = false;
+  p.reclaimTarget = null;
   p.path = [];
 }
 

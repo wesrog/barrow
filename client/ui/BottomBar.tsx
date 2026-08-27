@@ -125,12 +125,6 @@ export function BottomBar({
       <Globe value={p.life} max={p.maxLife} color="#a32222" dark="#2a0d0d" label="life" />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-        {p.dead && (
-          <div style={{ color: "#e05252", fontSize: 13, textShadow: "0 1px 3px #000" }}>
-            you have died — press n to rise again
-          </div>
-        )}
-
         {/* Skill hotbar */}
         <div style={{ display: "flex", gap: 5 }}>
           {SKILL_KEYS.map(({ id, key, short }) => {

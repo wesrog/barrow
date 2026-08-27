@@ -24,6 +24,15 @@ export interface ZoneState {
   breakables: Map<number, Breakable>;
   corpses: Corpse[];
   portals: Map<number, Portal>;
+  playerCorpses: Map<number, PlayerCorpse>;
+}
+
+/** A dead player's stripped gear, waiting to be walked back to and reclaimed. */
+export interface PlayerCorpse {
+  id: number;
+  playerId: PlayerId;
+  pos: Vec;
+  equipment: Equipment;
 }
 
 export interface Portal {
@@ -104,6 +113,8 @@ export interface Player {
   vendorTarget: boolean;
   /** Portal id being walked to for riding, if any. */
   portalTarget: number | null;
+  /** Player corpse id being walked to for reclaiming, if any. */
+  reclaimTarget: number | null;
   level: number;
   xp: number;
   skillPoints: number;
@@ -160,6 +171,7 @@ export type SimEvent =
   | { type: "player_joined"; playerId: PlayerId }
   | { type: "player_left"; playerId: PlayerId }
   | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
+  | { type: "corpse_reclaimed"; playerId: PlayerId }
   | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec };
 
 export interface ShopEntry {
@@ -210,6 +222,8 @@ export interface PlayerInput {
   townPortal?: boolean;
   /** Walk to and ride this portal id. */
   usePortal?: number;
+  /** Walk to and reclaim this player corpse id. */
+  reclaim?: number;
   /** Walk to the vendor and open the shop (town only). */
   talkVendor?: boolean;
   /** Buy the shop entry at this index (town only). */

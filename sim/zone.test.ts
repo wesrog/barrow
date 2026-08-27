@@ -62,7 +62,10 @@ describe("new game reset", () => {
     expect(xpAfterKills).toBeGreaterThan(0);
     player(state).life = 0;
     stepSolo(state, {});
-    expect(player(state).dead).toBe(true);
+    // Death resolves to an immediate camp respawn — dead is never persistent.
+    expect(player(state).dead).toBe(false);
+    expect(player(state).zoneId).toBe("camp");
+    expect(player(state).life).toBe(player(state).maxLife);
 
     stepSolo(state, { newGame: true });
     expect(player(state).dead).toBe(false);

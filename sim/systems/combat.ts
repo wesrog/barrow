@@ -1,11 +1,21 @@
 import type { Rng } from "../rng";
 import { hasLineOfSight, isWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
-import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
+import {
+  zoneOf,
+  type GameState,
+  type Player,
+  type PlayerInput,
+  type PlayerCorpse,
+  type ZoneId,
+  type ZoneState,
+} from "../state";
 import type { Monster } from "../monsters";
 import { rollDrop } from "../items/treasure";
 import { damageMultiplier } from "../skills";
 import { moveAlongPath } from "./movement";
+import { createEquipment, type EquipSlot } from "../character";
+import { recomputePlayerStats } from "./inventory";
 
 export function computeHitChance(attackRating: number, defense: number): number {
   const raw = attackRating / (attackRating + defense);
@@ -81,6 +91,7 @@ export function applyAttackInput(state: GameState, p: Player, input: PlayerInput
     p.pickupTarget = null;
     p.smashTarget = null;
     p.portalTarget = null;
+    p.reclaimTarget = null;
     p.path = [];
   }
 }
@@ -92,6 +103,7 @@ export function applySwingInPlaceInput(state: GameState, p: Player, input: Playe
   p.attackTarget = null;
   p.pickupTarget = null;
   p.portalTarget = null;
+  p.reclaimTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
   state.events.push({
@@ -275,7 +287,12 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
   }
 }
 
-export function deathSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+export function deathSystem(
+  state: GameState,
+  zone: ZoneState,
+  players: Player[],
+  travel: (state: GameState, p: Player, to: ZoneId) => void,
+): void {
   // Queue-process deaths so explosions can chain into more deaths.
   const dead: Monster[] = [];
   const collectDead = () => {
@@ -365,6 +382,50 @@ export function deathSystem(state: GameState, zone: ZoneState, players: Player[]
     p.smashTarget = null;
     p.vendorTarget = false;
     p.portalTarget = null;
+    p.reclaimTarget = null;
+
+    // Strip gear onto a corpse here, merging in any corpse this player already
+    // left behind elsewhere (a corpse run that ends in another death).
+    const equipment = { ...p.equipment };
+    let priorZone: ZoneState | undefined;
+    let prior: PlayerCorpse | undefined;
+    for (const z of state.zones.values()) {
+      for (const c of z.playerCorpses.values()) {
+        if (c.playerId === p.id) {
+          priorZone = z;
+          prior = c;
+          break;
+        }
+      }
+      if (prior) break;
+    }
+    if (prior) {
+      for (const slot of Object.keys(equipment) as EquipSlot[]) {
+        if (equipment[slot] === null && prior.equipment[slot] !== null) {
+          equipment[slot] = prior.equipment[slot];
+        }
+      }
+      priorZone!.playerCorpses.delete(prior.id);
+    }
+    const hasGear = Object.values(equipment).some((it) => it !== null);
+    if (hasGear) {
+      const corpse: PlayerCorpse = {
+        id: state.nextId++,
+        playerId: p.id,
+        pos: { ...p.pos },
+        equipment,
+      };
+      zone.playerCorpses.set(corpse.id, corpse);
+    }
+    p.equipment = createEquipment();
+    recomputePlayerStats(state, p);
+
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
+
+    // Immediate camp respawn — there is no persistent "you are dead" state.
+    travel(state, p, "camp");
+    p.dead = false;
+    p.life = p.maxLife;
+    p.mana = p.maxMana;
   }
 }

@@ -6,6 +6,7 @@ import {
   placeItem,
   removeEntry,
   slotForItem,
+  type EquipSlot,
 } from "../character";
 import { BASES } from "../items/bases";
 import { findPath, smoothPath } from "../path";
@@ -128,6 +129,7 @@ export function applyPickupInput(state: GameState, p: Player, input: PlayerInput
   p.attackTarget = null;
   p.smashTarget = null;
   p.portalTarget = null;
+  p.reclaimTarget = null;
   p.path = [];
 }
 
@@ -184,6 +186,70 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
       }
       p.path = smoothPath(zone.map, p.pos, cells);
       p.path.push({ ...target.pos });
+    }
+  }
+}
+
+export function applyReclaimInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (input.reclaim === undefined) return;
+  const corpse = zoneOf(state, p).playerCorpses.get(input.reclaim);
+  if (!corpse || corpse.playerId !== p.id) return;
+  p.reclaimTarget = input.reclaim;
+  p.pickupTarget = null;
+  p.attackTarget = null;
+  p.smashTarget = null;
+  p.portalTarget = null;
+  p.vendorTarget = false;
+  p.path = [];
+}
+
+/** Walk to and reclaim a player corpse: re-equip its slots, swapping current gear back to
+ * inventory (or the ground, if the pack has no room). Range and pathing mirror pickupSystem. */
+export function reclaimSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    if (p.reclaimTarget === null) continue;
+    const corpse = zone.playerCorpses.get(p.reclaimTarget);
+    if (!corpse || corpse.playerId !== p.id) {
+      p.reclaimTarget = null;
+      continue;
+    }
+    const d = Math.hypot(p.pos.x - corpse.pos.x, p.pos.y - corpse.pos.y);
+    if (d <= PICKUP_RANGE) {
+      p.reclaimTarget = null;
+      p.path = [];
+      for (const slot of Object.keys(corpse.equipment) as EquipSlot[]) {
+        const item = corpse.equipment[slot];
+        if (!item) continue;
+        const current = p.equipment[slot];
+        p.equipment[slot] = item;
+        if (current && !placeItem(p.inventory, state.nextId++, current)) {
+          const id = state.nextId++;
+          zone.groundItems.set(id, { id, item: current, pos: { ...corpse.pos } });
+          state.events.push({
+            type: "item_dropped",
+            id,
+            name: current.name,
+            rarity: current.rarity,
+            pos: { ...corpse.pos },
+            zone: zone.id,
+          });
+        }
+      }
+      zone.playerCorpses.delete(corpse.id);
+      recomputePlayerStats(state, p);
+      state.events.push({ type: "corpse_reclaimed", playerId: p.id });
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        zone.map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(corpse.pos.x), y: Math.floor(corpse.pos.y) },
+      );
+      if (cells === null) {
+        p.reclaimTarget = null;
+        continue;
+      }
+      p.path = smoothPath(zone.map, p.pos, cells);
+      p.path.push({ ...corpse.pos });
     }
   }
 }

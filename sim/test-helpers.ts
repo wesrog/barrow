@@ -42,6 +42,7 @@ export function createGameOn(seed: number, map: ZoneMap): GameState {
   zone.breakables.clear();
   zone.corpses.length = 0;
   zone.portals.clear();
+  zone.playerCorpses.clear();
   for (const marker of map.markers) {
     const typeId = MARKER_TYPES[marker.ch];
     if (typeId) spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, 1);

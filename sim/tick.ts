@@ -27,7 +27,9 @@ import {
   applyDropItemInput,
   applyEquipInput,
   applyPickupInput,
+  applyReclaimInput,
   pickupSystem,
+  reclaimSystem,
 } from "./systems/inventory";
 import { applyCastInput, applySpendSkillInput, manaRegenSystem } from "./systems/skills";
 import { collisionSystem } from "./systems/collision";
@@ -64,6 +66,7 @@ function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
     breakables: new Map(),
     corpses: [],
     portals: new Map(),
+    playerCorpses: new Map(),
   };
   state.zones.set(id, zone);
   return zone;
@@ -97,6 +100,7 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.smashTarget = null;
   p.vendorTarget = false;
   p.portalTarget = null;
+  p.reclaimTarget = null;
   p.pendingStrike = null;
   if (to === "camp" && campWasEmpty) restock(state, p);
   state.events.push({ type: "traveled", playerId: p.id, to });
@@ -201,6 +205,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     smashTarget: null,
     vendorTarget: false,
     portalTarget: null,
+    reclaimTarget: null,
     level: 1,
     xp: 0,
     skillPoints: 0,
@@ -260,6 +265,7 @@ export function step(state: GameState, frame: Frame): void {
     applyAttackInput(state, p, input);
     applySwingInPlaceInput(state, p, input);
     applyPickupInput(state, p, input);
+    applyReclaimInput(state, p, input);
     applySmashInput(state, p, input);
     applyEquipInput(state, p, input);
     applyDropItemInput(state, p, input);
@@ -281,6 +287,7 @@ export function step(state: GameState, frame: Frame): void {
     manaRegenSystem(acting());
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
+    reclaimSystem(state, zone, acting());
     vendorSystem(state, zone, acting());
     portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
@@ -289,7 +296,7 @@ export function step(state: GameState, frame: Frame): void {
     stairsSystem(state, zone, acting());
     monsterAiSystem(state, zone, here());
     collisionSystem(state, zone, here());
-    deathSystem(state, zone, here());
+    deathSystem(state, zone, here(), travel);
   }
   xpSystem(state);
   durabilitySystem(state);

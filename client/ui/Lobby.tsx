@@ -87,10 +87,20 @@ export function Lobby({
     }
   };
 
-  // Auto-join once, on mount, if the URL carries a code.
+  // Auto-join once, on mount, if the URL carries a code. Never from a
+  // prerendered page: Chrome speculatively loads (and runs!) URLs typed in
+  // the omnibox, and a hidden prerender that joins seats a zombie player.
+  // Join only once this copy of the page is the one the user is looking at.
   useEffect(() => {
     const initial = joinCodeFromUrl();
-    if (initial) void startJoin(initial);
+    if (!initial) return;
+    const doc = document as Document & { prerendering?: boolean };
+    if (doc.prerendering) {
+      const onShown = () => void startJoin(initial);
+      doc.addEventListener("prerenderingchange", onShown, { once: true });
+      return () => doc.removeEventListener("prerenderingchange", onShown);
+    }
+    void startJoin(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

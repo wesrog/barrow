@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
-import type { GameState, SimEvent } from "../../sim/state";
+import { zoneOf, type GameState, type SimEvent } from "../../sim/state";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -485,7 +485,7 @@ export function createScene(
 
       // Sync monster rigs with sim state
       for (const [id, rig] of monsterRigs) {
-        if (!state.monsters.has(id)) {
+        if (!zoneOf(state, state.player).monsters.has(id)) {
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
@@ -494,7 +494,7 @@ export function createScene(
       }
       const tickAdvanced = state.tick !== lastSimTick;
       lastSimTick = state.tick;
-      for (const monster of state.monsters.values()) {
+      for (const monster of zoneOf(state, state.player).monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
           rig = makeMonsterModelRig(assets, monster.typeId);
@@ -558,7 +558,7 @@ export function createScene(
         }
       }
       for (const [id, bar] of healthBars) {
-        if (!state.monsters.has(id)) {
+        if (!zoneOf(state, state.player).monsters.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
         }
@@ -566,13 +566,13 @@ export function createScene(
 
       // Sync ground items
       for (const [id, v] of groundItemVisuals) {
-        if (!state.groundItems.has(id)) {
+        if (!zoneOf(state, state.player).groundItems.has(id)) {
           scene.remove(v.mesh);
           v.label.remove();
           groundItemVisuals.delete(id);
         }
       }
-      for (const gi of state.groundItems.values()) {
+      for (const gi of zoneOf(state, state.player).groundItems.values()) {
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
@@ -611,12 +611,12 @@ export function createScene(
 
       // Sync breakables (smash effects remove theirs via the broken event)
       for (const [id, g] of breakableVisuals) {
-        if (!state.breakables.has(id)) {
+        if (!zoneOf(state, state.player).breakables.has(id)) {
           scene.remove(g);
           breakableVisuals.delete(id);
         }
       }
-      for (const b of state.breakables.values()) {
+      for (const b of zoneOf(state, state.player).breakables.values()) {
         if (!breakableVisuals.has(b.id)) {
           const g = makeBreakable(b.kind, b.id);
           g.position.set(b.pos.x, 0, b.pos.y);
@@ -627,12 +627,12 @@ export function createScene(
 
       // Sync gold piles
       for (const [id, g] of goldVisuals) {
-        if (!state.goldPiles.has(id)) {
+        if (!zoneOf(state, state.player).goldPiles.has(id)) {
           scene.remove(g);
           goldVisuals.delete(id);
         }
       }
-      for (const pile of state.goldPiles.values()) {
+      for (const pile of zoneOf(state, state.player).goldPiles.values()) {
         if (!goldVisuals.has(pile.id)) {
           const g = makeGoldPile();
           g.position.set(pile.pos.x, 0, pile.pos.y);
@@ -646,14 +646,14 @@ export function createScene(
       vendorRig?.animate(frameNow, 0, 0);
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
-      if (state.corpses.length < corpseCount) {
+      if (zoneOf(state, state.player).corpses.length < corpseCount) {
         for (const mesh of corpseMeshes) scene.remove(mesh);
         corpseMeshes.length = 0;
         corpseCount = 0;
       }
       // Corpses: add newly dead
-      while (corpseCount < state.corpses.length) {
-        const c = state.corpses[corpseCount++]!;
+      while (corpseCount < zoneOf(state, state.player).corpses.length) {
+        const c = zoneOf(state, state.player).corpses[corpseCount++]!;
         const mat = corpseMatByType[c.typeId] ?? flatMat(0x2a2a2a);
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 0.4), mat);
         mesh.position.set(c.pos.x, 0.04, c.pos.y);
@@ -708,7 +708,7 @@ export function createScene(
         let bestId: number | null = null;
         let bestD = 30; // px
         for (const [id] of monsterRigs) {
-          const monster = state.monsters.get(id);
+          const monster = zoneOf(state, state.player).monsters.get(id);
           if (!monster) continue;
           const at = worldToScreen(monster.pos, 0.55);
           const d = Math.hypot(at.x - cx, at.y - cy);
@@ -794,7 +794,7 @@ export function createScene(
         }
         case "monster_swing": {
           const swingRig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
-          const typeId = state.monsters.get(event.id)?.typeId;
+          const typeId = zoneOf(state, state.player).monsters.get(event.id)?.typeId;
           if (typeId) swingRig?.oneShot?.(monsterAttackClip(typeId), { timeScale: 1.4 });
           if (event.ranged) {
             const glob = new THREE.Mesh(

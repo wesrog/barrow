@@ -11,7 +11,7 @@ import {
   leapStunTicks,
   type SkillId,
 } from "../skills";
-import type { GameState, PlayerInput } from "../state";
+import { zoneOf, type GameState, type PlayerInput } from "../state";
 import { computeHitChance, rollDamage } from "./combat";
 
 const MANA_REGEN_PER_TICK = 0.05; // 1.25/s at 25 Hz
@@ -51,10 +51,11 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
   const cast = input.cast;
   if (!cast) return;
   const p = state.player;
+  const zone = zoneOf(state, p);
 
   switch (cast.skill) {
     case "cleave": {
-      const targets = [...state.monsters.values()].filter(
+      const targets = [...zone.monsters.values()].filter(
         (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= CLEAVE_RADIUS,
       );
       if (targets.length === 0) return;
@@ -64,46 +65,46 @@ export function applyCastInput(state: GameState, input: PlayerInput): void {
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
           const amount = rollSkillDamage(state, mult);
           m.life -= amount;
-          state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos } });
+          state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
         }
       }
-      state.events.push({ type: "skill_cast", skill: "cleave", pos: { ...p.pos } });
+      state.events.push({ type: "skill_cast", skill: "cleave", pos: { ...p.pos }, zone: zone.id });
       break;
     }
     case "crush": {
       if (cast.target === undefined) return;
-      const m = state.monsters.get(cast.target);
+      const m = zone.monsters.get(cast.target);
       if (!m) return;
       if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) > CRUSH_RANGE) return;
       if (!spendMana(state, "crush")) return;
       const amount = rollSkillDamage(state, crushMultiplier(p.skills.crush));
       m.life -= amount;
-      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos } });
-      state.events.push({ type: "skill_cast", skill: "crush", pos: { ...m.pos } });
+      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+      state.events.push({ type: "skill_cast", skill: "crush", pos: { ...m.pos }, zone: zone.id });
       break;
     }
     case "warcry": {
       if (!spendMana(state, "warcry")) return;
       p.warcryUntil = state.tick + SKILLS.warcry.buffTicks;
-      state.events.push({ type: "skill_cast", skill: "warcry", pos: { ...p.pos } });
+      state.events.push({ type: "skill_cast", skill: "warcry", pos: { ...p.pos }, zone: zone.id });
       break;
     }
     case "leap": {
       if (!cast.at) return;
       const cell = { x: Math.floor(cast.at.x), y: Math.floor(cast.at.y) };
-      if (!isWalkable(state.map, cell.x, cell.y)) return;
+      if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > LEAP_RANGE) return;
       if (!spendMana(state, "leap")) return;
       p.pos = { x: cell.x + 0.5, y: cell.y + 0.5 };
       p.path = [];
       p.attackTarget = null;
       const stunFor = leapStunTicks(p.skills.leap);
-      for (const m of state.monsters.values()) {
+      for (const m of zone.monsters.values()) {
         if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= LEAP_STUN_RADIUS) {
           m.stunnedUntil = state.tick + stunFor;
         }
       }
-      state.events.push({ type: "skill_cast", skill: "leap", pos: { ...p.pos } });
+      state.events.push({ type: "skill_cast", skill: "leap", pos: { ...p.pos }, zone: zone.id });
       break;
     }
   }

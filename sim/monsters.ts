@@ -1,5 +1,5 @@
 import type { Vec } from "./map";
-import type { GameState } from "./state";
+import type { GameState, ZoneState } from "./state";
 
 export interface MonsterType {
   id: string;
@@ -198,7 +198,13 @@ export interface Corpse {
   diedAt: number;
 }
 
-export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth = 1): Monster {
+export function spawnMonster(
+  state: GameState,
+  zone: ZoneState,
+  typeId: string,
+  pos: Vec,
+  depth = 1,
+): Monster {
   const table = MONSTER_TYPES[typeId];
   if (!table) throw new Error(`unknown monster type: ${typeId}`);
   const t = depth > 1 ? scaledMonsterStats(table, depth) : table;
@@ -235,6 +241,6 @@ export function spawnMonster(state: GameState, typeId: string, pos: Vec, depth =
     strikeTo: null,
     stunnedUntil: 0,
   };
-  state.monsters.set(monster.id, monster);
+  zone.monsters.set(monster.id, monster);
   return monster;
 }

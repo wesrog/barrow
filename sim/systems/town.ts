@@ -1,7 +1,6 @@
 import { BASES } from "../items/bases";
 import { rollItem, type Item, type Rarity } from "../items/generate";
-import { townZone } from "../zone";
-import type { GameState, PlayerInput } from "../state";
+import { zoneOf, type GameState, type PlayerInput } from "../state";
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
 import { findPath, smoothPath } from "../path";
@@ -34,7 +33,8 @@ const SHOP_BASES = [
   "grave_amulet",
 ];
 
-function restock(state: GameState): void {
+/** Refill Maren's stall. Runs when a player arrives in an empty camp. */
+export function restock(state: GameState): void {
   const rng = state.rng;
   const ilvl = Math.max(1, state.player.level);
   const stock: GameState["shop"] = [];
@@ -51,64 +51,9 @@ function restock(state: GameState): void {
   state.shop = stock;
 }
 
-/** t: step through the portal to the camp; the dungeon freezes behind you. */
-export function applyTownPortalInput(state: GameState, input: PlayerInput): void {
-  if (!input.townPortal || state.town !== null || state.player.dead) return;
-  const p = state.player;
-  state.town = {
-    saved: {
-      map: state.map,
-      monsters: state.monsters,
-      groundItems: state.groundItems,
-      goldPiles: state.goldPiles,
-      breakables: state.breakables,
-      corpses: state.corpses,
-      pos: { ...p.pos },
-    },
-  };
-  state.map = townZone();
-  state.monsters = new Map();
-  state.groundItems = new Map();
-  state.goldPiles = new Map();
-  state.breakables = new Map();
-  state.corpses = [];
-  p.pos = { ...state.map.spawn };
-  p.path = [];
-  p.attackTarget = null;
-  p.pickupTarget = null;
-  p.smashTarget = null;
-  p.vendorTarget = false;
-  p.pendingStrike = null;
-  restock(state);
-  state.events.push({ type: "portal", to: "town" });
-}
-
-/** Standing on the P pad drops you back where you left the crypt. */
-export function townPadSystem(state: GameState): void {
-  if (state.town === null) return;
-  const p = state.player;
-  for (const marker of state.map.markers) {
-    if (marker.ch !== "P") continue;
-    if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
-      const saved = state.town.saved;
-      state.map = saved.map;
-      state.monsters = saved.monsters;
-      state.groundItems = saved.groundItems;
-      state.goldPiles = saved.goldPiles;
-      state.breakables = saved.breakables;
-      state.corpses = saved.corpses;
-      p.pos = { ...saved.pos };
-      p.path = [];
-      state.town = null;
-      state.events.push({ type: "portal", to: "crypt" });
-      return;
-    }
-  }
-}
-
 /** Click on Maren: start walking over to trade. */
 export function applyTalkVendorInput(state: GameState, input: PlayerInput): void {
-  if (!input.talkVendor || state.town === null) return;
+  if (!input.talkVendor || state.player.zoneId !== "camp") return;
   const p = state.player;
   p.vendorTarget = true;
   p.attackTarget = null;
@@ -121,8 +66,9 @@ export function applyTalkVendorInput(state: GameState, input: PlayerInput): void
 export function vendorSystem(state: GameState): void {
   const p = state.player;
   if (!p.vendorTarget) return;
-  const marker = state.map.markers.find((m) => m.ch === "V");
-  if (state.town === null || !marker) {
+  const map = zoneOf(state, p).map;
+  const marker = map.markers.find((m) => m.ch === "V");
+  if (p.zoneId !== "camp" || !marker) {
     p.vendorTarget = false;
     return;
   }
@@ -133,7 +79,7 @@ export function vendorSystem(state: GameState): void {
     state.events.push({ type: "shop_opened" });
   } else if (p.path.length === 0) {
     const cells = findPath(
-      state.map,
+      map,
       { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
       { x: Math.floor(marker.x), y: Math.floor(marker.y) },
     );
@@ -141,13 +87,13 @@ export function vendorSystem(state: GameState): void {
       p.vendorTarget = false;
       return;
     }
-    p.path = smoothPath(state.map, p.pos, cells);
+    p.path = smoothPath(map, p.pos, cells);
     p.path.push({ x: marker.x, y: marker.y });
   }
 }
 
 export function applyShopInput(state: GameState, input: PlayerInput): void {
-  if (state.town === null) return;
+  if (state.player.zoneId !== "camp") return;
   const p = state.player;
 
   if (input.buy !== undefined) {

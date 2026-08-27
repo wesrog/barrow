@@ -1,19 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
+import { createGame, step, travel } from "./tick";
+import { getZone, zoneDepth } from "./state";
+import { playerZone } from "./test-helpers";
 import { MONSTER_TYPES, scaledMonsterStats } from "./monsters";
 
-const stairsMap = () =>
-  mapFromStrings([
-    "########",
-    "#@..z..#",
-    "#......#",
-    "#....>.#",
-    "########",
-  ]);
-
 function walkOnStairs(state: ReturnType<typeof createGame>): void {
-  state.player.pos = { x: 5.5, y: 3.5 }; // the > cell
+  const stairs = playerZone(state).map.markers.find((m) => m.ch === ">")!;
+  state.player.pos = { x: stairs.x, y: stairs.y };
   step(state, {});
 }
 
@@ -32,36 +25,45 @@ describe("depth scaling", () => {
 });
 
 describe("stairs", () => {
-  test("walking onto the stairs descends: depth++, fresh scaled spawns, player at entrance", () => {
-    const state = createGame(1, stairsMap());
-    expect(state.depth).toBe(1);
-    const lifeAtD1 = [...state.monsters.values()][0]!.maxLife;
+  test("walking onto the stairs descends: next floor, scaled spawns, player at entrance", () => {
+    const state = createGame(1);
+    travel(state, "floor:1");
+    const lifeAtD1 = [...playerZone(state).monsters.values()].find(
+      (m) => m.typeId === "shambler",
+    )!.maxLife;
     walkOnStairs(state);
-    expect(state.depth).toBe(2);
-    expect(state.player.pos).toEqual(state.map.spawn);
-    expect(state.monsters.size).toBe(1); // z marker respawned
-    const lifeAtD2 = [...state.monsters.values()][0]!.maxLife;
+    expect(state.player.zoneId).toBe("floor:2");
+    expect(state.player.pos).toEqual(playerZone(state).map.spawn);
+    expect(playerZone(state).monsters.size).toBeGreaterThan(0);
+    const lifeAtD2 = [...playerZone(state).monsters.values()].find(
+      (m) => m.typeId === "shambler",
+    )!.maxLife;
     expect(lifeAtD2).toBeGreaterThan(lifeAtD1);
-    expect(state.events.some((e) => e.type === "descended" && e.depth === 2)).toBe(true);
-    expect(state.groundItems.size).toBe(0);
+    expect(state.events.some((e) => e.type === "traveled" && e.to === "floor:2")).toBe(true);
+    expect(playerZone(state).groundItems.size).toBe(0);
   });
 
   test("monsters on deeper floors grant scaled xp and mlvl", () => {
-    const state = createGame(1, stairsMap());
+    const state = createGame(1);
+    travel(state, "floor:1");
     walkOnStairs(state);
     walkOnStairs(state);
-    expect(state.depth).toBe(3);
-    const m = [...state.monsters.values()][0]!;
+    expect(zoneDepth(state.player.zoneId)).toBe(3);
+    const m = [...playerZone(state).monsters.values()].find((m) => m.typeId === "shambler")!;
     expect(m.mlvl).toBe(scaledMonsterStats(MONSTER_TYPES.shambler!, 3).mlvl);
   });
 
-  test("a new run (n) returns to depth 1", () => {
-    const state = createGame(1, stairsMap());
+  test("a new run (n) forgets the floors and regenerates floor 1", () => {
+    const state = createGame(1);
+    travel(state, "floor:1");
     walkOnStairs(state);
-    expect(state.depth).toBe(2);
+    expect(state.player.zoneId).toBe("floor:2");
     step(state, { newGame: true });
-    expect(state.depth).toBe(1);
-    const m = [...state.monsters.values()][0]!;
+    expect(state.player.zoneId).toBe("camp");
+    expect(state.zones.has("floor:2")).toBe(false);
+    const m = [...getZone(state, "floor:1").monsters.values()].find(
+      (m) => m.typeId === "shambler",
+    )!;
     expect(m.maxLife).toBe(MONSTER_TYPES.shambler!.maxLife);
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step, TICK_RATE } from "./tick";
+import { step, TICK_RATE } from "./tick";
+import { createGameOn } from "./test-helpers";
 
 const openMap = () =>
   mapFromStrings([
@@ -13,7 +14,7 @@ const openMap = () =>
 
 describe("new game", () => {
   test("starts with a rusted blade equipped and stats derived from it", () => {
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     expect(game.player.equipment.weapon?.baseId).toBe("rusted_blade");
     expect(game.player.dmgMin).toBe(1);
     expect(game.player.dmgMax).toBe(6);
@@ -22,13 +23,13 @@ describe("new game", () => {
 
 describe("player movement", () => {
   test("game starts with the player at the map spawn", () => {
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     expect(game.tick).toBe(0);
     expect(game.player.pos).toEqual({ x: 1.5, y: 1.5 });
   });
 
   test("clicking a destination walks the player there and stops", () => {
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     step(game, { moveTo: { x: 7.5, y: 3.5 } });
     for (let i = 0; i < 200; i++) step(game, {});
     expect(game.player.pos.x).toBeCloseTo(7.5, 1);
@@ -39,7 +40,7 @@ describe("player movement", () => {
   });
 
   test("moves at walk speed, not teleporting", () => {
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     step(game, { moveTo: { x: 7.5, y: 1.5 } });
     const d0 = Math.abs(7.5 - game.player.pos.x);
     step(game, {});
@@ -49,7 +50,7 @@ describe("player movement", () => {
   });
 
   test("walks around walls, never through them", () => {
-    const game = createGame(1, mapFromStrings([
+    const game = createGameOn(1, mapFromStrings([
       "#######",
       "#@.#..#",
       "#..#..#",
@@ -69,7 +70,7 @@ describe("player movement", () => {
   });
 
   test("clicking an unwalkable cell is ignored", () => {
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     step(game, { moveTo: { x: 0.5, y: 0.5 } });
     for (let i = 0; i < 50; i++) step(game, {});
     expect(game.player.pos).toEqual({ x: 1.5, y: 1.5 });
@@ -79,7 +80,7 @@ describe("player movement", () => {
 describe("determinism", () => {
   test("same seed and inputs produce identical state", () => {
     const run = () => {
-      const game = createGame(42, openMap());
+      const game = createGameOn(42, openMap());
       step(game, { moveTo: { x: 7.5, y: 3.5 } });
       for (let i = 0; i < 100; i++) step(game, {});
       return JSON.stringify({ tick: game.tick, player: game.player });
@@ -89,7 +90,7 @@ describe("determinism", () => {
 
   test("tick counter advances once per step at 25 Hz", () => {
     expect(TICK_RATE).toBe(25);
-    const game = createGame(1, openMap());
+    const game = createGameOn(1, openMap());
     step(game, {});
     step(game, {});
     expect(game.tick).toBe(2);

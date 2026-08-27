@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
 import { BELT_SIZE, placeItem } from "./character";
 import { rollItem, type Item } from "./items/generate";
 import { createRng } from "./rng";
@@ -25,7 +26,7 @@ const potion = (): Item => ({
 
 function dropAt(state: GameState, item: Item, x: number, y: number): number {
   const id = state.nextId++;
-  state.groundItems.set(id, { id, item, pos: { x, y } });
+  playerZone(state).groundItems.set(id, { id, item, pos: { x, y } });
   return id;
 }
 
@@ -38,18 +39,18 @@ describe("potions", () => {
   });
 
   test("picked-up potions fill the belt before the inventory", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     for (let i = 0; i < BELT_SIZE + 1; i++) {
       const id = dropAt(state, potion(), 2.5, 1.5);
       step(state, { pickup: id });
-      for (let t = 0; t < 40 && state.groundItems.has(id); t++) step(state, {});
+      for (let t = 0; t < 40 && playerZone(state).groundItems.has(id); t++) step(state, {});
     }
     expect(state.player.belt).toBe(BELT_SIZE);
     expect(state.player.inventory.entries).toHaveLength(1);
   });
 
   test("drinking heals, consumes a charge, and never overheals", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     state.player.belt = 2;
     state.player.life = 40;
     step(state, { drink: true });
@@ -62,7 +63,7 @@ describe("potions", () => {
   });
 
   test("clicking an inventory potion moves it to the belt", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     state.player.belt = 0;
     const id = state.nextId++;
     placeItem(state.player.inventory, id, potion());

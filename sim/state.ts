@@ -6,7 +6,38 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { SkillId } from "./skills";
 
+export type ZoneId = "camp" | `floor:${number}`;
+
+export const floorZone = (n: number): ZoneId => `floor:${n}`;
+
+/** camp = 0; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
+export function zoneDepth(id: ZoneId): number {
+  return id === "camp" ? 0 : Number(id.slice("floor:".length));
+}
+
+export interface ZoneState {
+  id: ZoneId;
+  map: ZoneMap;
+  monsters: Map<number, Monster>;
+  groundItems: Map<number, GroundItem>;
+  goldPiles: Map<number, GoldPile>;
+  breakables: Map<number, Breakable>;
+  corpses: Corpse[];
+}
+
+export function getZone(state: GameState, id: ZoneId): ZoneState {
+  const zone = state.zones.get(id);
+  if (!zone) throw new Error(`no such zone: ${id}`);
+  return zone;
+}
+
+export function zoneOf(state: GameState, p: Player): ZoneState {
+  return getZone(state, p.zoneId);
+}
+
 export interface Player {
+  /** Which zone this player is standing in. */
+  zoneId: ZoneId;
   pos: Vec;
   /** Cells per tick. */
   speed: number;
@@ -63,27 +94,26 @@ export interface GoldPile {
 }
 
 export type SimEvent =
-  | { type: "player_swing"; to: Vec }
-  | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean }
-  | { type: "monster_windup"; id: number; ticks: number; pos: Vec }
+  | { type: "player_swing"; to: Vec; zone: ZoneId }
+  | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean; zone: ZoneId }
+  | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
   | { type: "player_hit"; amount: number }
-  | { type: "monster_hit"; id: number; amount: number; pos: Vec }
-  | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number }
+  | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
+  | { type: "monster_died"; id: number; typeId: string; pos: Vec; xp: number; zone: ZoneId }
   | { type: "level_up"; level: number }
-  | { type: "skill_cast"; skill: SkillId; pos: Vec }
-  | { type: "exploded"; pos: Vec; radius: number }
+  | { type: "skill_cast"; skill: SkillId; pos: Vec; zone: ZoneId }
+  | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; healed: number }
-  | { type: "descended"; depth: number }
-  | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec }
-  | { type: "gold_dropped"; id: number; amount: number; pos: Vec }
+  | { type: "traveled"; to: ZoneId }
+  | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
+  | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | { type: "gold_picked"; amount: number }
   | { type: "item_broke"; name: string }
   | { type: "repaired"; cost: number }
-  | { type: "portal"; to: "town" | "crypt" }
   | { type: "shop_opened" }
   | { type: "bought"; name: string; price: number }
   | { type: "sold"; name: string; price: number }
-  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec }
+  | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec; zone: ZoneId }
   | { type: "item_picked"; id: number; name: string }
   | { type: "item_equipped"; slot: EquipSlot }
   | { type: "item_unequipped"; slot: EquipSlot }
@@ -94,36 +124,14 @@ export interface ShopEntry {
   price: number;
 }
 
-/** Everything the dungeon holds, frozen while the player is topside. */
-export interface TownState {
-  saved: {
-    map: ZoneMap;
-    monsters: Map<number, Monster>;
-    groundItems: Map<number, GroundItem>;
-    goldPiles: Map<number, GoldPile>;
-    breakables: Map<number, Breakable>;
-    corpses: Corpse[];
-    pos: Vec;
-  };
-}
-
 export interface GameState {
   tick: number;
   rng: Rng;
-  map: ZoneMap;
-  /** Crypt floor, 1-based; deeper floors scale monsters and loot. */
-  depth: number;
-  /** Non-null while the player is up in the camp. */
-  town: TownState | null;
-  /** The vendor's current stock; restocked each town visit. */
+  /** The world: the camp plus every floor generated so far. */
+  zones: Map<ZoneId, ZoneState>;
+  /** The vendor's current stock; restocked each camp arrival. */
   shop: ShopEntry[];
   player: Player;
-  monsters: Map<number, Monster>;
-  corpses: Corpse[];
-  groundItems: Map<number, GroundItem>;
-  goldPiles: Map<number, GoldPile>;
-  /** Smashable clutter: barrels, crates, and the floor's treasure chest. */
-  breakables: Map<number, Breakable>;
   /** Events emitted during the most recent step; cleared at the start of each. */
   events: SimEvent[];
   nextId: number;
@@ -152,9 +160,9 @@ export interface PlayerInput {
   cast?: { skill: SkillId; at?: Vec; target?: number };
   /** Drink a healing potion from the belt. */
   drink?: boolean;
-  /** Start a fresh run: respawn the zone, revive, keep the character. */
+  /** Start a fresh run: forget the floors, revive, keep the character. */
   newGame?: boolean;
-  /** Open a portal and step through to the camp. */
+  /** Town portal. Currently a no-op — portal pairs arrive with multiplayer travel. */
   townPortal?: boolean;
   /** Walk to the vendor and open the shop (town only). */
   talkVendor?: boolean;

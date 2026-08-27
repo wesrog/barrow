@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { GameState } from "./state";
 
@@ -25,12 +25,12 @@ function armed(state: GameState): void {
 
 describe("gold", () => {
   test("kills sometimes drop gold piles that scale with monster level", () => {
-    const state = createGame(9, arena());
+    const state = createGameOn(9, arena());
     armed(state);
     let piles = 0;
     let total = 0;
     for (let round = 0; round < 80; round++) {
-      const m = spawnMonster(state, "skitter", { x: 5.5, y: 1.5 });
+      const m = spawnAt(state, "skitter", { x: 5.5, y: 1.5 });
       m.life = 0;
       step(state, {});
       for (const e of state.events) {
@@ -46,11 +46,11 @@ describe("gold", () => {
   });
 
   test("walking over a pile scoops it up automatically", () => {
-    const state = createGame(1, arena());
-    state.goldPiles.set(1, { id: 1, amount: 25, pos: { x: 4.5, y: 1.5 } });
+    const state = createGameOn(1, arena());
+    playerZone(state).goldPiles.set(1, { id: 1, amount: 25, pos: { x: 4.5, y: 1.5 } });
     step(state, { moveTo: { x: 6.5, y: 1.5 } });
     for (let i = 0; i < 60; i++) step(state, {});
-    expect(state.goldPiles.size).toBe(0);
+    expect(playerZone(state).goldPiles.size).toBe(0);
     expect(state.player.gold).toBe(25);
   });
 });

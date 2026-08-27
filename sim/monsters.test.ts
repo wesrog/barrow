@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster, MONSTER_TYPES } from "./monsters";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
+import { MONSTER_TYPES } from "./monsters";
 import { rollDrop } from "./items/treasure";
 import { createRng } from "./rng";
 
@@ -25,8 +26,8 @@ const walledArena = () =>
 
 describe("gravespit (ranged)", () => {
   test("attacks from range without closing to melee", () => {
-    const state = createGame(5, openArena());
-    const m = spawnMonster(state, "gravespit", { x: 6.5, y: 1.5 });
+    const state = createGameOn(5, openArena());
+    const m = spawnAt(state, "gravespit", { x: 6.5, y: 1.5 });
     let hurt = false;
     for (let i = 0; i < 200 && !hurt; i++) {
       step(state, {});
@@ -38,8 +39,8 @@ describe("gravespit (ranged)", () => {
   });
 
   test("cannot spit through walls; approaches instead", () => {
-    const state = createGame(5, walledArena());
-    const m = spawnMonster(state, "gravespit", { x: 6.5, y: 1.5 });
+    const state = createGameOn(5, walledArena());
+    const m = spawnAt(state, "gravespit", { x: 6.5, y: 1.5 });
     const start = { ...m.pos };
     // While still behind the wall it must hold fire (it will flank given time).
     for (let i = 0; i < 10; i++) {
@@ -53,10 +54,10 @@ describe("gravespit (ranged)", () => {
 
 describe("tomb bloat (exploder)", () => {
   test("death detonates, hurting the player and nearby monsters", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 2.5, y: 1.5 };
-    const bloat = spawnMonster(state, "tomb_bloat", { x: 3.2, y: 1.5 });
-    const bystander = spawnMonster(state, "skitter", { x: 3.8, y: 1.5 });
+    const bloat = spawnAt(state, "tomb_bloat", { x: 3.2, y: 1.5 });
+    const bystander = spawnAt(state, "skitter", { x: 3.8, y: 1.5 });
     const lifeBefore = state.player.life;
     const bystanderLifeBefore = bystander.life;
     bloat.life = 0;
@@ -67,15 +68,15 @@ describe("tomb bloat (exploder)", () => {
   });
 
   test("explosions can chain into other bloats", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 9.5, y: 3.5 }; // out of blast range
-    const a = spawnMonster(state, "tomb_bloat", { x: 2.5, y: 1.5 });
-    const b = spawnMonster(state, "tomb_bloat", { x: 3.5, y: 1.5 });
+    const a = spawnAt(state, "tomb_bloat", { x: 2.5, y: 1.5 });
+    const b = spawnAt(state, "tomb_bloat", { x: 3.5, y: 1.5 });
     b.life = 3; // one blast will finish it
     a.life = 0;
     step(state, {});
-    expect(state.monsters.has(a.id)).toBe(false);
-    expect(state.monsters.has(b.id)).toBe(false);
+    expect(playerZone(state).monsters.has(a.id)).toBe(false);
+    expect(playerZone(state).monsters.has(b.id)).toBe(false);
     expect(state.events.filter((e) => e.type === "exploded")).toHaveLength(2);
   });
 });
@@ -94,21 +95,21 @@ describe("barrow lord (boss)", () => {
   });
 
   test("killing the boss always leaves a drop", () => {
-    const state = createGame(5, openArena());
-    const boss = spawnMonster(state, "barrow_lord", { x: 6.5, y: 2.5 });
+    const state = createGameOn(5, openArena());
+    const boss = spawnAt(state, "barrow_lord", { x: 6.5, y: 2.5 });
     boss.life = 0;
     step(state, {});
-    expect(state.groundItems.size).toBeGreaterThanOrEqual(1);
-    const rarities = [...state.groundItems.values()].map((gi) => gi.item.rarity);
+    expect(playerZone(state).groundItems.size).toBeGreaterThanOrEqual(1);
+    const rarities = [...playerZone(state).groundItems.values()].map((gi) => gi.item.rarity);
     expect(rarities.some((r) => r !== "normal")).toBe(true);
   });
 });
 
 describe("barrow lord telegraph", () => {
   test("winds up visibly before striking, then swings", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 3.5, y: 1.5 };
-    const boss = spawnMonster(state, "barrow_lord", { x: 4.3, y: 1.5 });
+    const boss = spawnAt(state, "barrow_lord", { x: 4.3, y: 1.5 });
     let windupTick = -1;
     let swingTick = -1;
     for (let i = 0; i < 120 && swingTick === -1; i++) {
@@ -124,9 +125,9 @@ describe("barrow lord telegraph", () => {
   });
 
   test("no strike lands if the player escapes during the windup", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 3.5, y: 1.5 };
-    const boss = spawnMonster(state, "barrow_lord", { x: 4.3, y: 1.5 });
+    const boss = spawnAt(state, "barrow_lord", { x: 4.3, y: 1.5 });
     let wound = false;
     for (let i = 0; i < 60 && !wound; i++) {
       step(state, {});
@@ -142,9 +143,9 @@ describe("barrow lord telegraph", () => {
   });
 
   test("a stun interrupts the windup", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 3.5, y: 1.5 };
-    const boss = spawnMonster(state, "barrow_lord", { x: 4.3, y: 1.5 });
+    const boss = spawnAt(state, "barrow_lord", { x: 4.3, y: 1.5 });
     let wound = false;
     for (let i = 0; i < 60 && !wound; i++) {
       step(state, {});
@@ -160,10 +161,10 @@ describe("barrow lord telegraph", () => {
 
 describe("crowding", () => {
   test("monsters shoved into the same spot separate instead of stacking", () => {
-    const state = createGame(5, openArena());
+    const state = createGameOn(5, openArena());
     state.player.pos = { x: 9.5, y: 3.5 };
-    const a = spawnMonster(state, "shambler", { x: 3.5, y: 1.5 });
-    const b = spawnMonster(state, "shambler", { x: 3.5, y: 1.5 });
+    const a = spawnAt(state, "shambler", { x: 3.5, y: 1.5 });
+    const b = spawnAt(state, "shambler", { x: 3.5, y: 1.5 });
     for (let i = 0; i < 60; i++) step(state, {});
     const d = Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
     expect(d).toBeGreaterThan(0.3);

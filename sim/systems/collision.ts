@@ -1,5 +1,5 @@
-import { isWalkable, type Vec } from "../map";
-import type { GameState } from "../state";
+import { isWalkable, type Vec, type ZoneMap } from "../map";
+import { zoneOf, type GameState } from "../state";
 import type { Monster } from "../monsters";
 
 /** The hero's body radius in cells. */
@@ -15,10 +15,10 @@ const SOLID_MARKERS = new Set(["V"]);
 const PASSES = 3;
 
 /** Move `pos` by (dx, dy) only if the destination cell is walkable. */
-function nudge(state: GameState, pos: Vec, dx: number, dy: number): boolean {
+function nudge(map: ZoneMap, pos: Vec, dx: number, dy: number): boolean {
   const x = pos.x + dx;
   const y = pos.y + dy;
-  if (!isWalkable(state.map, Math.floor(x), Math.floor(y))) return false;
+  if (!isWalkable(map, Math.floor(x), Math.floor(y))) return false;
   pos.x = x;
   pos.y = y;
   return true;
@@ -31,12 +31,14 @@ function nudge(state: GameState, pos: Vec, dx: number, dy: number): boolean {
  */
 export function collisionSystem(state: GameState): void {
   const p = state.player;
-  const monsters = [...state.monsters.values()];
+  const zone = zoneOf(state, p);
+  const map = zone.map;
+  const monsters = [...zone.monsters.values()];
   for (let pass = 0; pass < PASSES; pass++) {
     // Player vs monster: the player yields, so meat walls actually block.
     if (!p.dead) {
       // Static NPCs never budge; the player is always the one ejected.
-      for (const marker of state.map.markers) {
+      for (const marker of map.markers) {
         if (!SOLID_MARKERS.has(marker.ch)) continue;
         const dx = p.pos.x - marker.x;
         const dy = p.pos.y - marker.y;
@@ -45,7 +47,7 @@ export function collisionSystem(state: GameState): void {
         if (overlap <= 0) continue;
         const nx = d > 1e-6 ? dx / d : 1;
         const ny = d > 1e-6 ? dy / d : 0;
-        nudge(state, p.pos, nx * overlap, ny * overlap);
+        nudge(map, p.pos, nx * overlap, ny * overlap);
       }
       for (const m of monsters) {
         const dx = p.pos.x - m.pos.x;
@@ -56,18 +58,18 @@ export function collisionSystem(state: GameState): void {
         // Perfectly stacked: eject the player along +x deterministically.
         const nx = d > 1e-6 ? dx / d : 1;
         const ny = d > 1e-6 ? dy / d : 0;
-        if (!nudge(state, p.pos, nx * overlap, ny * overlap)) {
+        if (!nudge(map, p.pos, nx * overlap, ny * overlap)) {
           // Cornered against a wall: the monster gives way instead.
-          nudge(state, m.pos, -nx * overlap, -ny * overlap);
+          nudge(map, m.pos, -nx * overlap, -ny * overlap);
         }
       }
     }
-    separatePair(state, monsters);
+    separatePair(map, monsters);
   }
 }
 
 /** Monster vs monster: split the overlap evenly so packs spread out. */
-function separatePair(state: GameState, monsters: Monster[]): void {
+function separatePair(map: ZoneMap, monsters: Monster[]): void {
   for (let i = 0; i < monsters.length; i++) {
     for (let j = i + 1; j < monsters.length; j++) {
       const a = monsters[i]!;
@@ -81,11 +83,11 @@ function separatePair(state: GameState, monsters: Monster[]): void {
       const nx = d > 1e-6 ? dx / d : (a.id < b.id ? 1 : -1);
       const ny = d > 1e-6 ? dy / d : 0;
       const half = overlap / 2;
-      const aMoved = nudge(state, a.pos, -nx * half, -ny * half);
-      const bMoved = nudge(state, b.pos, nx * half, ny * half);
+      const aMoved = nudge(map, a.pos, -nx * half, -ny * half);
+      const bMoved = nudge(map, b.pos, nx * half, ny * half);
       // One blocked by a wall: the free one absorbs the full correction.
-      if (aMoved && !bMoved) nudge(state, a.pos, -nx * half, -ny * half);
-      if (bMoved && !aMoved) nudge(state, b.pos, nx * half, ny * half);
+      if (aMoved && !bMoved) nudge(map, a.pos, -nx * half, -ny * half);
+      if (bMoved && !aMoved) nudge(map, b.pos, nx * half, ny * half);
     }
   }
 }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
 import { rollItem } from "./items/generate";
 import { createRng } from "./rng";
 import { BASE_STATS } from "./character";
@@ -25,12 +25,12 @@ describe("durability", () => {
   });
 
   test("swinging wears the weapon down over time", () => {
-    const state = createGame(2, arena());
+    const state = createGameOn(2, arena());
     const weapon = state.player.equipment.weapon!;
     expect(weapon.durability).toBeDefined();
     const start = weapon.durability!.cur;
     // An immortal target to swing at forever
-    const m = spawnMonster(state, "shambler", { x: 2.2, y: 1.5 });
+    const m = spawnAt(state, "shambler", { x: 2.2, y: 1.5 });
     m.life = 1000000;
     m.dmgMin = 0;
     m.dmgMax = 0;
@@ -41,7 +41,7 @@ describe("durability", () => {
   });
 
   test("a broken weapon fights like bare fists until repaired", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     const weapon = state.player.equipment.weapon!;
     weapon.durability!.cur = 0;
     recomputePlayerStats(state);
@@ -56,7 +56,7 @@ describe("durability", () => {
   });
 
   test("repair does nothing when gold is short", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     state.player.equipment.weapon!.durability!.cur = 0;
     state.player.gold = 0;
     repairAll(state);

@@ -1,7 +1,7 @@
 import { isWalkable, type Vec } from "./map";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
-import type { GameState, PlayerInput } from "./state";
+import { zoneDepth, zoneOf, type GameState, type PlayerInput, type ZoneState } from "./state";
 
 export type BreakableKind = "barrel" | "crate" | "chest";
 
@@ -19,8 +19,10 @@ const MIN_SPAWN_DIST = 4;
  * Scatter smashable clutter across the floor: barrels and crates rolling the
  * trash class, plus exactly one treasure chest with a guaranteed drop.
  */
-export function spawnBreakables(state: GameState): void {
-  const { map, rng } = state;
+export function spawnBreakables(state: GameState, zone: ZoneState, depth: number): void {
+  void depth; // clutter counts don't scale (yet); loot scaling happens on smash
+  const { map } = zone;
+  const rng = state.rng;
   const taken = new Set<number>();
   const cell = (x: number, y: number) => y * map.width + x;
   taken.add(cell(Math.floor(map.spawn.x), Math.floor(map.spawn.y)));
@@ -34,7 +36,7 @@ export function spawnBreakables(state: GameState): void {
       if (Math.hypot(x + 0.5 - map.spawn.x, y + 0.5 - map.spawn.y) < MIN_SPAWN_DIST) continue;
       taken.add(cell(x, y));
       const id = state.nextId++;
-      state.breakables.set(id, { id, kind, pos: { x: x + 0.5, y: y + 0.5 } });
+      zone.breakables.set(id, { id, kind, pos: { x: x + 0.5, y: y + 0.5 } });
       return;
     }
   };
@@ -46,7 +48,7 @@ export function spawnBreakables(state: GameState): void {
 
 export function applySmashInput(state: GameState, input: PlayerInput): void {
   if (input.smash === undefined) return;
-  if (!state.breakables.has(input.smash)) return;
+  if (!zoneOf(state, state.player).breakables.has(input.smash)) return;
   const p = state.player;
   p.smashTarget = input.smash;
   p.attackTarget = null;
@@ -58,7 +60,8 @@ export function applySmashInput(state: GameState, input: PlayerInput): void {
 export function breakSystem(state: GameState): void {
   const p = state.player;
   if (p.smashTarget === null) return;
-  const target = state.breakables.get(p.smashTarget);
+  const zone = zoneOf(state, p);
+  const target = zone.breakables.get(p.smashTarget);
   if (!target) {
     p.smashTarget = null;
     return;
@@ -67,10 +70,10 @@ export function breakSystem(state: GameState): void {
   if (d <= SMASH_RANGE) {
     p.smashTarget = null;
     p.path = [];
-    smash(state, target);
+    smash(state, zone, target);
   } else if (p.path.length === 0) {
     const cells = findPath(
-      state.map,
+      zone.map,
       { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
       { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
     );
@@ -78,17 +81,23 @@ export function breakSystem(state: GameState): void {
       p.smashTarget = null;
       return;
     }
-    p.path = smoothPath(state.map, p.pos, cells);
+    p.path = smoothPath(zone.map, p.pos, cells);
     p.path.push({ ...target.pos });
   }
 }
 
-function smash(state: GameState, target: Breakable): void {
-  state.breakables.delete(target.id);
-  state.events.push({ type: "player_swing", to: { ...target.pos } });
-  state.events.push({ type: "breakable_broken", id: target.id, kind: target.kind, pos: { ...target.pos } });
+function smash(state: GameState, zone: ZoneState, target: Breakable): void {
+  zone.breakables.delete(target.id);
+  state.events.push({ type: "player_swing", to: { ...target.pos }, zone: zone.id });
+  state.events.push({
+    type: "breakable_broken",
+    id: target.id,
+    kind: target.kind,
+    pos: { ...target.pos },
+    zone: zone.id,
+  });
 
-  const depthBonus = (state.depth - 1) * 3;
+  const depthBonus = (zoneDepth(zone.id) - 1) * 3;
   const item =
     target.kind === "chest"
       ? rollDrop(state.rng, "standard", 5 + depthBonus, { guaranteed: true, minRarity: "magic" })
@@ -99,8 +108,15 @@ function smash(state: GameState, target: Breakable): void {
       y: target.pos.y + (state.rng.next() - 0.5) * 1.2,
     };
     const id = state.nextId++;
-    state.groundItems.set(id, { id, item, pos });
-    state.events.push({ type: "item_dropped", id, name: item.name, rarity: item.rarity, pos });
+    zone.groundItems.set(id, { id, item, pos });
+    state.events.push({
+      type: "item_dropped",
+      id,
+      name: item.name,
+      rarity: item.rarity,
+      pos,
+      zone: zone.id,
+    });
   }
   // Chests always cough up coin; barrels and crates sometimes do.
   if (target.kind === "chest" || state.rng.next() < 0.3) {
@@ -110,7 +126,7 @@ function smash(state: GameState, target: Breakable): void {
       y: target.pos.y + (state.rng.next() - 0.5) * 1.2,
     };
     const id = state.nextId++;
-    state.goldPiles.set(id, { id, amount, pos });
-    state.events.push({ type: "gold_dropped", id, amount, pos });
+    zone.goldPiles.set(id, { id, amount, pos });
+    state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });
   }
 }

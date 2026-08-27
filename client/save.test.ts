@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { mapFromStrings } from "../sim/map";
 import { createGame } from "../sim/tick";
+import { zoneOf } from "../sim/state";
 import { BASE_STATS, LIFE_PER_LEVEL, placeItem } from "../sim/character";
 import { serializeCharacter, applyCharacter } from "./save";
 
-const arena = () => mapFromStrings(["####", "#@.#", "####"]);
 
 describe("character save", () => {
   test("round-trips level, skills, belt, inventory, and equipment", () => {
-    const a = createGame(1, arena());
+    const a = createGame(1);
     a.player.level = 5;
     a.player.xp = 300;
     a.player.skillPoints = 1;
@@ -24,7 +23,7 @@ describe("character save", () => {
     });
 
     const raw = serializeCharacter(a);
-    const b = createGame(2, arena());
+    const b = createGame(2);
     applyCharacter(b, raw);
 
     expect(b.player.level).toBe(5);
@@ -37,11 +36,11 @@ describe("character save", () => {
     // Derived stats recomputed for level 5, revived at spawn
     expect(b.player.maxLife).toBe(BASE_STATS.maxLife + 4 * LIFE_PER_LEVEL);
     expect(b.player.life).toBe(b.player.maxLife);
-    expect(b.player.pos).toEqual(b.map.spawn);
+    expect(b.player.pos).toEqual(zoneOf(b, b.player).map.spawn);
   });
 
   test("garbage data is rejected without corrupting the game", () => {
-    const state = createGame(1, arena());
+    const state = createGame(1);
     const level = state.player.level;
     expect(applyCharacter(state, "not json {")).toBe(false);
     expect(applyCharacter(state, JSON.stringify({ hello: 1 }))).toBe(false);

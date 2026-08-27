@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
 import { xpForLevel, LIFE_PER_LEVEL } from "./character";
 import type { GameState } from "./state";
 
@@ -15,14 +15,14 @@ const openMap = () =>
 
 /** Kill a monster instantly by zeroing its life and stepping once. */
 function slay(state: GameState, typeId: string): void {
-  const m = spawnMonster(state, typeId, { x: 5.5, y: 1.5 });
+  const m = spawnAt(state, typeId, { x: 5.5, y: 1.5 });
   m.life = 0;
   step(state, {});
 }
 
 describe("xp and leveling", () => {
   test("killing a monster grants its xp", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     expect(state.player.xp).toBe(0);
     slay(state, "skitter"); // xp 6
     expect(state.player.xp).toBe(6);
@@ -36,7 +36,7 @@ describe("xp and leveling", () => {
   });
 
   test("crossing the threshold levels up: +1 skill point, more life, event", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     const before = state.player.maxLife;
     state.player.xp = xpForLevel(2) - 1;
     slay(state, "skitter");
@@ -47,7 +47,7 @@ describe("xp and leveling", () => {
   });
 
   test("a single large xp gain can grant multiple levels", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     state.player.xp = xpForLevel(3) - 1; // one skitter's 6 xp crosses 2 and 3
     slay(state, "skitter");
     expect(state.player.level).toBe(3);
@@ -55,7 +55,7 @@ describe("xp and leveling", () => {
   });
 
   test("level bonus life survives equipment recompute", () => {
-    const state = createGame(1, openMap());
+    const state = createGameOn(1, openMap());
     state.player.xp = xpForLevel(2) - 1;
     slay(state, "skitter");
     const after = state.player.maxLife;

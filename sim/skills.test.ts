@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, step } from "./tick";
-import { spawnMonster } from "./monsters";
+import { step } from "./tick";
+import { createGameOn, playerZone, spawnAt } from "./test-helpers";
 import { SKILLS, damageMultiplier, cleaveMultiplier } from "./skills";
 import type { GameState } from "./state";
 
@@ -22,7 +22,7 @@ function readyPlayer(state: GameState, level = 10, points = 10): void {
 
 describe("skill points", () => {
   test("spending a point raises the skill rank and consumes the point", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state, 2, 1);
     step(state, { spendSkill: "cleave" });
     expect(state.player.skills.cleave).toBe(1);
@@ -30,7 +30,7 @@ describe("skill points", () => {
   });
 
   test("skills are gated by character level", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state, 1, 5);
     step(state, { spendSkill: "leap" }); // leap unlocks at 6
     expect(state.player.skills.leap).toBe(0);
@@ -38,7 +38,7 @@ describe("skill points", () => {
   });
 
   test("no points, no rank", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state, 10, 0);
     step(state, { spendSkill: "cleave" });
     expect(state.player.skills.cleave).toBe(0);
@@ -48,12 +48,12 @@ describe("skill points", () => {
 describe("cleave", () => {
   test("hits every monster in reach and spends mana", () => {
     // Seed chosen so both 95%-capped hit rolls land; determinism keeps it stable.
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state);
     step(state, { spendSkill: "cleave" });
-    const a = spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
-    const b = spawnMonster(state, "skitter", { x: 1.5, y: 2.3 });
-    const c = spawnMonster(state, "skitter", { x: 8.5, y: 3.5 }); // far away
+    const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
+    const b = spawnAt(state, "skitter", { x: 1.5, y: 2.3 });
+    const c = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // far away
     const manaBefore = state.player.mana;
     step(state, { cast: { skill: "cleave" } });
     expect(state.player.mana).toBe(manaBefore - SKILLS.cleave.manaCost);
@@ -70,25 +70,25 @@ describe("cleave", () => {
   });
 
   test("cannot cast without a rank or without mana", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
-    const m = spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     step(state, { cast: { skill: "cleave" } }); // no rank
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
     step(state, { spendSkill: "cleave" });
     state.player.mana = 0;
     step(state, { cast: { skill: "cleave" } }); // no mana
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
-    expect(state.monsters.has(m.id)).toBe(true);
+    expect(playerZone(state).monsters.has(m.id)).toBe(true);
   });
 });
 
 describe("crush", () => {
   test("lands a guaranteed heavy hit on a target in reach", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "crush" });
-    const m = spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     step(state, { cast: { skill: "crush", target: m.id } });
     const hit = state.events.find((e) => e.type === "monster_hit");
     expect(hit).toBeDefined();
@@ -97,10 +97,10 @@ describe("crush", () => {
   });
 
   test("ignores a target out of reach", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "crush" });
-    const m = spawnMonster(state, "skitter", { x: 8.5, y: 3.5 });
+    const m = spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
     const manaBefore = state.player.mana;
     step(state, { cast: { skill: "crush", target: m.id } });
     expect(state.player.mana).toBe(manaBefore);
@@ -110,7 +110,7 @@ describe("crush", () => {
 
 describe("warcry", () => {
   test("buffs damage for a duration", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "warcry" });
     expect(damageMultiplier(state)).toBeCloseTo(1.0);
@@ -123,11 +123,11 @@ describe("warcry", () => {
 
 describe("leap", () => {
   test("moves the player to the target cell and stuns nearby monsters", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "leap" });
     // Close enough to stun, far enough that body-blocking doesn't shove anyone.
-    const near = spawnMonster(state, "skitter", { x: 7.5, y: 2.8 });
+    const near = spawnAt(state, "skitter", { x: 7.5, y: 2.8 });
     const posBefore = { ...near.pos };
     step(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
     expect(state.player.pos.x).toBeCloseTo(7.5);
@@ -139,7 +139,7 @@ describe("leap", () => {
   });
 
   test("cannot leap into a wall or across the map", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     step(state, { spendSkill: "leap" });
     const before = { ...state.player.pos };
@@ -150,10 +150,10 @@ describe("leap", () => {
 
 describe("cast rate", () => {
   test("cleave cannot be recast until its cast time elapses", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state);
     step(state, { spendSkill: "cleave" });
-    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     step(state, { cast: { skill: "cleave" } });
     const castsAfterFirst = state.events.filter((e) => e.type === "skill_cast").length;
     expect(castsAfterFirst).toBe(1);
@@ -172,12 +172,12 @@ describe("cast rate", () => {
   });
 
   test("every skill occupies the shared action cooldown", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     readyPlayer(state);
     for (const id of ["cleave", "crush", "warcry", "leap"] as const) {
       step(state, { spendSkill: id });
     }
-    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     step(state, { cast: { skill: "warcry" } });
     expect(state.events.filter((e) => e.type === "skill_cast")).toHaveLength(1);
     expect(state.player.swingCooldown).toBe(SKILLS.warcry.castTicks - 1);
@@ -187,10 +187,10 @@ describe("cast rate", () => {
   });
 
   test("a basic swing blocks skills, and a skill blocks basic swings", () => {
-    const state = createGame(1, arena());
+    const state = createGameOn(1, arena());
     readyPlayer(state);
     step(state, { spendSkill: "cleave" });
-    spawnMonster(state, "skitter", { x: 2.2, y: 1.5 });
+    spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     step(state, { swingAt: { x: 2.2, y: 1.5 } });
     expect(state.events.filter((e) => e.type === "player_swing")).toHaveLength(1);
     // Still mid-swing: cleave refused.
@@ -207,7 +207,7 @@ describe("cast rate", () => {
 
 describe("mana", () => {
   test("regenerates slowly over time", () => {
-    const state = createGame(7, arena());
+    const state = createGameOn(7, arena());
     state.player.mana = 0;
     for (let i = 0; i < 250; i++) step(state, {}); // 10 seconds
     expect(state.player.mana).toBeGreaterThan(5);

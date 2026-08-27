@@ -1,4 +1,4 @@
-import type { GameState, PlayerInput } from "../state";
+import { zoneOf, type GameState, type PlayerInput } from "../state";
 import {
   BELT_SIZE,
   POTION_HEAL,
@@ -39,8 +39,16 @@ export function applyDropItemInput(state: GameState, input: PlayerInput): void {
     y: p.pos.y + (state.rng.next() - 0.5) * 1.2,
   };
   const id = state.nextId++;
-  state.groundItems.set(id, { id, item: entry.item, pos });
-  state.events.push({ type: "item_dropped", id, name: entry.item.name, rarity: entry.item.rarity, pos });
+  const zone = zoneOf(state, p);
+  zone.groundItems.set(id, { id, item: entry.item, pos });
+  state.events.push({
+    type: "item_dropped",
+    id,
+    name: entry.item.name,
+    rarity: entry.item.rarity,
+    pos,
+    zone: zone.id,
+  });
 }
 
 const WEAR_CHANCE = 0.04;
@@ -109,7 +117,7 @@ export function applyDrinkInput(state: GameState, input: PlayerInput): void {
 
 export function applyPickupInput(state: GameState, input: PlayerInput): void {
   if (input.pickup === undefined) return;
-  if (!state.groundItems.has(input.pickup)) return;
+  if (!zoneOf(state, state.player).groundItems.has(input.pickup)) return;
   state.player.pickupTarget = input.pickup;
   state.player.attackTarget = null;
   state.player.smashTarget = null;
@@ -118,16 +126,17 @@ export function applyPickupInput(state: GameState, input: PlayerInput): void {
 
 export function pickupSystem(state: GameState): void {
   const p = state.player;
+  const zone = zoneOf(state, p);
   // Gold is scooped just by walking near it.
-  for (const pile of [...state.goldPiles.values()]) {
+  for (const pile of [...zone.goldPiles.values()]) {
     if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
-      state.goldPiles.delete(pile.id);
+      zone.goldPiles.delete(pile.id);
       p.gold += pile.amount;
       state.events.push({ type: "gold_picked", amount: pile.amount });
     }
   }
   if (p.pickupTarget === null) return;
-  const target = state.groundItems.get(p.pickupTarget);
+  const target = zone.groundItems.get(p.pickupTarget);
   if (!target) {
     p.pickupTarget = null;
     return;
@@ -139,17 +148,17 @@ export function pickupSystem(state: GameState): void {
     const isPotion = BASES[target.item.baseId]!.slot === "potion";
     if (isPotion && p.belt < BELT_SIZE) {
       p.belt++;
-      state.groundItems.delete(target.id);
+      zone.groundItems.delete(target.id);
       state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
     } else if (placeItem(p.inventory, target.id, target.item)) {
-      state.groundItems.delete(target.id);
+      zone.groundItems.delete(target.id);
       state.events.push({ type: "item_picked", id: target.id, name: target.item.name });
     } else {
       state.events.push({ type: "inventory_full" });
     }
   } else if (p.path.length === 0) {
     const cells = findPath(
-      state.map,
+      zone.map,
       { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
       { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
     );
@@ -157,7 +166,7 @@ export function pickupSystem(state: GameState): void {
       p.pickupTarget = null;
       return;
     }
-    p.path = smoothPath(state.map, p.pos, cells);
+    p.path = smoothPath(zone.map, p.pos, cells);
     p.path.push({ ...target.pos });
   }
 }

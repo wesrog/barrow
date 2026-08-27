@@ -1,8 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { createGame, step, TICK_RATE } from "../sim/tick";
-import { cryptZone } from "../sim/zone";
-import type { GameState, PlayerInput } from "../sim/state";
+import { zoneOf, type GameState, type PlayerInput } from "../sim/state";
 import type { EquipSlot } from "../sim/character";
 import type { SkillId } from "../sim/skills";
 import { play, unlock } from "./audio";
@@ -41,8 +40,7 @@ function Game() {
       if (disposed) return;
       setLoading(false);
       setAssets(assets);
-      const map = cryptZone();
-      const game = createGame(Date.now() >>> 0, map);
+      const game = createGame(Date.now() >>> 0);
       loadFromStorage(game);
       gameRef.current = game;
       // Dev console hook: poke the sim from the browser console while testing.
@@ -52,8 +50,8 @@ function Game() {
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
       };
-      let scene = createScene(mount, map, assets, onItemClick);
-      let sceneMap = game.map;
+      let scene = createScene(mount, zoneOf(game, game.player).map, assets, onItemClick);
+      let sceneMap = zoneOf(game, game.player).map;
 
     let pending: PlayerInput = {};
     let prevPlayerPos = { ...game.player.pos };
@@ -71,7 +69,7 @@ function Game() {
           picked.kind === "ground"
             ? picked.world
             : picked.kind === "monster"
-              ? game.monsters.get(picked.id)?.pos
+              ? zoneOf(game, game.player).monsters.get(picked.id)?.pos
               : undefined;
         if (at) {
           pending.swingAt = { ...at };
@@ -212,16 +210,12 @@ function Game() {
               scene.addExplosion(e.pos, e.radius);
               play("explode");
               break;
-            case "descended":
-              scene.addDamageNumber(game.player.pos, `depth ${e.depth} — the barrow deepens`, "#7fb8c9");
-              play("windup");
-              break;
             case "gold_picked":
               play("coin");
               break;
-            case "portal":
+            case "traveled":
               play("portal");
-              if (e.to === "crypt") setShopOpen(false);
+              if (e.to !== "camp") setShopOpen(false);
               break;
             case "shop_opened":
               setShopOpen(true);
@@ -252,11 +246,12 @@ function Game() {
         acc -= TICK_MS;
       }
       if (sawEvents) setVersion((v) => v + 1);
-      // Crossing a portal swaps the map — rebuild the whole scene around it.
-      if (game.map !== sceneMap) {
+      // Traveling swaps the zone map — rebuild the whole scene around it.
+      const currentMap = zoneOf(game, game.player).map;
+      if (currentMap !== sceneMap) {
         scene.dispose();
-        scene = createScene(mount, game.map, assets, onItemClick);
-        sceneMap = game.map;
+        scene = createScene(mount, currentMap, assets, onItemClick);
+        sceneMap = currentMap;
         prevPlayerPos = { ...game.player.pos };
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
@@ -316,7 +311,7 @@ function Game() {
         />
       )}
       {gameRef.current && <MiniMap game={gameRef.current} />}
-      {shopOpen && gameRef.current && gameRef.current.town !== null && (
+      {shopOpen && gameRef.current && gameRef.current.player.zoneId === "camp" && (
         <ShopPanel
           game={gameRef.current}
           onBuy={(index) => {

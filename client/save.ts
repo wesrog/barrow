@@ -1,7 +1,7 @@
 import type { Equipment, Inventory } from "../sim/character";
 import { recomputePlayerStats } from "../sim/systems/inventory";
 import type { SkillId } from "../sim/skills";
-import type { GameState } from "../sim/state";
+import { zoneOf, type GameState } from "../sim/state";
 
 const VERSION = 1;
 
@@ -60,7 +60,7 @@ export function applyCharacter(state: GameState, raw: string): boolean {
   recomputePlayerStats(state);
   p.life = p.maxLife;
   p.mana = p.maxMana;
-  p.pos = { ...state.map.spawn };
+  p.pos = { ...zoneOf(state, p).map.spawn };
   return true;
 }
 

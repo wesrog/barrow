@@ -3,7 +3,7 @@
 // over the "game" DataChannel. Browser-API code only — no sim/ imports, no game
 // logic. Opaque JSON in, opaque JSON out.
 
-export const SIGNAL_URL: string = import.meta.env.VITE_SIGNAL_URL ?? "ws://localhost:5200";
+export { SIGNAL_URL } from "./config";
 
 const ICE_CONFIG: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],

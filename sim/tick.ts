@@ -1,5 +1,5 @@
 import { createRng } from "./rng";
-import type { ZoneMap } from "./map";
+import { isWalkable, type ZoneMap } from "./map";
 import {
   allPlayers,
   floorZone,
@@ -135,12 +135,54 @@ export function travelPadSystem(state: GameState, zone: ZoneState, players: Play
   }
 }
 
+/**
+ * A free walkable camp cell for a relocated corpse: rings outward from the camp
+ * spawn, west-to-east then north-to-south within each ring, skipping cells
+ * already claimed. Pure scan of the map — no rng, so every client picks the same
+ * cells in the same order.
+ */
+function campCorpseSpot(camp: ZoneState, claimed: Set<string>): { x: number; y: number } {
+  const cx = Math.floor(camp.map.spawn.x);
+  const cy = Math.floor(camp.map.spawn.y);
+  for (let r = 0; r <= 8; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring edge only
+        const x = cx + dx;
+        const y = cy + dy;
+        const key = `${x},${y}`;
+        if (claimed.has(key) || !isWalkable(camp.map, x, y)) continue;
+        claimed.add(key);
+        return { x: x + 0.5, y: y + 0.5 };
+      }
+    }
+  }
+  return { x: cx + 0.5, y: cy + 0.5 }; // shouldn't happen on real maps
+}
+
 /** Fresh run: forget every floor, regenerate floor 1, revive everyone, back to camp. */
 export function resetRun(state: GameState): void {
+  const camp = getZone(state, "camp");
+  // Gear is never destroyed. Corpses standing on floors about to be forgotten
+  // carry their loot back to camp, where their owner can still reclaim it.
+  const claimed = new Set<string>(
+    [...camp.playerCorpses.values()].map((c) => `${Math.floor(c.pos.x)},${Math.floor(c.pos.y)}`),
+  );
+  for (const [id, zone] of state.zones) {
+    if (id === "camp") continue;
+    for (const corpse of zone.playerCorpses.values()) {
+      corpse.pos = campCorpseSpot(camp, claimed);
+      camp.playerCorpses.set(corpse.id, corpse);
+    }
+  }
   for (const id of [...state.zones.keys()]) {
     if (id !== "camp") state.zones.delete(id);
   }
   ensureFloor(state, 1);
+  // Every portal pointed at a floor that no longer exists — including the camp
+  // ends, which would otherwise regenerate a floor mid-reset and teleport their
+  // rider into a position from the old run.
+  for (const zone of state.zones.values()) zone.portals.clear();
   for (const p of allPlayers(state)) {
     p.dead = false;
     p.life = p.maxLife;

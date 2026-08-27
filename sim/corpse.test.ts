@@ -4,6 +4,7 @@ import { joinPlayer, step, stepSolo, travel } from "./tick";
 import { getZone } from "./state";
 import { placeItem } from "./character";
 import { rollDurability } from "./items/generate";
+import { isWalkable } from "./map";
 
 describe("corpse runs", () => {
   test("death strips equipment onto a corpse and respawns the player in camp", () => {
@@ -72,6 +73,54 @@ describe("corpse runs", () => {
     expect(corpses).toHaveLength(1);
     expect(corpses[0]!.equipment.weapon?.baseId).toBe("rusted_blade");
     expect(corpses[0]!.equipment.helm?.baseId).toBe("cracked_helm");
+  });
+
+  test("a fresh run walks corpse gear back to camp instead of destroying it", () => {
+    const g = soloGame(1);
+    const p = g.players.get(0)!;
+    travel(g, p, "floor:2");
+    p.life = 0;
+    stepSolo(g, {});
+    expect(getZone(g, "floor:2").playerCorpses.size).toBe(1);
+
+    stepSolo(g, { newGame: true });
+
+    // floor:2 is forgotten, but the gear on it is not.
+    expect(g.zones.has("floor:2")).toBe(false);
+    const corpses = [...getZone(g, "camp").playerCorpses.values()];
+    expect(corpses).toHaveLength(1);
+    expect(corpses[0]!.playerId).toBe(0);
+    expect(corpses[0]!.equipment.weapon?.baseId).toBe("rusted_blade");
+
+    // ...and the owner can still walk over and take it back.
+    expect(p.equipment.weapon).toBeNull();
+    p.pos = { ...corpses[0]!.pos };
+    stepSolo(g, { reclaim: corpses[0]!.id });
+    for (let i = 0; i < 5; i++) stepSolo(g, {});
+    expect(p.equipment.weapon?.baseId).toBe("rusted_blade");
+    expect(getZone(g, "camp").playerCorpses.size).toBe(0);
+  });
+
+  test("relocated corpses land on walkable camp cells, one per cell", () => {
+    const g = soloGame(1);
+    const p0 = g.players.get(0)!;
+    const p1 = joinPlayer(g, { id: 1 });
+    travel(g, p0, "floor:1");
+    travel(g, p1, "floor:1");
+    p0.life = 0;
+    p1.life = 0;
+    stepSolo(g, {});
+    expect(getZone(g, "floor:1").playerCorpses.size).toBe(2);
+
+    stepSolo(g, { newGame: true });
+    const camp = getZone(g, "camp");
+    const corpses = [...camp.playerCorpses.values()];
+    expect(corpses).toHaveLength(2);
+    for (const c of corpses) {
+      expect(isWalkable(camp.map, Math.floor(c.pos.x), Math.floor(c.pos.y))).toBe(true);
+    }
+    const cells = new Set(corpses.map((c) => `${Math.floor(c.pos.x)},${Math.floor(c.pos.y)}`));
+    expect(cells.size).toBe(2);
   });
 
   test("only the owner can reclaim", () => {

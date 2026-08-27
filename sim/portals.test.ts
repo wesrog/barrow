@@ -47,3 +47,16 @@ test("any player can ride any portal, both directions", () => {
   for (let i = 0; i < 5 && p1.zoneId === "camp"; i++) step(g, { tick: g.tick, inputs: {} });
   expect(p1.zoneId).toBe("floor:1");
 });
+
+test("a fresh run clears every portal, camp end included", () => {
+  // The floors a portal pointed at are gone; leaving the camp end standing
+  // would regenerate one mid-reset and drop the rider into a stale position.
+  const g = soloGame(1);
+  const p = g.players.get(0)!;
+  travel(g, p, "floor:2");
+  stepSolo(g, { townPortal: true });
+  expect(getZone(g, "camp").portals.size).toBe(1);
+
+  stepSolo(g, { newGame: true });
+  for (const zone of g.zones.values()) expect(zone.portals.size).toBe(0);
+});

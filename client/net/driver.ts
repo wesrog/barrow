@@ -119,15 +119,22 @@ export async function hostDriver(
     for (const link of links.keys()) link.send(msg);
   }, 1000 / TICK_RATE);
 
+  // A host has no transport that can go away underneath it — the game ends
+  // when it calls stop(). Callbacks are registered so callers get consistent
+  // behaviour across drivers, and stop() fires them so a shared teardown path
+  // works either way; nothing else invokes them in v1.
+  const closeCbs: (() => void)[] = [];
+
   const driver: NetDriver = {
     session,
     sendInput: (input) => session.sendInput(input),
-    onClose: () => {}, // the host's transport is its own; nothing to report
+    onClose: (cb) => closeCbs.push(cb),
     stop: () => {
       clearInterval(timer);
       for (const link of links.keys()) link.close();
       links.clear();
       room.stop();
+      for (const cb of closeCbs.splice(0)) cb();
     },
   };
   return { driver, code: room.code };

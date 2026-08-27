@@ -13,13 +13,18 @@ import {
 import { BELT_SIZE, placeItem, removeEntry } from "../character";
 import { repairAll } from "./inventory";
 import { findPath, smoothPath } from "../path";
-import { isWalkable } from "../map";
+import { inCamp, isWalkable } from "../map";
 
 /** How close you must stand to Maren before he'll talk shop. */
 const TALK_RANGE = 1.4;
 
 /** How close you must stand to a portal before it whisks you away. */
 const PORTAL_RANGE = 0.6;
+
+/** Standing on the camp's safe ground — where trading, healing, and repairs live. */
+export function onCampGround(state: GameState, p: Player): boolean {
+  return p.zoneId === "overworld" && inCamp(zoneOf(state, p).map, p.pos);
+}
 
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
@@ -66,8 +71,9 @@ export function restock(state: GameState, p: Player): void {
 
 /** Click on Maren: start walking over to trade. */
 export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkVendor || p.zoneId !== "camp") return;
+  if (!input.talkVendor || p.zoneId !== "overworld") return;
   p.vendorTarget = true;
+  p.healerTarget = false;
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
@@ -76,13 +82,59 @@ export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerI
   p.path = [];
 }
 
+/** Click on Sera: start walking over for a mending. */
+export function applyTalkHealerInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (!input.talkHealer || p.zoneId !== "overworld") return;
+  p.healerTarget = true;
+  p.vendorTarget = false;
+  p.attackTarget = null;
+  p.pickupTarget = null;
+  p.smashTarget = null;
+  p.portalTarget = null;
+  p.reclaimTarget = null;
+  p.path = [];
+}
+
+/** Walk toward the H marker; within talking range, life and mana come back in full. */
+export function healerSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  const map = zone.map;
+  const marker = map.markers.find((m) => m.ch === "H");
+  for (const p of players) {
+    if (!p.healerTarget) continue;
+    if (!marker) {
+      p.healerTarget = false;
+      continue;
+    }
+    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
+    if (d <= TALK_RANGE) {
+      p.healerTarget = false;
+      p.path = [];
+      p.life = p.maxLife;
+      p.mana = p.maxMana;
+      state.events.push({ type: "healed", playerId: p.id });
+    } else if (p.path.length === 0) {
+      const cells = findPath(
+        map,
+        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
+        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
+      );
+      if (cells === null) {
+        p.healerTarget = false;
+        continue;
+      }
+      p.path = smoothPath(map, p.pos, cells);
+      p.path.push({ x: marker.x, y: marker.y });
+    }
+  }
+}
+
 /** Walk toward the V marker; within talking range, the shop opens. */
 export function vendorSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   const map = zone.map;
   const marker = map.markers.find((m) => m.ch === "V");
   for (const p of players) {
     if (!p.vendorTarget) continue;
-    if (p.zoneId !== "camp" || !marker) {
+    if (!marker) {
       p.vendorTarget = false;
       continue;
     }
@@ -108,7 +160,7 @@ export function vendorSystem(state: GameState, zone: ZoneState, players: Player[
 }
 
 export function applyShopInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (p.zoneId !== "camp") return;
+  if (!onCampGround(state, p)) return;
 
   if (input.buy !== undefined) {
     const entry = state.shop[input.buy];
@@ -159,14 +211,14 @@ export function removePortalsOwnedBy(state: GameState, owner: number): void {
 
 /**
  * Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets.
- * Only avoids other portals — camp has no monsters or breakables to dodge.
+ * Only avoids other portals — camp ground has no monsters or breakables to dodge.
  */
-function findCampPortalSpot(camp: ZoneState): { x: number; y: number } {
-  const spawn = camp.map.spawn;
+function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
+  const spawn = overworld.map.spawn;
   const cx = Math.floor(spawn.x);
   const cy = Math.floor(spawn.y);
   const occupied = new Set(
-    [...camp.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
+    [...overworld.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
   );
   const candidates: [number, number][] = [
     [cx, cy],
@@ -176,7 +228,7 @@ function findCampPortalSpot(camp: ZoneState): { x: number; y: number } {
     [cx, cy - 1],
   ];
   for (const [x, y] of candidates) {
-    if (!isWalkable(camp.map, x, y)) continue;
+    if (!isWalkable(overworld.map, x, y)) continue;
     if (occupied.has(`${x},${y}`)) continue;
     return { x, y };
   }
@@ -184,13 +236,13 @@ function findCampPortalSpot(camp: ZoneState): { x: number; y: number } {
   return { x: cx, y: cy };
 }
 
-/** `t`: cast a two-way portal pair between here and camp. No-op in camp or while dead. */
+/** `t`: cast a two-way portal pair between here and camp. No-op on camp ground or while dead. */
 export function applyCastPortalInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.townPortal || p.dead || p.zoneId === "camp") return;
+  if (!input.townPortal || p.dead || onCampGround(state, p)) return;
   removePortalsOwnedBy(state, p.id);
 
   const here = zoneOf(state, p);
-  const camp = getZone(state, "camp");
+  const camp = getZone(state, "overworld");
   const spot = findCampPortalSpot(camp);
   const campPos = { x: spot.x + 0.5, y: spot.y + 0.5 };
   const herePos = { x: Math.floor(p.pos.x) + 0.5, y: Math.floor(p.pos.y) + 0.5 };
@@ -201,7 +253,7 @@ export function applyCastPortalInput(state: GameState, p: Player, input: PlayerI
     id: hereId,
     owner: p.id,
     pos: herePos,
-    link: { zone: "camp", pos: campPos },
+    link: { zone: "overworld", pos: campPos },
   };
   const campPortal: Portal = {
     id: campId,
@@ -223,6 +275,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.pickupTarget = null;
   p.smashTarget = null;
   p.vendorTarget = false;
+  p.healerTarget = false;
   p.reclaimTarget = null;
   p.path = [];
 }

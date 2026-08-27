@@ -4,15 +4,16 @@ import type { Monster, Corpse } from "./monsters";
 import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
-import type { SkillId } from "./skills";
+import type { Klass, SkillId } from "./skills";
 
-export type ZoneId = "camp" | `floor:${number}`;
+export type ZoneId = "overworld" | `floor:${number}`;
 
 export const floorZone = (n: number): ZoneId => `floor:${n}`;
 
-/** camp = 0; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
+/** The moors = 1; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
 export function zoneDepth(id: ZoneId): number {
-  return id === "camp" ? 0 : Number(id.slice("floor:".length));
+  if (id === "overworld") return 1;
+  return Number(id.slice("floor:".length));
 }
 
 export interface ZoneState {
@@ -82,8 +83,13 @@ export interface Frame {
 
 export interface Player {
   id: PlayerId;
+  /** Display name, chosen at character creation. */
+  name: string;
+  klass: Klass;
   /** Which zone this player is standing in. */
   zoneId: ZoneId;
+  /** Was this player on camp ground last tick? Drives arrival triggers (restock). */
+  wasInCamp: boolean;
   pos: Vec;
   /** Cells per tick. */
   speed: number;
@@ -105,12 +111,16 @@ export interface Player {
   attackTarget: number | null;
   /** A swing in flight: damage resolves at this tick (contact frame). */
   pendingStrike: { at: number; target: number | null } | null;
+  /** A leap in flight: the player travels from→to and lands (stunning) at endTick. */
+  leap: { from: Vec; to: Vec; startTick: number; endTick: number } | null;
   /** Ground item id being walked to for pickup, if any. */
   pickupTarget: number | null;
   /** Breakable id being walked to for smashing, if any. */
   smashTarget: number | null;
   /** Walking over to Maren to trade (town only). */
   vendorTarget: boolean;
+  /** Walking over to Sera for healing (town only). */
+  healerTarget: boolean;
   /** Portal id being walked to for riding, if any. */
   portalTarget: number | null;
   /** Player corpse id being walked to for reclaiming, if any. */
@@ -121,8 +131,8 @@ export interface Player {
   skills: Record<SkillId, number>;
   mana: number;
   maxMana: number;
-  /** Tick until which the Warcry buff is active. */
-  warcryUntil: number;
+  /** Tick until which the class buff (Warcry / Focus) is active. */
+  buffUntil: number;
   /** Healing potions on the belt. */
   belt: number;
   gold: number;
@@ -159,7 +169,8 @@ export type SimEvent =
       killer: PlayerId | null;
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
-  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; zone: ZoneId }
+  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
+  | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; playerId: PlayerId; healed: number }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }
@@ -169,6 +180,7 @@ export type SimEvent =
   | { type: "item_broke"; playerId: PlayerId; name: string }
   | { type: "repaired"; playerId: PlayerId; cost: number }
   | { type: "shop_opened"; playerId: PlayerId }
+  | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }
   | { type: "item_dropped"; id: number; name: string; rarity: Rarity; pos: Vec; zone: ZoneId }
@@ -190,9 +202,9 @@ export interface ShopEntry {
 export interface GameState {
   tick: number;
   rng: Rng;
-  /** The world: the camp plus every floor generated so far. */
+  /** The world: the moors (camp included) plus every floor generated so far. */
   zones: Map<ZoneId, ZoneState>;
-  /** The vendor's current stock; restocked each camp arrival. */
+  /** The vendor's current stock; restocked each arrival on camp ground. */
   shop: ShopEntry[];
   /** Everyone in the game, keyed by host-assigned id. */
   players: Map<PlayerId, Player>;
@@ -234,6 +246,8 @@ export interface PlayerInput {
   reclaim?: number;
   /** Walk to the vendor and open the shop (town only). */
   talkVendor?: boolean;
+  /** Walk to the healer for a full restore (town only). */
+  talkHealer?: boolean;
   /** Buy the shop entry at this index (town only). */
   buy?: number;
   /** Sell this inventory entry to the vendor (town only). */

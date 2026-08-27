@@ -110,8 +110,7 @@ describe("camp trips", () => {
     travel(state, player(state), "floor:1");
     const saved = [...playerZone(state).breakables.values()];
     expect(saved.length).toBeGreaterThan(0);
-    travel(state, player(state), "camp");
-    expect(playerZone(state).breakables.size).toBe(0); // no barrels to smash topside
+    travel(state, player(state), "overworld");
     // Walk onto the travel pad: back down to floor 1
     const pad = playerZone(state).map.markers.find((m) => m.ch === "P")!;
     player(state).pos = { x: pad.x, y: pad.y };

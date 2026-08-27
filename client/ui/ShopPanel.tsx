@@ -5,6 +5,7 @@ import { itemValue } from "../../sim/systems/town";
 import { repairAllCost } from "../../sim/systems/inventory";
 import type { GameState } from "../../sim/state";
 import { RARITY_CSS } from "./InventoryPanel";
+import { PanelChrome } from "./PanelChrome";
 
 const panelStyle: CSSProperties = {
   position: "absolute",
@@ -15,7 +16,7 @@ const panelStyle: CSSProperties = {
   background: "rgba(12, 11, 15, 0.95)",
   border: "1px solid #3a3442",
   borderRadius: 4,
-  padding: 14,
+  padding: 12,
   fontFamily: "ui-monospace, monospace",
   fontSize: 12,
   color: "#c9c2b8",
@@ -38,20 +39,24 @@ export function ShopPanel({
   onBuy,
   onSell,
   onRepair,
+  onClose,
 }: {
   game: GameState;
   onBuy: (index: number) => void;
   onSell: (entryId: number) => void;
   onRepair: () => void;
+  onClose: () => void;
 }) {
   const p = localPlayer(game);
   const repairCost = repairAllCost(game, p);
 
   return (
     <div style={panelStyle}>
-      <div style={{ color: "#c9a84c", marginBottom: 10, letterSpacing: 1 }}>
-        maren the smith — your gold: {p.gold}
-      </div>
+      <PanelChrome
+        title={`maren the smith — your gold: ${p.gold}`}
+        color="#c9a84c"
+        onClose={onClose}
+      />
 
       <div style={{ display: "flex", gap: 16 }}>
         {/* Wares */}
@@ -116,7 +121,7 @@ export function ShopPanel({
         {repairCost === 0 ? "gear is in good shape" : `repair all — ${repairCost}g`}
       </div>
       <div style={{ color: "#55503f", marginTop: 8, textAlign: "center" }}>
-        v to close · step on the blue ring to return below
+        v or esc to close · step on the blue ring to return below
       </div>
     </div>
   );

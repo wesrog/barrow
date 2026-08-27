@@ -1,5 +1,6 @@
 import { BASES } from "./items/bases";
 import type { Item } from "./items/generate";
+import type { Klass } from "./skills";
 
 export const INV_W = 10;
 export const INV_H = 4;
@@ -116,6 +117,16 @@ export const BASE_STATS = {
 
 export const LIFE_PER_LEVEL = 8;
 
+/** Life/mana pools per class: the warrior is the sturdy baseline, the witch
+ * trades life for the mana her spells run on. */
+export const CLASS_STATS: Record<
+  Klass,
+  { maxLife: number; maxMana: number; lifePerLevel: number; manaPerLevel: number }
+> = {
+  warrior: { maxLife: 100, maxMana: 30, lifePerLevel: LIFE_PER_LEVEL, manaPerLevel: 0 },
+  witch: { maxLife: 75, maxMana: 60, lifePerLevel: 5, manaPerLevel: 4 },
+};
+
 /** Total xp at which the player becomes `level`. */
 export function xpForLevel(level: number): number {
   const n = level - 1;
@@ -127,7 +138,8 @@ export function isBroken(item: Item): boolean {
   return item.durability !== undefined && item.durability.cur <= 0;
 }
 
-export function computeStats(eq: Equipment, level = 1): DerivedStats {
+export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior"): DerivedStats {
+  const cls = CLASS_STATS[klass];
   const weapon = eq.weapon && !isBroken(eq.weapon) ? eq.weapon : null;
   const weaponBase = weapon ? BASES[weapon.baseId]! : null;
   let dmgMin = weaponBase?.dmgMin ?? BASE_STATS.dmgMin;
@@ -135,8 +147,8 @@ export function computeStats(eq: Equipment, level = 1): DerivedStats {
   let dmgPct = 0;
   let attackRating: number = BASE_STATS.attackRating;
   let defense: number = BASE_STATS.defense;
-  let maxLife: number = BASE_STATS.maxLife + (level - 1) * LIFE_PER_LEVEL;
-  let maxMana: number = BASE_STATS.maxMana;
+  let maxLife: number = cls.maxLife + (level - 1) * cls.lifePerLevel;
+  let maxMana: number = cls.maxMana + (level - 1) * cls.manaPerLevel;
   let attackSpeedPct = 0;
   let moveSpeedPct = 0;
   let magicFind = 0;

@@ -8,6 +8,7 @@ import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
 import { ItemIcon } from "./ItemIcon";
+import { PanelChrome } from "./PanelChrome";
 
 const CELL = 32;
 
@@ -81,22 +82,24 @@ export function InventoryPanel({
   onEquip,
   onUnequip,
   onDrop,
+  onClose,
 }: {
   game: GameState;
   assets: GameAssets | null;
   onEquip: (entryId: number) => void;
   onUnequip: (slot: EquipSlot) => void;
   onDrop: (entryId: number) => void;
+  onClose: () => void;
 }) {
   const [hovered, setHovered] = useState<Item | null>(null);
   const p = localPlayer(game);
 
   return (
     <div style={panelStyle}>
-      <div style={{ color: "#8f8778", marginBottom: 8, letterSpacing: 1 }}>
-        inventory — dmg {p.dmgMin}–{p.dmgMax} · ar {p.attackRating} · def {p.defense} · mf{" "}
-        {p.magicFind}%
-      </div>
+      <PanelChrome
+        title={`inventory — dmg ${p.dmgMin}–${p.dmgMax} · ar ${p.attackRating} · def ${p.defense} · mf ${p.magicFind}%`}
+        onClose={onClose}
+      />
 
       {/* Character */}
       {assets && (
@@ -206,7 +209,7 @@ export function InventoryPanel({
           </>
         ) : (
           <div style={{ color: "#55503f" }}>
-            click to equip / unequip · right-click to drop · i to close
+            click to equip / unequip · right-click to drop · i or esc to close
           </div>
         )}
       </div>

@@ -1,8 +1,9 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
-import { SKILLS, type SkillId } from "../../sim/skills";
-import { zoneDepth, type GameState } from "../../sim/state";
+import { CLASS_SKILLS, SKILLS, type SkillId } from "../../sim/skills";
+import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
+import { inCamp } from "../../sim/map";
 
 const mono = "ui-monospace, monospace";
 
@@ -78,12 +79,16 @@ function Globe({
   );
 }
 
-const SKILL_KEYS: { id: SkillId; key: string; short: string }[] = [
-  { id: "cleave", key: "1", short: "clv" },
-  { id: "crush", key: "2", short: "crs" },
-  { id: "warcry", key: "3", short: "cry" },
-  { id: "leap", key: "4", short: "leap" },
-];
+const SKILL_SHORT: Record<SkillId, string> = {
+  cleave: "clv",
+  crush: "crs",
+  warcry: "cry",
+  leap: "leap",
+  firebolt: "bolt",
+  frostnova: "nova",
+  focus: "foc",
+  blink: "blnk",
+};
 
 export type HudAction = "inventory" | "skills" | "drink" | "portal" | "vendor";
 
@@ -127,7 +132,10 @@ export function BottomBar({
       <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
         {/* Skill hotbar */}
         <div style={{ display: "flex", gap: 5 }}>
-          {SKILL_KEYS.map(({ id, key, short }) => {
+          {CLASS_SKILLS(p.klass).map((def, i) => {
+            const id = def.id;
+            const key = String(i + 1);
+            const short = SKILL_SHORT[id];
             const rank = p.skills[id];
             const usable = rank > 0 && p.mana >= SKILLS[id].manaCost;
             return (
@@ -177,7 +185,12 @@ export function BottomBar({
             ))}
           </div>
           <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
-            {ACTION_BUTTONS.filter((b) => !b.townOnly || localPlayer(game).zoneId === "camp").map(
+            {ACTION_BUTTONS.filter(
+              (b) =>
+                !b.townOnly ||
+                (localPlayer(game).zoneId === "overworld" &&
+                  inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)),
+            ).map(
               ({ action, key, label }) => (
                 <button
                   key={action}
@@ -229,7 +242,12 @@ export function BottomBar({
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
           lvl {p.level} ·{" "}
-          {localPlayer(game).zoneId === "camp" ? "the camp" : `depth ${zoneDepth(localPlayer(game).zoneId)}`} ·{" "}
+          {localPlayer(game).zoneId === "overworld"
+            ? inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)
+              ? "the camp"
+              : "the moors"
+            : `depth ${zoneDepth(localPlayer(game).zoneId)}`}{" "}
+          ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>
           {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}
         </div>

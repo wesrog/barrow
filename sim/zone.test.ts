@@ -64,14 +64,14 @@ describe("new game reset", () => {
     stepSolo(state, {});
     // Death resolves to an immediate camp respawn — dead is never persistent.
     expect(player(state).dead).toBe(false);
-    expect(player(state).zoneId).toBe("camp");
+    expect(player(state).zoneId).toBe("overworld");
     expect(player(state).life).toBe(player(state).maxLife);
 
     stepSolo(state, { newGame: true });
     expect(player(state).dead).toBe(false);
     expect(player(state).life).toBe(player(state).maxLife);
-    expect(player(state).zoneId).toBe("camp");
-    expect(player(state).pos).toEqual(getZone(state, "camp").map.spawn);
+    expect(player(state).zoneId).toBe("overworld");
+    expect(player(state).pos).toEqual(getZone(state, "overworld").map.spawn);
     expect(player(state).xp).toBe(xpAfterKills); // character persists
     const fresh = getZone(state, "floor:1");
     expect(fresh.monsters.size).toBe(populated); // floor repopulated
@@ -86,18 +86,17 @@ describe("new game reset", () => {
     ensureFloor(state, 4);
     stepSolo(state, {});
     stepSolo(state, { newGame: true });
-    expect([...state.zones.keys()]).toEqual(["camp", "floor:1"]);
+    expect([...state.zones.keys()]).toEqual(["overworld", "floor:1"]);
     expect(getZone(state, "floor:1").monsters.size).toBe(populated);
     expect(player(state).dead).toBe(false);
   });
 });
 
 describe("zones", () => {
-  test("createGame builds camp and floor:1; player starts in camp", () => {
+  test("createGame builds the moors and floor:1; player starts on camp ground", () => {
     const g = soloGame(1);
-    expect([...g.zones.keys()]).toEqual(["camp", "floor:1"]);
-    expect(player(g).zoneId).toBe("camp");
-    expect(getZone(g, "camp").monsters.size).toBe(0);
+    expect([...g.zones.keys()]).toEqual(["overworld", "floor:1"]);
+    expect(player(g).zoneId).toBe("overworld");
     expect(getZone(g, "floor:1").monsters.size).toBeGreaterThan(0);
   });
 
@@ -121,7 +120,7 @@ describe("zones", () => {
 
   test("standing on the camp pad travels to floor:1; stairs go one deeper", () => {
     const g = soloGame(1);
-    const pad = getZone(g, "camp").map.markers.find((m) => m.ch === "P")!;
+    const pad = getZone(g, "overworld").map.markers.find((m) => m.ch === "P")!;
     player(g).pos = { x: pad.x, y: pad.y };
     stepSolo(g, {});
     expect(player(g).zoneId).toBe("floor:1");
@@ -138,14 +137,14 @@ describe("zones", () => {
     const first = [...getZone(g, "floor:1").monsters.keys()][0]!;
     getZone(g, "floor:1").monsters.delete(first);
     const count = getZone(g, "floor:1").monsters.size;
-    travel(g, player(g), "camp");
+    travel(g, player(g), "overworld");
     travel(g, player(g), "floor:1");
     expect(getZone(g, "floor:1").monsters.size).toBe(count);
   });
 
   test("empty zones are frozen: monsters there do not act", () => {
     const g = soloGame(1);
-    expect(player(g).zoneId).toBe("camp");
+    expect(player(g).zoneId).toBe("overworld");
     const before = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
     for (let i = 0; i < 200; i++) stepSolo(g, {});
     const after = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
@@ -153,7 +152,7 @@ describe("zones", () => {
   });
 
   test("zoneDepth", () => {
-    expect(zoneDepth("camp")).toBe(0);
+    expect(zoneDepth("overworld")).toBe(1);
     expect(zoneDepth(floorZone(4))).toBe(4);
   });
 });

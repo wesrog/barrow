@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mapFromStrings, isWalkable, hasLineOfSight } from "./map";
+import { mapFromStrings, isWalkable, hasLineOfSight, inCamp } from "./map";
 
 describe("mapFromStrings", () => {
   test("parses walkable floor, walls, and spawn point", () => {
@@ -53,5 +53,21 @@ describe("hasLineOfSight", () => {
     expect(hasLineOfSight(map, { x: 0.5, y: 1.5 }, { x: 4.5, y: 1.5 })).toBe(false);
     // diagonal across the wall corner is blocked too
     expect(hasLineOfSight(map, { x: 2.5, y: 0.5 }, { x: 2.5, y: 2.5 })).toBe(false);
+  });
+});
+
+describe("inCamp", () => {
+  test("maps without a camp rect have no camp anywhere", () => {
+    const map = mapFromStrings(["@...", "...."]);
+    expect(inCamp(map, { x: 1.5, y: 0.5 })).toBe(false);
+  });
+
+  test("positions inside the camp rect are in camp; outside are not", () => {
+    const map = mapFromStrings(["@...", "...."]);
+    map.camp = { x0: 0, y0: 0, x1: 2, y1: 2 };
+    expect(inCamp(map, { x: 0.5, y: 0.5 })).toBe(true);
+    expect(inCamp(map, { x: 1.9, y: 1.9 })).toBe(true);
+    expect(inCamp(map, { x: 2.1, y: 0.5 })).toBe(false);
+    expect(inCamp(map, { x: 0.5, y: 2.5 })).toBe(false);
   });
 });

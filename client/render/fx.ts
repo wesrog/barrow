@@ -18,6 +18,10 @@ export class Effects {
     dur: number;
   }[] = [];
   private shakeAmp = 0;
+  private flashing = new Map<
+    THREE.MeshStandardMaterial,
+    { emissive: number; intensity: number; until: number }
+  >();
   private particleGeo = new THREE.TetrahedronGeometry(0.055);
 
   constructor(private scene: THREE.Scene) {}
@@ -67,6 +71,14 @@ export class Effects {
       }
     }
 
+    for (const [mat, f] of this.flashing) {
+      if (now >= f.until) {
+        mat.emissive.setHex(f.emissive);
+        mat.emissiveIntensity = f.intensity;
+        this.flashing.delete(mat);
+      }
+    }
+
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i]!;
       const age = (now - pt.born) / pt.dur;
@@ -98,22 +110,24 @@ export class Effects {
 
   /** Briefly repaint every material in a group (hit flash), then restore. */
   flash(group: THREE.Object3D, color: number, ms = 90): void {
-    const originals: { mat: THREE.MeshStandardMaterial; emissive: number; intensity: number }[] = [];
+    const until = performance.now() + ms;
     group.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-        originals.push({
-          mat: obj.material,
-          emissive: obj.material.emissive.getHex(),
-          intensity: obj.material.emissiveIntensity,
-        });
-        obj.material.emissive.setHex(color);
-        obj.material.emissiveIntensity = 0.9;
-      }
-    });
-    this.tween(ms, () => {}, () => {
-      for (const o of originals) {
-        o.mat.emissive.setHex(o.emissive);
-        o.mat.emissiveIntensity = o.intensity;
+        const mat = obj.material;
+        // A material can be mid-flash already; keep the first-captured original
+        // and extend the deadline, or a later restore would re-paint the flash color.
+        const active = this.flashing.get(mat);
+        if (active) {
+          active.until = Math.max(active.until, until);
+        } else {
+          this.flashing.set(mat, {
+            emissive: mat.emissive.getHex(),
+            intensity: mat.emissiveIntensity,
+            until,
+          });
+        }
+        mat.emissive.setHex(color);
+        mat.emissiveIntensity = 0.9;
       }
     });
   }

@@ -1,7 +1,7 @@
 import { localId } from "../local";
 import { playerCss } from "../render/tints";
-import { zoneDepth, type GameState } from "../../sim/state";
-import { zoneName } from "../../sim/zone";
+import type { GameState } from "../../sim/state";
+import { zoneTitle } from "../../sim/zone";
 
 const mono = "ui-monospace, monospace";
 
@@ -53,7 +53,7 @@ export function PartyStrip({ game }: { game: GameState }) {
               <div style={{ fontSize: 11, color: sameZone ? "#e8dcc0" : "#8f8778" }}>
                 {`P${p.id + 1}`}{" "}
                 <span style={{ color: sameZone ? "#7fb8c9" : "#5f6a6d" }}>
-                  {zoneName(zoneDepth(p.zoneId))}
+                  {zoneTitle(p.zoneId)}
                 </span>
               </div>
               <div

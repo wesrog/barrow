@@ -9,11 +9,11 @@ const join2 = () => {
   return g;
 };
 
-test("two players join in camp with starter blades", () => {
+test("two players join on camp ground with starter blades", () => {
   const g = join2();
   expect([...g.players.keys()]).toEqual([0, 1]);
   for (const p of g.players.values()) {
-    expect(p.zoneId).toBe("camp");
+    expect(p.zoneId).toBe("overworld");
     expect(p.equipment.weapon?.baseId).toBe("rusted_blade");
   }
 });

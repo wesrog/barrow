@@ -1,16 +1,19 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
-import { SKILLS, type SkillId } from "../../sim/skills";
+import { CLASS_SKILLS, type SkillId } from "../../sim/skills";
 import type { GameState } from "../../sim/state";
+import { PanelChrome } from "./PanelChrome";
 
 const DESCRIPTIONS: Record<SkillId, string> = {
   cleave: "sweep every enemy in reach · +25%/rank · +10% per warcry rank",
   crush: "guaranteed heavy blow · 200% +50%/rank",
   warcry: "battle shout, +damage for 20s · also empowers cleave",
   leap: "jump to a spot, stunning enemies where you land",
+  firebolt: "hurl fire at a distant enemy · never misses · +10% per focus rank",
+  frostnova: "icy burst around you, chilling everything it touches",
+  focus: "gather your will, +spell damage for 20s · also empowers firebolt",
+  blink: "step through shadow to a spot you can see",
 };
-
-const HOTKEYS: Record<SkillId, string> = { cleave: "1", crush: "2", warcry: "3", leap: "4" };
 
 const panelStyle: CSSProperties = {
   position: "absolute",
@@ -32,18 +35,22 @@ const panelStyle: CSSProperties = {
 export function SkillPanel({
   game,
   onSpend,
+  onClose,
 }: {
   game: GameState;
   onSpend: (skill: SkillId) => void;
+  onClose: () => void;
 }) {
   const p = localPlayer(game);
   return (
     <div style={panelStyle}>
-      <div style={{ color: "#8f8778", marginBottom: 8, letterSpacing: 1 }}>
-        skills — level {p.level} · {p.skillPoints} point{p.skillPoints === 1 ? "" : "s"} to spend
-      </div>
-      {Object.values(SKILLS).map((def) => {
+      <PanelChrome
+        title={`skills — level ${p.level} · ${p.skillPoints} point${p.skillPoints === 1 ? "" : "s"} to spend`}
+        onClose={onClose}
+      />
+      {CLASS_SKILLS(p.klass).map((def, i) => {
         const rank = p.skills[def.id];
+        const hotkey = String(i + 1);
         const locked = p.level < def.levelReq;
         const canSpend = !locked && p.skillPoints > 0;
         return (
@@ -63,7 +70,7 @@ export function SkillPanel({
           >
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span style={{ color: rank > 0 ? "#e8dcc0" : "#948c7d" }}>
-                [{HOTKEYS[def.id]}] {def.name}
+                [{hotkey}] {def.name}
               </span>
               <span style={{ color: "#8f8778" }}>
                 {locked ? `lvl ${def.levelReq}` : `rank ${rank}`} · {def.manaCost} mana
@@ -73,7 +80,7 @@ export function SkillPanel({
           </div>
         );
       })}
-      <div style={{ color: "#55503f", marginTop: 6 }}>s to close · 1–4 to cast</div>
+      <div style={{ color: "#55503f", marginTop: 6 }}>s or esc to close · 1–4 to cast</div>
     </div>
   );
 }

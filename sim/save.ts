@@ -1,12 +1,16 @@
-import type { Equipment, Inventory } from "./character";
+import { createEquipment, createInventory, type Equipment, type Inventory } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
-import type { SkillId } from "./skills";
+import { rollDurability } from "./items/generate";
+import type { Klass, SkillId } from "./skills";
 import { zoneOf, type GameState, type PlayerId } from "./state";
 
 const VERSION = 1;
 
 export interface CharacterSave {
   v: number;
+  /** Missing on saves from before characters had an identity. */
+  name?: string;
+  klass?: Klass;
   level: number;
   xp: number;
   skillPoints: number;
@@ -22,6 +26,8 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
   if (!p) return "";
   const save: CharacterSave = {
     v: VERSION,
+    name: p.name,
+    klass: p.klass,
     level: p.level,
     xp: p.xp,
     skillPoints: p.skillPoints,
@@ -34,7 +40,51 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
   return JSON.stringify(save);
 }
 
-const SKILL_IDS: SkillId[] = ["cleave", "crush", "warcry", "leap"];
+/** Each class's starting weapon — bare fists are for corpses. */
+const STARTING_WEAPON: Record<Klass, { baseId: string; name: string }> = {
+  warrior: { baseId: "rusted_blade", name: "Rusted Blade" },
+  witch: { baseId: "gnarled_staff", name: "Gnarled Staff" },
+};
+
+/** A brand-new level-1 character of the given class, as a save payload. */
+export function newCharacterRaw(name: string, klass: Klass): string {
+  const equipment = createEquipment();
+  const weapon = STARTING_WEAPON[klass];
+  equipment.weapon = {
+    baseId: weapon.baseId,
+    rarity: "normal",
+    name: weapon.name,
+    affixIds: [],
+    mods: [],
+    ilvl: 1,
+    durability: rollDurability(weapon.baseId),
+  };
+  const save: CharacterSave = {
+    v: VERSION,
+    name,
+    klass,
+    level: 1,
+    xp: 0,
+    skillPoints: 0,
+    skills: Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>,
+    belt: 0,
+    gold: 0,
+    inventory: createInventory(),
+    equipment,
+  };
+  return JSON.stringify(save);
+}
+
+const SKILL_IDS: SkillId[] = [
+  "cleave",
+  "crush",
+  "warcry",
+  "leap",
+  "firebolt",
+  "frostnova",
+  "focus",
+  "blink",
+];
 
 /** Every known skill rank as a finite number, or null if the saved shape is
  * unusable. Ranks a save omits (an older save, a newer skill) come back as 0 —
@@ -76,6 +126,8 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   const skills = normalizeSkills(save.skills);
   if (!skills) return false;
 
+  p.name = typeof save.name === "string" && save.name.trim() ? save.name : "Wanderer";
+  p.klass = save.klass === "witch" ? "witch" : "warrior";
   p.level = save.level;
   p.xp = save.xp;
   p.skillPoints = save.skillPoints;

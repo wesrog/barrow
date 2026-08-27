@@ -130,7 +130,7 @@ describe("player attacking", () => {
     spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
     for (let i = 0; i < 200; i++) stepSolo(game, {});
     expect(player(game).dead).toBe(false);
-    expect(player(game).zoneId).toBe("camp");
+    expect(player(game).zoneId).toBe("overworld");
     expect(player(game).life).toBe(player(game).maxLife);
   });
 });

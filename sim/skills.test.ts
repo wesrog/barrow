@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
-import { SKILLS, damageMultiplier, cleaveMultiplier } from "./skills";
+import { LEAP_TICKS, SKILLS, damageMultiplier, cleaveMultiplier } from "./skills";
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
 import type { GameState } from "./state";
 
@@ -108,6 +108,63 @@ describe("crush", () => {
     expect(player(state).mana).toBe(manaBefore);
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
   });
+
+  test("with no target given, strikes the nearest monster in reach", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "crush" });
+    const near = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
+    spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
+    stepSolo(state, { cast: { skill: "crush" } });
+    const hit = state.events.find((e) => e.type === "monster_hit");
+    expect(hit).toBeDefined();
+    expect((hit as any).id).toBe(near.id);
+  });
+
+  test("an out-of-reach target falls back to the nearest monster in reach", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "crush" });
+    const near = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
+    const far = spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
+    stepSolo(state, { cast: { skill: "crush", target: far.id } });
+    const hit = state.events.find((e) => e.type === "monster_hit");
+    expect(hit).toBeDefined();
+    expect((hit as any).id).toBe(near.id);
+  });
+
+  test("with nothing in reach, spends no mana", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "crush" });
+    const manaBefore = player(state).mana;
+    stepSolo(state, { cast: { skill: "crush" } });
+    expect(player(state).mana).toBe(manaBefore);
+    expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
+  });
+});
+
+describe("cast aim point", () => {
+  test("crush's cast event carries the struck monster's position", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "crush" });
+    const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
+    stepSolo(state, { cast: { skill: "crush" } });
+    const cast = state.events.find((e) => e.type === "skill_cast") as any;
+    expect(cast.at).toEqual(m.pos);
+  });
+
+  test("cleave's cast event aims at the nearest monster struck", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "cleave" });
+    const near = spawnAt(state, "skitter", { x: 1.9, y: 1.5 });
+    spawnAt(state, "skitter", { x: 1.5, y: 2.9 });
+    stepSolo(state, { cast: { skill: "cleave" } });
+    const cast = state.events.find((e) => e.type === "skill_cast") as any;
+    expect(cast.at).toEqual(near.pos);
+  });
 });
 
 describe("warcry", () => {
@@ -124,20 +181,51 @@ describe("warcry", () => {
 });
 
 describe("leap", () => {
-  test("moves the player to the target cell and stuns nearby monsters", () => {
+  test("flies across ticks instead of teleporting, landing on the target cell", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
     stepSolo(state, { spendSkill: "leap" });
-    // Close enough to stun, far enough that body-blocking doesn't shove anyone.
-    const near = spawnAt(state, "skitter", { x: 7.5, y: 2.8 });
-    const posBefore = { ...near.pos };
     stepSolo(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
+    // Airborne after the cast tick: on the way, but nowhere near the landing cell.
+    expect(player(state).leap).not.toBeNull();
+    expect(Math.hypot(player(state).pos.x - 7.5, player(state).pos.y - 3.5)).toBeGreaterThan(1);
+    let landed = false;
+    for (let i = 0; i < LEAP_TICKS; i++) {
+      stepSolo(state, {});
+      if (state.events.some((e) => e.type === "leap_land")) landed = true;
+    }
+    expect(landed).toBe(true);
+    expect(player(state).leap).toBeNull();
     expect(player(state).pos.x).toBeCloseTo(7.5);
     expect(player(state).pos.y).toBeCloseTo(3.5);
+  });
+
+  test("stuns monsters around the landing spot on arrival, not at takeoff", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "leap" });
+    // A short hop keeps the chasing skitter inside the stun radius at touchdown.
+    const near = spawnAt(state, "skitter", { x: 2.5, y: 2.3 });
+    stepSolo(state, { cast: { skill: "leap", at: { x: 2.5, y: 1.5 } } });
+    expect(near.stunnedUntil).toBeLessThanOrEqual(state.tick);
+    while (player(state).leap) stepSolo(state, {});
     expect(near.stunnedUntil).toBeGreaterThan(state.tick);
     // Stunned monsters neither move nor swing
+    const posAtLanding = { ...near.pos };
     for (let i = 0; i < 10; i++) stepSolo(state, {});
-    expect(near.pos).toEqual(posBefore);
+    expect(near.pos).toEqual(posAtLanding);
+  });
+
+  test("move input mid-flight is ignored", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "leap" });
+    stepSolo(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
+    stepSolo(state, { moveTo: { x: 2.5, y: 1.5 } });
+    expect(player(state).path).toEqual([]);
+    while (player(state).leap) stepSolo(state, {});
+    expect(player(state).pos.x).toBeCloseTo(7.5);
+    expect(player(state).pos.y).toBeCloseTo(3.5);
   });
 
   test("cannot leap into a wall or across the map", () => {

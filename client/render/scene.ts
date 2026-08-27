@@ -7,6 +7,8 @@ import {
   type PlayerId,
   type SimEvent,
 } from "../../sim/state";
+import { MONSTER_TYPES } from "../../sim/monsters";
+import { zoneTitle } from "../../sim/zone";
 import { localId, localPlayer } from "../local";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
@@ -29,6 +31,7 @@ export type PickResult =
   | { kind: "portal"; id: number }
   | { kind: "corpse"; id: number }
   | { kind: "vendor" }
+  | { kind: "healer" }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -61,6 +64,7 @@ export function createScene(
   map: ZoneMap,
   assets: GameAssets,
   onItemClick?: (id: number) => void,
+  outdoor = false,
 ): SceneHandle {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -76,8 +80,12 @@ export function createScene(
   mount.appendChild(overlay);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a0c);
-  scene.fog = new THREE.Fog(0x0a0a0c, 20, 40);
+  const dbg = window as unknown as { __scenes: THREE.Scene[] };
+  (dbg.__scenes ??= []).push(scene); // TEMP debug
+  // The moors sit under an open night sky; the crypt under dead black.
+  const bg = outdoor ? 0x0c1310 : 0x0a0a0c;
+  scene.background = new THREE.Color(bg);
+  scene.fog = outdoor ? new THREE.Fog(bg, 24, 52) : new THREE.Fog(bg, 20, 40);
   const fx = new Effects(scene);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
@@ -98,8 +106,8 @@ export function createScene(
   window.addEventListener("resize", resize);
 
   // --- Lights ---
-  scene.add(new THREE.AmbientLight(0x6a6a80, 0.5));
-  const moon = new THREE.DirectionalLight(0xb8c4e0, 1.1);
+  scene.add(new THREE.AmbientLight(outdoor ? 0x70806e : 0x6a6a80, outdoor ? 0.65 : 0.5));
+  const moon = new THREE.DirectionalLight(0xb8c4e0, outdoor ? 1.3 : 1.1);
   moon.position.set(18, 30, 8);
   moon.castShadow = true;
   moon.shadow.mapSize.set(2048, 2048);
@@ -121,7 +129,7 @@ export function createScene(
   const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
 
   // Dark cores fill wall regions (occlusion + silhouette); facades add the brick.
-  {
+  if (!outdoor) {
     const coreGeo = new THREE.BoxGeometry(1, 1.5, 1);
     const cores: THREE.Matrix4[] = [];
     const m = new THREE.Matrix4();
@@ -170,27 +178,94 @@ export function createScene(
   const stairCells = new Set(
     map.markers.filter((m) => m.ch === ">").map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
   );
-  for (let y = 0; y < map.height; y++) {
-    for (let x = 0; x < map.width; x++) {
-      const h = hash(x, y);
-      if (isWalkable(map, x, y)) {
-        if (stairCells.has(`${x},${y}`)) continue;
-        // Stone floor tile, occasionally broken or weedy
-        const roll = h % 23;
-        const floorPiece =
-          roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
-        placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE);
-      } else {
-        // Brick facades on every edge that faces open floor
-        const wallRoll = h % 10;
-        const piece =
-          wallRoll < 7 ? assets.dungeon.wall : wallRoll < 9 ? assets.dungeon.wall_cracked : assets.dungeon.wall_broken;
-        if (isWalkable(map, x, y + 1)) placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE);
-        if (isWalkable(map, x, y - 1)) placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE);
-        if (isWalkable(map, x + 1, y)) placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE);
-        if (isWalkable(map, x - 1, y)) placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE);
+  if (!outdoor) {
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const h = hash(x, y);
+        if (isWalkable(map, x, y)) {
+          if (stairCells.has(`${x},${y}`)) continue;
+          // Stone floor tile, occasionally broken or weedy
+          const roll = h % 23;
+          const floorPiece =
+            roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
+          placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE);
+        } else {
+          // Brick facades on every edge that faces open floor
+          const wallRoll = h % 10;
+          const piece =
+            wallRoll < 7 ? assets.dungeon.wall : wallRoll < 9 ? assets.dungeon.wall_cracked : assets.dungeon.wall_broken;
+          if (isWalkable(map, x, y + 1)) placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE);
+          if (isWalkable(map, x, y - 1)) placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE);
+          if (isWalkable(map, x + 1, y)) placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE);
+          if (isWalkable(map, x - 1, y)) placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE);
+        }
       }
     }
+  } else {
+    // --- The moors: one heath plane, then instanced crags, dead pines, tufts ---
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(map.width, map.height),
+      flatMat(0x1f2a1b, 1),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(map.width / 2, 0, map.height / 2);
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const rockMats: THREE.Matrix4[] = [];
+    const pineMats: THREE.Matrix4[] = [];
+    const trunkMats: THREE.Matrix4[] = [];
+    const tuftMats: THREE.Matrix4[] = [];
+    const m = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const eul = new THREE.Euler();
+    const scl = new THREE.Vector3();
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        const h = hash(x, y);
+        const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
+        const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
+        if (!isWalkable(map, x, y)) {
+          if (stairCells.has(`${x},${y}`)) continue;
+          const border = x === 0 || y === 0 || x === map.width - 1 || y === map.height - 1;
+          if (border || h % 5 < 3) {
+            const s = 0.6 + ((h >> 6) % 45) / 100;
+            eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
+            m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
+            rockMats.push(m.clone());
+          } else {
+            const s = 0.75 + ((h >> 6) % 55) / 100;
+            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+            m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
+            pineMats.push(m.clone());
+            m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
+            trunkMats.push(m.clone());
+          }
+        } else if (h % 11 === 0) {
+          quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+          const s = 0.7 + ((h >> 7) % 60) / 100;
+          m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
+          tuftMats.push(m.clone());
+        }
+      }
+    }
+    const addInstanced = (
+      geo: THREE.BufferGeometry,
+      color: number,
+      mats: THREE.Matrix4[],
+      shadows: boolean,
+    ) => {
+      const mesh = new THREE.InstancedMesh(geo, flatMat(color, 1), mats.length);
+      mats.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+      mesh.castShadow = shadows;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    };
+    addInstanced(new THREE.IcosahedronGeometry(0.62, 0), 0x3c4046, rockMats, true);
+    addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), 0x17231a, pineMats, true);
+    addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), 0x2c2018, trunkMats, false);
+    addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), 0x2a381f, tuftMats, false);
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---
@@ -236,18 +311,21 @@ export function createScene(
 
   const placePieceLater: (() => void)[] = [];
 
-  // --- Portal pad (town): a slowly turning arcane ring ---
-  let portalRing: THREE.Mesh | null = null;
+  // --- Travel pads: slowly turning arcane rings. P descends, O/C pass the moor gate ---
+  const PAD_COLORS: Record<string, number> = { P: 0x7fb8f5 };
+  const padRings: THREE.Mesh[] = [];
   for (const marker of map.markers) {
-    if (marker.ch !== "P") continue;
-    portalRing = new THREE.Mesh(
+    const color = PAD_COLORS[marker.ch];
+    if (color === undefined) continue;
+    const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.35, 0.55, 6),
-      new THREE.MeshBasicMaterial({ color: 0x7fb8f5, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
     );
-    portalRing.rotation.x = -Math.PI / 2;
-    portalRing.position.set(marker.x, 0.08, marker.y);
-    scene.add(portalRing);
-    const glow = new THREE.PointLight(0x7fb8f5, 2.5, 5, 1.8);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(marker.x, 0.08, marker.y);
+    scene.add(ring);
+    padRings.push(ring);
+    const glow = new THREE.PointLight(color, 2.5, 5, 1.8);
     glow.position.set(marker.x, 0.8, marker.y);
     scene.add(glow);
   }
@@ -266,6 +344,18 @@ export function createScene(
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.chest, marker.x + 0.1, marker.y + 0.9, Math.PI, { x: 0.35, y: 0.35, z: 0.35 });
     });
+  }
+  // --- Healer (town): a pale knight at a candlelit shrine ---
+  let healerRig: Rig | null = null;
+  for (const marker of map.markers) {
+    if (marker.ch !== "H") continue;
+    healerRig = makeMonsterModelRig(assets, "__healer__") as Rig;
+    scene.add(healerRig.group);
+    healerRig.group.position.set(marker.x, 0, marker.y);
+    healerRig.group.rotation.y = -Math.PI * 0.65;
+    const shrineGlow = new THREE.PointLight(0xf5dfa0, 1.8, 4, 1.8);
+    shrineGlow.position.set(marker.x, 1.1, marker.y);
+    scene.add(shrineGlow);
   }
   for (const fn of placePieceLater) fn();
 
@@ -431,6 +521,29 @@ export function createScene(
   };
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
+  // --- Hover tooltip: name + what it is, following the cursor ---
+  const NPC_INFO = {
+    vendor: { name: "Bram the Peddler", role: "Vendor — trades and repairs gear" },
+    healer: { name: "Sister Vess", role: "Healer — mends wounds for free" },
+  } as const;
+  // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
+  const AREA_INFO: Record<string, { name: string; role: string }> = {
+    ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
+    P: { name: "Travel Pad", role: `Down to ${zoneTitle("floor:1")}` },
+  };
+  const areaIndicators = map.markers
+    .filter((m) => m.ch in AREA_INFO)
+    .map((m) => ({ pos: { x: m.x, y: m.y }, ...AREA_INFO[m.ch]! }));
+  const tooltip = document.createElement("div");
+  tooltip.style.cssText =
+    "position:absolute;display:none;transform:translate(-50%,-130%);background:rgba(8,8,10,.82);padding:3px 8px;white-space:nowrap;text-align:center;text-shadow:0 1px 2px #000;border:1px solid rgba(200,190,160,.25);";
+  const tooltipName = document.createElement("div");
+  tooltipName.style.cssText = "color:#e8dfc8;font-size:12px;";
+  const tooltipRole = document.createElement("div");
+  tooltipRole.style.cssText = "color:#9a917c;font-size:10.5px;";
+  tooltip.append(tooltipName, tooltipRole);
+  overlay.appendChild(tooltip);
+
   // --- Hover highlight: brighten the rig under the cursor ---
   // Keyed by kind:id — monster 3 and portal 3 are different things.
   let hoveredKey: string | null = null;
@@ -569,7 +682,17 @@ export function createScene(
         const x = from.x + (p.pos.x - from.x) * alpha;
         const y = from.y + (p.pos.y - from.y) * alpha;
         const group = entry.rig.group;
-        group.position.set(x + entry.fxOffset.x, 0, y + entry.fxOffset.z);
+        // Mid-leap the sim slides the player level with the ground; the arc is ours.
+        let airY = 0;
+        if (p.leap) {
+          const total = Math.hypot(p.leap.to.x - p.leap.from.x, p.leap.to.y - p.leap.from.y);
+          if (total > 1e-6) {
+            const t = Math.min(1, Math.hypot(x - p.leap.from.x, y - p.leap.from.y) / total);
+            const peak = Math.min(2.2, 0.6 + 0.18 * total);
+            airY = peak * 4 * t * (1 - t);
+          }
+        }
+        group.position.set(x + entry.fxOffset.x, airY, y + entry.fxOffset.z);
 
         const dx = p.pos.x - from.x;
         const dy = p.pos.y - from.y;
@@ -817,8 +940,9 @@ export function createScene(
       }
 
       // Town dressing: the portal ring turns, the vendor idles
-      if (portalRing) portalRing.rotation.z = performance.now() / 1400;
+      for (const [i, ring] of padRings.entries()) ring.rotation.z = performance.now() / 1400 + i;
       vendorRig?.animate(frameNow, 0, 0);
+      healerRig?.animate(frameNow, 0, 0);
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
       if (zoneOf(state, me).corpses.length < corpseCount) {
@@ -949,6 +1073,10 @@ export function createScene(
         const vendorHits = raycaster.intersectObject(vendorRig.group, true);
         if (vendorHits.length > 0) return { kind: "vendor" };
       }
+      if (healerRig) {
+        const healerHits = raycaster.intersectObject(healerRig.group, true);
+        if (healerHits.length > 0) return { kind: "healer" };
+      }
       const breakableGroups: THREE.Object3D[] = [];
       for (const g of breakableVisuals.values()) breakableGroups.push(g);
       const breakableHits = raycaster.intersectObjects(breakableGroups, true);
@@ -992,6 +1120,41 @@ export function createScene(
       }
       renderer.domElement.style.cursor =
         picked && picked.kind !== "ground" ? "pointer" : "default";
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const px = clientX - rect.left;
+      const py = clientY - rect.top;
+      let tip: { name: string; role: string } | null = null;
+      if (picked?.kind === "vendor" || picked?.kind === "healer") {
+        tip = NPC_INFO[picked.kind];
+      } else if (picked?.kind === "monster") {
+        const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
+        const type = m && MONSTER_TYPES[m.typeId];
+        if (m && type) tip = { name: type.name, role: `Monster — level ${m.mlvl}` };
+      } else if (picked?.kind === "portal") {
+        const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
+        if (portal) tip = { name: "Town Portal", role: `To ${zoneTitle(portal.link.zone)}` };
+      } else if (!picked || picked.kind === "ground") {
+        // Stairs, pads, and gates are flat rings — match by cursor proximity.
+        let bestD = 22; // px
+        for (const ind of areaIndicators) {
+          const at = worldToScreen(ind.pos, 0.3);
+          const d = Math.hypot(at.x - px, at.y - py);
+          if (d < bestD) {
+            bestD = d;
+            tip = ind;
+          }
+        }
+      }
+      if (tip) {
+        tooltipName.textContent = tip.name;
+        tooltipRole.textContent = tip.role;
+        tooltip.style.left = `${px}px`;
+        tooltip.style.top = `${py}px`;
+        tooltip.style.display = "block";
+      } else {
+        tooltip.style.display = "none";
+      }
     },
 
     handleEvent(event, state) {
@@ -1126,7 +1289,15 @@ export function createScene(
           break;
         }
         case "skill_cast": {
-          const caster = heroOf(event.playerId)?.rig;
+          const casterEntry = heroOf(event.playerId);
+          const caster = casterEntry?.rig;
+          // Face the cast's aim point — the swing should never land behind you.
+          const casterPos = state.players.get(event.playerId)?.pos;
+          if (casterEntry && casterPos && event.at) {
+            const dx = event.at.x - casterPos.x;
+            const dy = event.at.y - casterPos.y;
+            if (dx * dx + dy * dy > 1e-6) casterEntry.targetYaw = Math.atan2(dx, dy);
+          }
           // Only the local hero's casts rattle the camera.
           const shake = (amount: number) => {
             if (event.playerId === localId()) fx.shake(amount);
@@ -1141,13 +1312,33 @@ export function createScene(
           } else if (event.skill === "leap") {
             // The leap's own motion spike must not cancel its jump clip.
             caster?.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
-            ring(event.pos, 1.6, 0x8a8478, 260);
-            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
-            shake(0.18);
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6); // takeoff kick-up
           } else if (event.skill === "crush") {
             caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
             shake(0.12);
+          } else if (event.skill === "firebolt") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            if (event.at) fx.burst(event.at.x, 0.4, event.at.y, 0xe08a3c, 12, 2.4);
+            shake(0.06);
+          } else if (event.skill === "frostnova") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            ring(event.pos, 2.5, 0x9ad8e8, 320);
+            shake(0.1);
+          } else if (event.skill === "focus") {
+            caster?.oneShot("Cheer", { timeScale: 1.4 });
+            ring(event.pos, 2.2, 0xb08ad1, 500);
+          } else if (event.skill === "blink") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6, cancelOnMove: false });
+            ring(event.pos, 1.4, 0xb08ad1, 240);
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0xb08ad1, 10, 2.0);
+            shake(0.1);
           }
+          break;
+        }
+        case "leap_land": {
+          ring(event.pos, 1.6, 0x8a8478, 260);
+          fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 12, 2.4);
+          if (event.playerId === localId()) fx.shake(0.18);
           break;
         }
       }

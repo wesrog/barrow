@@ -95,6 +95,13 @@ export interface CharacterInstance {
   handSlotL: THREE.Object3D | null;
 }
 
+/** GLTFLoader strips the characters [].:/ from node names (reserved for
+ * animation track syntax), so the authored "handslot.r" loads as "handslotr".
+ * Look nodes up by what the loader actually named them. */
+export function findNode(root: THREE.Object3D, name: string): THREE.Object3D | null {
+  return root.getObjectByName(name.replace(/\s/g, "_").replace(/[[\].:/]/g, "")) ?? null;
+}
+
 /** Clone a rigged character (SkeletonUtils keeps bones/skin working). */
 export function instantiate(gltf: GLTF): CharacterInstance {
   const group = cloneSkeleton(gltf.scene) as THREE.Group;
@@ -114,7 +121,7 @@ export function instantiate(gltf: GLTF): CharacterInstance {
     group,
     mixer,
     actions,
-    handSlotR: group.getObjectByName("handslot.r") ?? null,
-    handSlotL: group.getObjectByName("handslot.l") ?? null,
+    handSlotR: findNode(group, "handslot.r"),
+    handSlotL: findNode(group, "handslot.l"),
   };
 }

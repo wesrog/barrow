@@ -17,6 +17,15 @@ export interface ZoneMap {
   spawn: Vec;
   /** Non-floor marker characters (monster spawns etc.), at cell centers. */
   markers: MapMarker[];
+  /** Safe-ground rectangle (half-open, in cells), if this map holds the camp. */
+  camp?: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/** Is this position on the map's safe camp ground? */
+export function inCamp(map: ZoneMap, pos: Vec): boolean {
+  const c = map.camp;
+  if (!c) return false;
+  return pos.x >= c.x0 && pos.x < c.x1 && pos.y >= c.y0 && pos.y < c.y1;
 }
 
 /**

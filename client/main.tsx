@@ -2,10 +2,11 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
 import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { inCamp } from "../sim/map";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
-import type { SkillId } from "../sim/skills";
+import { CLASS_SKILLS } from "../sim/skills";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
@@ -24,6 +25,12 @@ import { Reveal } from "./ui/Reveal";
 const TICK_MS = 1000 / TICK_RATE;
 
 let nextToastId = 1;
+
+/** Is the local player standing on the camp's safe ground? */
+function onCampGround(game: GameState): boolean {
+  const p = localPlayer(game);
+  return p.zoneId === "overworld" && inCamp(zoneOf(game, p).map, p.pos);
+}
 
 function Game({
   driver,
@@ -85,7 +92,13 @@ function Game({
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
       };
-      let scene = createScene(mount, zoneOf(game, localPlayer(game)).map, assets, onItemClick);
+      let scene = createScene(
+        mount,
+        zoneOf(game, localPlayer(game)).map,
+        assets,
+        onItemClick,
+        localPlayer(game).zoneId === "overworld",
+      );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
     let pending: PlayerInput = {};
@@ -128,6 +141,9 @@ function Game({
       } else if (picked.kind === "vendor" && allowAttack) {
         pending.talkVendor = true;
         delete pending.moveTo;
+      } else if (picked.kind === "healer" && allowAttack) {
+        pending.talkHealer = true;
+        delete pending.moveTo;
       } else if (picked.kind === "portal" && allowAttack) {
         pending.usePortal = picked.id;
         delete pending.moveTo;
@@ -155,22 +171,32 @@ function Game({
     const onPointerUp = () => {
       mouseDown = false;
     };
-    const castAtCursor = (skill: SkillId) => {
+    // Hotkeys 1–4 map to the local class's skills in hotbar order; each
+    // skill's targeting mode decides what the cursor contributes.
+    const castSlot = (slot: number) => {
+      const def = CLASS_SKILLS(localPlayer(game).klass)[slot];
+      if (!def) return;
       const input = uiInputRef.current;
-      if (skill === "warcry" || skill === "cleave") {
-        input.cast = { skill };
+      if (def.targeting === "none") {
+        input.cast = { skill: def.id };
         return;
       }
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
-      if (skill === "crush") {
-        if (picked?.kind === "monster") input.cast = { skill, target: picked.id };
-      } else if (skill === "leap") {
-        if (picked?.kind === "ground") input.cast = { skill, at: picked.world };
+      if (def.targeting === "target") {
+        // The sim auto-targets whatever is in reach; the pick is only a hint.
+        input.cast = { skill: def.id, target: picked?.kind === "monster" ? picked.id : undefined };
+      } else if (picked?.kind === "ground") {
+        input.cast = { skill: def.id, at: picked.world };
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "i") setInvOpen((open) => !open);
+      if (e.key === "Escape") {
+        setInvOpen(false);
+        setSkillsOpen(false);
+        setShopOpen(false);
+      }
+      else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
       else if (e.key === "q") uiInputRef.current.drink = true;
       else if (e.key === "n") uiInputRef.current.newGame = true;
@@ -181,10 +207,10 @@ function Game({
         wipeStorage();
         window.location.reload();
       }
-      else if (e.key === "1") castAtCursor("cleave");
-      else if (e.key === "2") castAtCursor("crush");
-      else if (e.key === "3") castAtCursor("warcry");
-      else if (e.key === "4") castAtCursor("leap");
+      else if (e.key === "1") castSlot(0);
+      else if (e.key === "2") castSlot(1);
+      else if (e.key === "3") castSlot(2);
+      else if (e.key === "4") castSlot(3);
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
@@ -230,7 +256,11 @@ function Game({
             case "player_died": {
               const depth = zoneDepth(e.zone);
               pushToast(
-                depth > 0 ? `P${e.playerId + 1} fell on floor ${depth}` : `P${e.playerId + 1} died`,
+                e.zone === "overworld"
+                  ? `P${e.playerId + 1} fell in the moors`
+                  : depth > 0
+                    ? `P${e.playerId + 1} fell on floor ${depth}`
+                    : `P${e.playerId + 1} died`,
               );
               break;
             }
@@ -291,10 +321,18 @@ function Game({
               break;
             case "traveled":
               play("portal");
-              if (e.to !== "camp") setShopOpen(false);
+              if (e.to !== "overworld") setShopOpen(false);
               break;
             case "shop_opened":
               setShopOpen(true);
+              break;
+            case "healed":
+              scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
+              play("potion");
+              break;
+            case "inventory_full":
+              scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
+              play("drop");
               break;
             case "item_broke":
               scene.addDamageNumber(localPlayer(game).pos, `${e.name} broke!`, "#e05252");
@@ -308,6 +346,9 @@ function Game({
             case "sold":
               play("coin");
               break;
+            case "leap_land":
+              play("leapland");
+              break;
             case "skill_cast":
               if (e.skill === "warcry") {
                 scene.addDamageNumber(localPlayer(game).pos, "warcry!", "#9ad1f5");
@@ -315,6 +356,13 @@ function Game({
               } else if (e.skill === "cleave") play("cleave");
               else if (e.skill === "crush") play("crush");
               else if (e.skill === "leap") play("leap");
+              else if (e.skill === "firebolt") play("spit");
+              else if (e.skill === "frostnova") play("cleave");
+              else if (e.skill === "blink") play("leap");
+              else if (e.skill === "focus") {
+                scene.addDamageNumber(localPlayer(game).pos, "focus!", "#b08ad1");
+                play("warcry");
+              }
               break;
         }
       }
@@ -369,7 +417,13 @@ function Game({
       const currentMap = zoneOf(game, localPlayer(game)).map;
       if (currentMap !== sceneMap) {
         scene.dispose();
-        scene = createScene(mount, currentMap, assets, onItemClick);
+        scene = createScene(
+          mount,
+          currentMap,
+          assets,
+          onItemClick,
+          localPlayer(game).zoneId === "overworld",
+        );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
       }
@@ -412,7 +466,8 @@ function Game({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontFamily: "ui-monospace, monospace",
+            fontFamily: '"IM Fell English", "Times New Roman", serif',
+            fontStyle: "italic",
             color: "#8f8778",
             letterSpacing: 2,
           }}
@@ -502,12 +557,8 @@ function Game({
         />
       )}
       {gameRef.current && <MiniMap game={gameRef.current} />}
-      <Reveal
-        open={
-          shopOpen && gameRef.current !== null && localPlayer(gameRef.current).zoneId === "camp"
-        }
-      >
-        {gameRef.current && localPlayer(gameRef.current).zoneId === "camp" && (
+      <Reveal open={shopOpen && gameRef.current !== null && onCampGround(gameRef.current)}>
+        {gameRef.current && onCampGround(gameRef.current) && (
           <ShopPanel
             game={gameRef.current}
             onBuy={(index) => {
@@ -519,6 +570,7 @@ function Game({
             onRepair={() => {
               uiInputRef.current.repair = true;
             }}
+            onClose={() => setShopOpen(false)}
           />
         )}
       </Reveal>
@@ -529,6 +581,7 @@ function Game({
             onSpend={(skill) => {
               uiInputRef.current.spendSkill = skill;
             }}
+            onClose={() => setSkillsOpen(false)}
           />
         )}
       </Reveal>
@@ -546,6 +599,7 @@ function Game({
             onDrop={(entryId) => {
               uiInputRef.current.dropItem = entryId;
             }}
+            onClose={() => setInvOpen(false)}
           />
         )}
       </Reveal>

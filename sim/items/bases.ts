@@ -20,6 +20,7 @@ const base = (b: ItemBase) => b;
 export const BASES: Record<string, ItemBase> = {
   // --- weapons ---
   rusted_blade: base({ id: "rusted_blade", name: "Rusted Blade", slot: "weapon", w: 1, h: 3, levelReq: 1, dmgMin: 1, dmgMax: 6 }),
+  gnarled_staff: base({ id: "gnarled_staff", name: "Gnarled Staff", slot: "weapon", w: 1, h: 3, levelReq: 1, dmgMin: 1, dmgMax: 4 }),
   hatchet: base({ id: "hatchet", name: "Hatchet", slot: "weapon", w: 1, h: 3, levelReq: 3, dmgMin: 2, dmgMax: 8 }),
   war_maul: base({ id: "war_maul", name: "War Maul", slot: "weapon", w: 2, h: 3, levelReq: 8, dmgMin: 6, dmgMax: 14 }),
   twin_fang: base({ id: "twin_fang", name: "Twin Fang", slot: "weapon", w: 1, h: 2, levelReq: 12, dmgMin: 4, dmgMax: 10 }),

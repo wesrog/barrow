@@ -1,10 +1,16 @@
 import { localPlayer } from "../local";
-import { zoneDepth, type GameState } from "../../sim/state";
-import { zoneName } from "../../sim/zone";
+import { display } from "./fonts";
+import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
+import { CAMP_TITLE, zoneTitle } from "../../sim/zone";
+import { inCamp } from "../../sim/map";
 
 /** Top-center banner: where you are, and how deep. */
 export function ZoneBanner({ game }: { game: GameState }) {
-  const depth = zoneDepth(localPlayer(game).zoneId);
+  const p = localPlayer(game);
+  const zoneId = p.zoneId;
+  const depth = zoneDepth(zoneId);
+  const underground = zoneId !== "overworld";
+  const onCampGround = zoneId === "overworld" && inCamp(zoneOf(game, p).map, p.pos);
   return (
     <div
       style={{
@@ -21,8 +27,10 @@ export function ZoneBanner({ game }: { game: GameState }) {
         userSelect: "none",
       }}
     >
-      <div style={{ fontSize: 15 }}>{zoneName(depth)}</div>
-      {depth > 0 && (
+      <div style={{ fontFamily: display, fontSize: 19 }}>
+        {onCampGround ? CAMP_TITLE : zoneTitle(zoneId)}
+      </div>
+      {underground && (
         <div style={{ fontSize: 11, color: "#7fb8c9", marginTop: 2, letterSpacing: 2 }}>
           depth {depth}
         </div>

@@ -4,7 +4,7 @@ import { joinPlayer, step, stepSolo, travel } from "./tick";
 import { getZone } from "./state";
 import { placeItem } from "./character";
 import { rollDurability } from "./items/generate";
-import { isWalkable } from "./map";
+import { inCamp, isWalkable } from "./map";
 
 describe("corpse runs", () => {
   test("death strips equipment onto a corpse and respawns the player in camp", () => {
@@ -14,7 +14,7 @@ describe("corpse runs", () => {
     const spot = { ...p.pos };
     p.life = 0;
     stepSolo(g, {});
-    expect(p.zoneId).toBe("camp");
+    expect(p.zoneId).toBe("overworld");
     expect(p.life).toBe(p.maxLife);
     expect(p.equipment.weapon).toBeNull();
     const corpses = [...getZone(g, "floor:1").playerCorpses.values()];
@@ -60,7 +60,7 @@ describe("corpse runs", () => {
     travel(g, p, "floor:1");
     p.life = 0;
     stepSolo(g, {});
-    expect(p.zoneId).toBe("camp");
+    expect(p.zoneId).toBe("overworld");
     expect(getZone(g, "floor:1").playerCorpses.size).toBe(1);
 
     // re-equip nothing; head down to floor:2 and die again, naked this time
@@ -87,7 +87,7 @@ describe("corpse runs", () => {
 
     // floor:2 is forgotten, but the gear on it is not.
     expect(g.zones.has("floor:2")).toBe(false);
-    const corpses = [...getZone(g, "camp").playerCorpses.values()];
+    const corpses = [...getZone(g, "overworld").playerCorpses.values()];
     expect(corpses).toHaveLength(1);
     expect(corpses[0]!.playerId).toBe(0);
     expect(corpses[0]!.equipment.weapon?.baseId).toBe("rusted_blade");
@@ -98,7 +98,7 @@ describe("corpse runs", () => {
     stepSolo(g, { reclaim: corpses[0]!.id });
     for (let i = 0; i < 5; i++) stepSolo(g, {});
     expect(p.equipment.weapon?.baseId).toBe("rusted_blade");
-    expect(getZone(g, "camp").playerCorpses.size).toBe(0);
+    expect(getZone(g, "overworld").playerCorpses.size).toBe(0);
   });
 
   test("relocated corpses land on walkable camp cells, one per cell", () => {
@@ -113,11 +113,12 @@ describe("corpse runs", () => {
     expect(getZone(g, "floor:1").playerCorpses.size).toBe(2);
 
     stepSolo(g, { newGame: true });
-    const camp = getZone(g, "camp");
+    const camp = getZone(g, "overworld");
     const corpses = [...camp.playerCorpses.values()];
     expect(corpses).toHaveLength(2);
     for (const c of corpses) {
       expect(isWalkable(camp.map, Math.floor(c.pos.x), Math.floor(c.pos.y))).toBe(true);
+      expect(inCamp(camp.map, c.pos)).toBe(true);
     }
     const cells = new Set(corpses.map((c) => `${Math.floor(c.pos.x)},${Math.floor(c.pos.y)}`));
     expect(cells.size).toBe(2);

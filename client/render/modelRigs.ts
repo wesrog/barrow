@@ -1,7 +1,13 @@
 import * as THREE from "three";
 import type { Equipment } from "../../sim/character";
 import type { Item } from "../../sim/items/generate";
-import { instantiate, type CharacterInstance, type GameAssets, type WeaponName } from "./models";
+import {
+  findNode,
+  instantiate,
+  type CharacterInstance,
+  type GameAssets,
+  type WeaponName,
+} from "./models";
 import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
 /**
@@ -114,7 +120,12 @@ class AnimRig implements ModelRig {
     const socket = slot === "r" ? this.inst.handSlotR : this.inst.handSlotL;
     if (!socket) return;
     socket.clear();
-    if (obj) socket.add(obj);
+    if (!obj) return;
+    // KayKit fits main-hand props yaw-flipped 180° in handslot.r (see the
+    // bundled 1H_Axe/1H_Sword nodes); without this an axe head faces backward.
+    obj.rotation.set(0, slot === "r" ? Math.PI : 0, 0);
+    obj.position.set(0, 0.033, 0);
+    socket.add(obj);
   }
 }
 
@@ -186,11 +197,18 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
 
   // The model ships with prop meshes (axes, shield, a beer mug) — hide them,
   // our equipment drives what shows.
-  for (const prop of ["1H_Axe", "2H_Axe", "Mug", "Barbarian_Round_Shield", "Barbarian_Hat"]) {
+  for (const prop of [
+    "1H_Axe",
+    "1H_Axe_Offhand",
+    "2H_Axe",
+    "Mug",
+    "Barbarian_Round_Shield",
+    "Barbarian_Hat",
+  ]) {
     const node = rig.group.getObjectByName(prop);
     if (node) node.visible = false;
   }
-  const boneOf = (name: string) => rig.group.getObjectByName(name);
+  const boneOf = (name: string) => findNode(rig.group, name);
   const gear: THREE.Object3D[] = [];
   const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
     const bone = boneOf(boneName);
@@ -312,6 +330,14 @@ const MONSTER_LOOKS: Record<
     idle: "Idle",
     walk: "Walking_A",
     scale: 0.72,
+  },
+  // The camp healer: a pale-robed knight keeping a quiet shrine.
+  __healer__: {
+    model: "knight",
+    idle: "Idle",
+    walk: "Walking_A",
+    scale: 0.68,
+    tint: 0xf0e6c8,
   },
 };
 

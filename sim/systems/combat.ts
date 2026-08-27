@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, isWalkable, type Vec, type ZoneMap } from "../map";
+import { hasLineOfSight, inCamp, isWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
 import {
   zoneOf,
@@ -181,7 +181,8 @@ function nearestPlayer(living: Player[], to: Vec): Player | null {
 }
 
 export function monsterAiSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  const living = players.filter((q) => !q.dead);
+  // Camp ground is sanctuary: monsters neither see nor follow anyone on it.
+  const living = players.filter((q) => !q.dead && !inCamp(zone.map, q.pos));
   for (const m of zone.monsters.values()) {
     if (m.swingCooldown > 0) m.swingCooldown--;
     if (m.stunnedUntil > state.tick) {
@@ -206,6 +207,8 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
         ? dist(p.pos, m.strikeTo) <= 1.2 // ranged shot: dodge the impact point
         : dist(m.pos, p.pos) <= m.range * 1.4;
       m.strikeTo = null;
+      // Diving through the palisade gap mid-swing still leaves the blow short.
+      if (inCamp(zone.map, p.pos)) continue;
       if (connects && state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
         const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
         p.life -= amount;
@@ -308,7 +311,8 @@ export function deathSystem(
       const { radius, dmgMin, dmgMax } = m.explode;
       state.events.push({ type: "exploded", pos: { ...m.pos }, radius, zone: zone.id });
       for (const p of players) {
-        if (p.dead || Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) > radius) continue;
+        if (p.dead || inCamp(zone.map, p.pos)) continue;
+        if (Math.hypot(p.pos.x - m.pos.x, p.pos.y - m.pos.y) > radius) continue;
         const amount = rollDamage(state.rng, dmgMin, dmgMax);
         p.life -= amount;
         state.events.push({ type: "player_hit", playerId: p.id, amount });
@@ -382,6 +386,7 @@ export function deathSystem(
     p.pickupTarget = null;
     p.smashTarget = null;
     p.vendorTarget = false;
+    p.healerTarget = false;
     p.portalTarget = null;
     p.reclaimTarget = null;
 
@@ -423,8 +428,8 @@ export function deathSystem(
 
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
 
-    // Immediate camp respawn — there is no persistent "you are dead" state.
-    travel(state, p, "camp");
+    // Immediate respawn on camp ground — there is no persistent "you are dead" state.
+    travel(state, p, "overworld");
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;

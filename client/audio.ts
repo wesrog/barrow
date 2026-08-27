@@ -16,6 +16,7 @@ type SoundName =
   | "explode"
   | "warcry"
   | "leap"
+  | "leapland"
   | "cleave"
   | "crush"
   | "spit"
@@ -142,8 +143,11 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     tone(c, { type: "sawtooth", from: 92, to: 178, dur: 0.35, gain: 0.2 });
   },
   leap: (c) => {
-    noise(c, { dur: 0.16, gain: 0.2, filterFrom: 500, filterTo: 2400 });
-    tone(c, { type: "sine", from: 140, to: 60, dur: 0.14, gain: 0.4, at: 0.16 });
+    noise(c, { dur: 0.3, gain: 0.2, filterFrom: 500, filterTo: 2400 });
+  },
+  leapland: (c) => {
+    tone(c, { type: "sine", from: 140, to: 60, dur: 0.14, gain: 0.4 });
+    noise(c, { dur: 0.12, gain: 0.22, filterFrom: 900, filterTo: 150 });
   },
   cleave: (c) => {
     noise(c, { dur: 0.14, gain: 0.28, filterFrom: 3200, filterTo: 500 });

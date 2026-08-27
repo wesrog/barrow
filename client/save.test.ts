@@ -84,7 +84,16 @@ describe("character save", () => {
     // A partial object is fine: the ranks it omits are simply 0, never undefined.
     const partial = { ...save, skills: { cleave: 2 } };
     expect(applyCharacter(state, 0, JSON.stringify(partial))).toBe(true);
-    expect(player(state).skills).toEqual({ cleave: 2, crush: 0, warcry: 0, leap: 0 });
+    expect(player(state).skills).toEqual({
+      cleave: 2,
+      crush: 0,
+      warcry: 0,
+      leap: 0,
+      firebolt: 0,
+      frostnova: 0,
+      focus: 0,
+      blink: 0,
+    });
   });
 
   test("a character joining through a frame arrives with its gear", () => {

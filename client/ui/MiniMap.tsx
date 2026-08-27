@@ -5,11 +5,11 @@ import { allPlayers, zoneOf, type GameState } from "../../sim/state";
 import { playerCss } from "../render/tints";
 import { RARITY_CSS } from "./InventoryPanel";
 
-const SCALE = 4;
-
 export function MiniMap({ game }: { game: GameState }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wallsRef = useRef<HTMLCanvasElement | null>(null);
+  // Big open-world maps draw at half scale so the minimap stays a corner widget.
+  const SCALE = zoneOf(game, localPlayer(game)).map.width > 40 ? 2 : 4;
 
   useEffect(() => {
     const map = zoneOf(game, localPlayer(game)).map;

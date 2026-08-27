@@ -15,7 +15,7 @@ const PICKUP_RANGE = 1.0;
 
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
 export function recomputePlayerStats(state: GameState, p: Player): void {
-  const s = computeStats(p.equipment, p.level);
+  const s = computeStats(p.equipment, p.level, p.klass);
   p.dmgMin = s.dmgMin;
   p.dmgMax = s.dmgMax;
   p.attackRating = s.attackRating;
@@ -200,6 +200,7 @@ export function applyReclaimInput(state: GameState, p: Player, input: PlayerInpu
   p.smashTarget = null;
   p.portalTarget = null;
   p.vendorTarget = false;
+  p.healerTarget = false;
   p.path = [];
 }
 

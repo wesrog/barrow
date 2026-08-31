@@ -101,3 +101,21 @@ describe("smoothPath", () => {
     }
   });
 });
+
+describe("findPath expansion cap", () => {
+  const open = mapFromStrings(Array.from({ length: 20 }, () => ".".repeat(20)));
+
+  test("a tiny budget still yields a partial path toward the goal", () => {
+    const path = findPath(open, { x: 0, y: 0 }, { x: 19, y: 19 }, 6);
+    expect(path).not.toBeNull();
+    expect(path!.length).toBeGreaterThan(0);
+    const last = path![path!.length - 1]!;
+    // Strictly closer to the goal than the start was.
+    expect(Math.hypot(19 - last.x, 19 - last.y)).toBeLessThan(Math.hypot(19, 19));
+  });
+
+  test("unreachable goals still return null", () => {
+    const walled = mapFromStrings(["...#.", "...#.", "...#."]);
+    expect(findPath(walled, { x: 0, y: 0 }, { x: 4, y: 1 })).toBeNull();
+  });
+});

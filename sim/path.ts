@@ -53,13 +53,24 @@ export function smoothPath(map: ZoneMap, start: Vec, cells: Cell[]): Vec[] {
  * Returns the sequence of cells from the first step to the goal (start excluded),
  * or null if unreachable. Deterministic: ties break by insertion order.
  */
-export function findPath(map: ZoneMap, start: Cell, goal: Cell): Cell[] | null {
+export function findPath(
+  map: ZoneMap,
+  start: Cell,
+  goal: Cell,
+  maxExpanded = 6000,
+): Cell[] | null {
   if (!isWalkable(map, goal.x, goal.y)) return null;
   if (start.x === goal.x && start.y === goal.y) return [];
 
   const key = (x: number, y: number) => y * map.width + x;
   const startKey = key(start.x, start.y);
   const goalKey = key(goal.x, goal.y);
+
+  const heuristic = (x: number, y: number) => {
+    const dx = Math.abs(x - goal.x);
+    const dy = Math.abs(y - goal.y);
+    return Math.max(dx, dy) + 0.4142 * Math.min(dx, dy);
+  };
 
   const gScore = new Map<number, number>([[startKey, 0]]);
   const cameFrom = new Map<number, number>();
@@ -69,10 +80,20 @@ export function findPath(map: ZoneMap, start: Cell, goal: Cell): Cell[] | null {
   ];
   const closed = new Set<number>();
 
-  const heuristic = (x: number, y: number) => {
-    const dx = Math.abs(x - goal.x);
-    const dy = Math.abs(y - goal.y);
-    return Math.max(dx, dy) + 0.4142 * Math.min(dx, dy);
+  // Best-effort fallback: the expanded node nearest the goal, so a capped
+  // search still walks toward a far click instead of standing still.
+  let bestKey = startKey;
+  let bestH = heuristic(start.x, start.y);
+
+  const reconstruct = (fromKey: number): Cell[] => {
+    const path: Cell[] = [];
+    let k: number | undefined = fromKey;
+    while (k !== undefined && k !== startKey) {
+      path.push({ x: k % map.width, y: Math.floor(k / map.width) });
+      k = cameFrom.get(k);
+    }
+    path.reverse();
+    return path;
   };
 
   while (open.length > 0) {
@@ -82,17 +103,19 @@ export function findPath(map: ZoneMap, start: Cell, goal: Cell): Cell[] | null {
     }
     const current = open.splice(bestIdx, 1)[0]!;
     if (current.k === goalKey) {
-      const path: Cell[] = [];
-      let k: number | undefined = goalKey;
-      while (k !== undefined && k !== startKey) {
-        path.push({ x: k % map.width, y: Math.floor(k / map.width) });
-        k = cameFrom.get(k);
-      }
-      path.reverse();
-      return path;
+      return reconstruct(goalKey);
     }
     if (closed.has(current.k)) continue;
     closed.add(current.k);
+
+    const h = heuristic(current.x, current.y);
+    if (h < bestH) {
+      bestH = h;
+      bestKey = current.k;
+    }
+    if (closed.size > maxExpanded) {
+      return bestKey === startKey ? null : reconstruct(bestKey);
+    }
 
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {

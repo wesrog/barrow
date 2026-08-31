@@ -5,12 +5,14 @@ import {
   areaRect,
   inRect,
   surfaceLayout,
+  stitchSurface,
   worldAreaSpawn,
   worldCampRect,
   worldWaypointPos,
 } from "./surface";
-import { mapFromStrings, inCamp } from "./map";
+import { mapFromStrings, inCamp, isWalkable } from "./map";
 import { AREAS } from "./areas";
+import { createRng } from "./rng";
 
 describe("surfaceLayout", () => {
   test("registry order drives iteration", () => {
@@ -82,5 +84,67 @@ describe("camps", () => {
     expect(inCamp(map, { x: 1, y: 1 })).toBe(true);
     expect(inCamp(map, { x: 3.5, y: 3.5 })).toBe(true);
     expect(inCamp(map, { x: 2.5, y: 2.5 })).toBe(false);
+  });
+});
+
+describe("stitchSurface", () => {
+  const { map, monsters } = stitchSurface(createRng(7));
+
+  test("bounds and spawn", () => {
+    expect(map.width).toBe(272);
+    expect(map.height).toBe(88);
+    expect(map.spawn).toEqual({ x: 7.5, y: 45.5 });
+    expect(map.camps.length).toBe(4);
+  });
+
+  test("the overworld-redfen corridor is open exactly at the exit rows", () => {
+    // Both rims meet at x=63|64; the 3-wide channels sit at world rows 44..46.
+    for (let y = 0; y < map.height; y++) {
+      const open = y >= 44 && y <= 46;
+      expect(isWalkable(map, 63, y)).toBe(open);
+      expect(isWalkable(map, 64, y)).toBe(open);
+    }
+  });
+
+  test("the corridor connects: a walkable path of cells crosses the seam", () => {
+    // Flood fill from the overworld spawn must reach redfen's waypoint cell.
+    const seen = new Set<number>([Math.floor(45.5) * map.width + Math.floor(7.5)]);
+    const stack = [{ x: 7, y: 45 }];
+    while (stack.length > 0) {
+      const { x, y } = stack.pop()!;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        const k = ny * map.width + nx;
+        if (seen.has(k) || !isWalkable(map, nx, ny)) continue;
+        seen.add(k);
+        stack.push({ x: nx, y: ny });
+      }
+    }
+    expect(seen.has(45 * map.width + 70)).toBe(true); // redfen waypoint cell (70,45)
+  });
+
+  test("feature markers land at world offsets; monster markers are stripped", () => {
+    expect(map.markers.filter((m) => m.ch === ">").length).toBe(1);
+    expect(map.markers.find((m) => m.ch === ">")).toEqual({ ch: ">", x: 58.5, y: 69.5 });
+    expect(map.markers.filter((m) => m.ch === "W").length).toBe(4);
+    expect(map.markers.some((m) => m.ch === "z" || m.ch === "h")).toBe(false);
+  });
+
+  test("monsters spawn inside their region at region-banded levels", () => {
+    expect(monsters.length).toBeGreaterThan(150);
+    for (const s of monsters) {
+      const region = areaAt(s.pos);
+      const def = AREAS[region];
+      expect(inRect(areaRect(region), s.pos)).toBe(true);
+      expect(s.level).toBeGreaterThanOrEqual(def.areaLevel);
+      expect(s.level).toBeLessThanOrEqual(def.areaLevel + def.bandCap);
+    }
+  });
+
+  test("deterministic: same seed, identical cells and spawns", () => {
+    const a = stitchSurface(createRng(99));
+    const b = stitchSurface(createRng(99));
+    expect(Buffer.from(a.map.cells).equals(Buffer.from(b.map.cells))).toBe(true);
+    expect(a.monsters).toEqual(b.monsters);
   });
 });

@@ -16,6 +16,7 @@ import { damageMultiplier } from "../skills";
 import { moveAlongPath } from "./movement";
 import { createEquipment, type EquipSlot } from "../character";
 import { recomputePlayerStats } from "./inventory";
+import { worldWaypointPos } from "../surface";
 
 export function computeHitChance(attackRating: number, defense: number): number {
   const raw = attackRating / (attackRating + defense);
@@ -437,8 +438,9 @@ export function deathSystem(
 
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
 
-    // Immediate respawn on camp ground — there is no persistent "you are dead" state.
-    travel(state, p, p.checkpoint);
+    // Immediate respawn at the checkpoint's pad — there is no persistent "you are dead" state.
+    travel(state, p, "surface");
+    p.pos = { ...worldWaypointPos(p.checkpoint) };
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;

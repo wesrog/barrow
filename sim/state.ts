@@ -7,11 +7,12 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
 
-export type ZoneId = AreaId | `floor:${number}`;
+/** The whole open-air world is one zone; the barrow's floors are the rest. */
+export type ZoneId = "surface" | `floor:${number}`;
 
 export const floorZone = (n: number): ZoneId => `floor:${n}`;
 
-/** floor:N = N; any surface area = 1. Areas take their level from the registry. */
+/** floor:N = N; the surface = 1. Regions take their level from the registry. */
 export function zoneDepth(id: ZoneId): number {
   if (!id.startsWith("floor:")) return 1;
   return Number(id.slice("floor:".length));
@@ -214,7 +215,7 @@ export interface GameState {
   /** The seed this world was created from; persisted so a hero can come home. */
   seed: number;
   rng: Rng;
-  /** The world: the moors (camp included) plus every floor generated so far. */
+  /** The world: the stitched surface (camp included) plus every floor generated so far. */
   zones: Map<ZoneId, ZoneState>;
   /** The vendor's current stock; restocked each arrival on camp ground. */
   shop: ShopEntry[];

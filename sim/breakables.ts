@@ -1,5 +1,5 @@
-import { areaLevelOf } from "./areas";
 import { isWalkable, type Vec } from "./map";
+import { areaLevelAt, type Rect } from "./surface";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
 import {
@@ -24,23 +24,32 @@ const MIN_SPAWN_DIST = 4;
 
 /**
  * Scatter smashable clutter across the floor: barrels and crates rolling the
- * trash class, plus exactly one treasure chest with a guaranteed drop.
+ * trash class, plus exactly one treasure chest with a guaranteed drop. `opts`
+ * confines a batch to one region of a larger map — the stitched surface seeds
+ * each region separately, so every outpost gets its own clutter.
  */
-export function spawnBreakables(state: GameState, zone: ZoneState, depth: number): void {
+export function spawnBreakables(
+  state: GameState,
+  zone: ZoneState,
+  depth: number,
+  opts?: { bounds: Rect; avoid: Vec },
+): void {
   void depth; // clutter counts don't scale (yet); loot scaling happens on smash
   const { map } = zone;
   const rng = state.rng;
   const taken = new Set<number>();
   const cell = (x: number, y: number) => y * map.width + x;
+  const b = opts?.bounds ?? { x0: 0, y0: 0, x1: map.width, y1: map.height };
+  const avoid = opts?.avoid ?? map.spawn;
   taken.add(cell(Math.floor(map.spawn.x), Math.floor(map.spawn.y)));
   for (const m of map.markers) taken.add(cell(Math.floor(m.x), Math.floor(m.y)));
 
   const place = (kind: BreakableKind): void => {
     for (let tries = 0; tries < 40; tries++) {
-      const x = rng.int(1, map.width - 2);
-      const y = rng.int(1, map.height - 2);
+      const x = rng.int(b.x0 + 1, b.x1 - 2);
+      const y = rng.int(b.y0 + 1, b.y1 - 2);
       if (!isWalkable(map, x, y) || taken.has(cell(x, y))) continue;
-      if (Math.hypot(x + 0.5 - map.spawn.x, y + 0.5 - map.spawn.y) < MIN_SPAWN_DIST) continue;
+      if (Math.hypot(x + 0.5 - avoid.x, y + 0.5 - avoid.y) < MIN_SPAWN_DIST) continue;
       taken.add(cell(x, y));
       const id = state.nextId++;
       zone.breakables.set(id, { id, kind, pos: { x: x + 0.5, y: y + 0.5 } });
@@ -110,7 +119,7 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
     zone: zone.id,
   });
 
-  const depthBonus = (areaLevelOf(zone.id) - 1) * 3;
+  const depthBonus = (areaLevelAt(zone.id, target.pos) - 1) * 3;
   const item =
     target.kind === "chest"
       ? rollDrop(state.rng, "standard", 5 + depthBonus, { guaranteed: true, minRarity: "magic" })

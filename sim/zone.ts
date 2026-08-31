@@ -1,7 +1,6 @@
-import { AREAS, isAreaId, type AreaDef, type AreaExit } from "./areas";
+import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
 import type { Rng } from "./rng";
-import { zoneDepth, type ZoneId } from "./state";
 
 /** Map marker characters -> monster types. */
 export const MARKER_TYPES: Record<string, string> = {
@@ -52,12 +51,6 @@ export function zoneName(depth: number): string {
   if (depth <= 4) return "The Sunken Halls";
   if (depth <= 6) return "The Bone Vaults";
   return "The Wyrm's Undercroft";
-}
-
-/** Display name for a zone id (the depth-based names cover the crypt floors). */
-export function zoneTitle(id: ZoneId): string {
-  if (isAreaId(id)) return AREAS[id].title;
-  return zoneName(zoneDepth(id));
 }
 
 /** The camp's display name — a region of the moors, not a zone of its own. */

@@ -64,14 +64,14 @@ describe("new game reset", () => {
     stepSolo(state, {});
     // Death resolves to an immediate camp respawn — dead is never persistent.
     expect(player(state).dead).toBe(false);
-    expect(player(state).zoneId).toBe("overworld");
+    expect(player(state).zoneId).toBe("surface");
     expect(player(state).life).toBe(player(state).maxLife);
 
     stepSolo(state, { newGame: true });
     expect(player(state).dead).toBe(false);
     expect(player(state).life).toBe(player(state).maxLife);
-    expect(player(state).zoneId).toBe("overworld");
-    expect(player(state).pos).toEqual(getZone(state, "overworld").map.spawn);
+    expect(player(state).zoneId).toBe("surface");
+    expect(player(state).pos).toEqual(getZone(state, "surface").map.spawn);
     expect(player(state).xp).toBe(xpAfterKills); // character persists
     const fresh = getZone(state, "floor:1");
     expect(fresh.monsters.size).toBe(populated); // floor repopulated
@@ -86,17 +86,17 @@ describe("new game reset", () => {
     ensureFloor(state, 4);
     stepSolo(state, {});
     stepSolo(state, { newGame: true });
-    expect([...state.zones.keys()]).toEqual(["overworld", "floor:1"]);
+    expect([...state.zones.keys()]).toEqual(["surface", "floor:1"]);
     expect(getZone(state, "floor:1").monsters.size).toBe(populated);
     expect(player(state).dead).toBe(false);
   });
 });
 
 describe("zones", () => {
-  test("createGame builds the moors and floor:1; player starts on camp ground", () => {
+  test("createGame builds the surface and floor:1; player starts on camp ground", () => {
     const g = soloGame(1);
-    expect([...g.zones.keys()]).toEqual(["overworld", "floor:1"]);
-    expect(player(g).zoneId).toBe("overworld");
+    expect([...g.zones.keys()]).toEqual(["surface", "floor:1"]);
+    expect(player(g).zoneId).toBe("surface");
     expect(getZone(g, "floor:1").monsters.size).toBeGreaterThan(0);
   });
 
@@ -120,7 +120,7 @@ describe("zones", () => {
 
   test("standing at the barrow mouth travels to floor:1; stairs go one deeper", () => {
     const g = soloGame(1);
-    const mouth = getZone(g, "overworld").map.markers.find((m) => m.ch === ">")!;
+    const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
     player(g).pos = { x: mouth.x, y: mouth.y };
     stepSolo(g, {});
     expect(player(g).zoneId).toBe("floor:1");
@@ -154,13 +154,13 @@ describe("zones", () => {
     const up = getZone(g, "floor:1").map.markers.find((m) => m.ch === "<")!;
     player(g).pos = { x: up.x, y: up.y };
     stepSolo(g, {});
-    expect(player(g).zoneId).toBe("overworld");
-    const mouth = getZone(g, "overworld").map.markers.find((m) => m.ch === ">")!;
+    expect(player(g).zoneId).toBe("surface");
+    const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
     const d = Math.hypot(player(g).pos.x - mouth.x, player(g).pos.y - mouth.y);
     expect(d).toBeGreaterThan(0.5);
     expect(d).toBeLessThanOrEqual(1.5);
     stepSolo(g, {});
-    expect(player(g).zoneId).toBe("overworld"); // beside the mouth, not back in it
+    expect(player(g).zoneId).toBe("surface"); // beside the mouth, not back in it
   });
 
   test("floors persist: a cleared monster stays dead after leaving and returning", () => {
@@ -169,14 +169,14 @@ describe("zones", () => {
     const first = [...getZone(g, "floor:1").monsters.keys()][0]!;
     getZone(g, "floor:1").monsters.delete(first);
     const count = getZone(g, "floor:1").monsters.size;
-    travel(g, player(g), "overworld");
+    travel(g, player(g), "surface");
     travel(g, player(g), "floor:1");
     expect(getZone(g, "floor:1").monsters.size).toBe(count);
   });
 
   test("empty zones are frozen: monsters there do not act", () => {
     const g = soloGame(1);
-    expect(player(g).zoneId).toBe("overworld");
+    expect(player(g).zoneId).toBe("surface");
     const before = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
     for (let i = 0; i < 200; i++) stepSolo(g, {});
     const after = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
@@ -184,7 +184,7 @@ describe("zones", () => {
   });
 
   test("zoneDepth", () => {
-    expect(zoneDepth("overworld")).toBe(1);
+    expect(zoneDepth("surface")).toBe(1);
     expect(zoneDepth(floorZone(4))).toBe(4);
   });
 });

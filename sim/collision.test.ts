@@ -75,7 +75,7 @@ describe("player vs monster", () => {
 describe("player vs camp NPC", () => {
   test("the vendor body-blocks: the player cannot stand inside V", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
+    travel(game, player(game), "surface");
     const v = playerZone(game).map.markers.find((m) => m.ch === "V")!;
     player(game).pos = { x: v.x + 0.1, y: v.y };
     collisionSystem(game, playerZone(game), [player(game)]);
@@ -85,7 +85,7 @@ describe("player vs camp NPC", () => {
 
   test("the player cannot walk through the vendor", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
+    travel(game, player(game), "surface");
     const v = playerZone(game).map.markers.find((m) => m.ch === "V")!;
     player(game).pos = { x: v.x - 2, y: v.y };
     stepSolo(game, { moveTo: { x: v.x + 2, y: v.y } });
@@ -98,7 +98,7 @@ describe("player vs camp NPC", () => {
 
   test("the campfire is solid — a player in the flames is pushed out", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
+    travel(game, player(game), "surface");
     const fire = playerZone(game).map.markers.find((m) => m.ch === "F")!;
     player(game).pos = { x: fire.x, y: fire.y };
     collisionSystem(game, playerZone(game), [player(game)]);

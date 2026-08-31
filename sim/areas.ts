@@ -1,5 +1,4 @@
 import type { MapMarker, Vec } from "./map";
-import { zoneDepth, type ZoneId } from "./state";
 
 /** Named surface regions of the open world. Floors keep their own `floor:N` ids. */
 export type AreaId = "overworld" | "redfen" | "gallowmire" | "cragmaw";
@@ -135,9 +134,4 @@ export function waypointPos(id: AreaId): Vec {
   const def = AREAS[id];
   const w = def.markers.find((m) => m.ch === "W");
   return w ? { x: w.x, y: w.y } : { ...def.spawn };
-}
-
-/** THE difficulty lookup: registry level for areas, floor number for floors. */
-export function areaLevelOf(id: ZoneId): number {
-  return isAreaId(id) ? AREAS[id].areaLevel : zoneDepth(id);
 }

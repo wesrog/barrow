@@ -110,7 +110,7 @@ describe("camp trips", () => {
     travel(state, player(state), "floor:1");
     const saved = [...playerZone(state).breakables.values()];
     expect(saved.length).toBeGreaterThan(0);
-    travel(state, player(state), "overworld");
+    travel(state, player(state), "surface");
     // Walk into the barrow mouth: back down to floor 1
     const mouth = playerZone(state).map.markers.find((m) => m.ch === ">")!;
     player(state).pos = { x: mouth.x, y: mouth.y };

@@ -13,7 +13,8 @@ import {
 import { placeItem, removeEntry } from "../character";
 import { repairAll, stowPotion } from "./inventory";
 import { findPath, smoothPath } from "../path";
-import { inCamp, isWalkable } from "../map";
+import { isWalkable } from "../map";
+import { inRect, worldCampRect } from "../surface";
 
 /** How close you must stand to Maren before he'll talk shop. */
 const TALK_RANGE = 1.4;
@@ -21,9 +22,13 @@ const TALK_RANGE = 1.4;
 /** How close you must stand to a portal before it whisks you away. */
 const PORTAL_RANGE = 0.6;
 
-/** Standing on the camp's safe ground — where trading, healing, and repairs live. */
-export function onCampGround(state: GameState, p: Player): boolean {
-  return p.zoneId === "overworld" && inCamp(zoneOf(state, p).map, p.pos);
+/**
+ * Standing on the moors camp's safe ground — where trading, healing, and repairs
+ * live. The outposts have safe ground too, but no stalls, so the rect is named
+ * rather than taken from whichever camp the player happens to be standing in.
+ */
+export function onCampGround(p: Player): boolean {
+  return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
 }
 
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
@@ -86,7 +91,7 @@ export const POTION_PRICES = { health: 25, mana: 30 } as const;
 /** Buy a potion from Sera: straight onto the belt, or into the pack if the row is full. */
 export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerInput): void {
   const kind = input.buyPotion;
-  if (!kind || !onCampGround(state, p)) return;
+  if (!kind || !onCampGround(p)) return;
   const price = POTION_PRICES[kind];
   if (p.gold < price) return;
   const baseId = kind === "mana" ? "minor_mana_potion" : "minor_potion";
@@ -101,7 +106,7 @@ export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerIn
 
 /** Click on Maren: start walking over to trade. */
 export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkVendor || p.zoneId !== "overworld") return;
+  if (!input.talkVendor || p.zoneId !== "surface") return;
   p.vendorTarget = true;
   p.healerTarget = false;
   p.attackTarget = null;
@@ -114,7 +119,7 @@ export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerI
 
 /** Click on Sera: start walking over for a mending. */
 export function applyTalkHealerInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkHealer || p.zoneId !== "overworld") return;
+  if (!input.talkHealer || p.zoneId !== "surface") return;
   p.healerTarget = true;
   p.vendorTarget = false;
   p.attackTarget = null;
@@ -191,7 +196,7 @@ export function vendorSystem(state: GameState, zone: ZoneState, players: Player[
 }
 
 export function applyShopInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!onCampGround(state, p)) return;
+  if (!onCampGround(p)) return;
 
   if (input.buy !== undefined) {
     const entry = state.shop[input.buy];
@@ -243,12 +248,12 @@ export function removePortalsOwnedBy(state: GameState, owner: number): void {
  * Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets.
  * Only avoids other portals — camp ground has no monsters or breakables to dodge.
  */
-function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
-  const spawn = overworld.map.spawn;
+function findCampPortalSpot(surface: ZoneState): { x: number; y: number } {
+  const spawn = surface.map.spawn; // the moors camp — the surface map's spawn
   const cx = Math.floor(spawn.x);
   const cy = Math.floor(spawn.y);
   const occupied = new Set(
-    [...overworld.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
+    [...surface.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
   );
   const candidates: [number, number][] = [
     [cx, cy],
@@ -258,7 +263,7 @@ function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
     [cx, cy - 1],
   ];
   for (const [x, y] of candidates) {
-    if (!isWalkable(overworld.map, x, y)) continue;
+    if (!isWalkable(surface.map, x, y)) continue;
     if (occupied.has(`${x},${y}`)) continue;
     return { x, y };
   }
@@ -268,11 +273,11 @@ function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
 
 /** `t`: cast a two-way portal pair between here and camp. No-op on camp ground or while dead. */
 export function applyCastPortalInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.townPortal || p.dead || onCampGround(state, p)) return;
+  if (!input.townPortal || p.dead || onCampGround(p)) return;
   removePortalsOwnedBy(state, p.id);
 
   const here = zoneOf(state, p);
-  const camp = getZone(state, "overworld");
+  const camp = getZone(state, "surface");
   const spot = findCampPortalSpot(camp);
   const campPos = { x: spot.x + 0.5, y: spot.y + 0.5 };
   const herePos = { x: Math.floor(p.pos.x) + 0.5, y: Math.floor(p.pos.y) + 0.5 };
@@ -283,7 +288,7 @@ export function applyCastPortalInput(state: GameState, p: Player, input: PlayerI
     id: hereId,
     owner: p.id,
     pos: herePos,
-    link: { zone: "overworld", pos: campPos },
+    link: { zone: "surface", pos: campPos },
   };
   const campPortal: Portal = {
     id: campId,

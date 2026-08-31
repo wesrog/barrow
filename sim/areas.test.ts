@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { AREAS, areaLevelOf, isAreaId } from "./areas";
+import { AREAS, isAreaId } from "./areas";
 import { areaZone } from "./zone";
 import { createRng } from "./rng";
 import { MONSTER_TYPES } from "./monsters";
 import { getZone } from "./state";
-import { ensureArea, stepSolo } from "./tick";
-import { player, soloGame } from "./test-helpers";
+import { areaLevelAt, areaRect, inRect, worldAreaSpawn } from "./surface";
+import { soloGame } from "./test-helpers";
 import type { ZoneMap } from "./map";
 
 function reachableFrom(map: ZoneMap, sx: number, sy: number): Set<number> {
@@ -27,9 +27,10 @@ function reachableFrom(map: ZoneMap, sx: number, sy: number): Set<number> {
 }
 
 describe("area registry", () => {
-  test("difficulty comes from the registry for areas, floor number for floors", () => {
-    expect(areaLevelOf("overworld")).toBe(1);
-    expect(areaLevelOf("floor:3")).toBe(3);
+  test("difficulty comes from the region under your feet, floor number below", () => {
+    expect(areaLevelAt("surface", worldAreaSpawn("overworld"))).toBe(1);
+    expect(areaLevelAt("surface", worldAreaSpawn("redfen"))).toBe(AREAS.redfen.areaLevel);
+    expect(areaLevelAt("floor:3", { x: 0, y: 0 })).toBe(3);
     expect(isAreaId("overworld")).toBe(true);
     expect(isAreaId("floor:2")).toBe(false);
   });
@@ -58,40 +59,21 @@ describe("area registry", () => {
   });
 });
 
-describe("edge exits", () => {
-  test("stepping into the moors' east opening crosses into the redfen and back", () => {
-    const g = soloGame(1);
-    const p = player(g);
-    const moors = AREAS.overworld;
-    const out = moors.exits.find((e) => e.to === "redfen")!;
-    expect(out).toBeDefined();
-    p.pos = { x: moors.width - 1.5, y: out.at + 0.5 };
-    stepSolo(g, {});
-    expect(p.zoneId).toBe("redfen");
-    // Arrival is at the redfen's west mouth, just inside its rim.
-    expect(p.pos.x).toBeGreaterThan(2);
-    expect(p.pos.x).toBeLessThan(6);
-    const back = AREAS.redfen.exits.find((e) => e.to === "overworld")!;
-    expect(Math.abs(p.pos.y - back.at)).toBeLessThan(3);
-    // And walking into that west opening crosses back to the moors.
-    p.pos = { x: 0.5, y: back.at + 0.5 };
-    stepSolo(g, {});
-    expect(p.zoneId).toBe("overworld");
-  });
-
+// The old teleport at the rim is gone — walking the corridor is covered by
+// "walking across the corridor changes region, not zone" in surface.test.ts.
+describe("region difficulty", () => {
   test("redfen monsters scale from its area level", () => {
     const g = soloGame(1);
-    const zone = ensureArea(g, "redfen");
-    const spawn = zone.map.spawn;
-    const near = [...zone.monsters.values()].filter(
-      (m) => Math.hypot(m.pos.x - spawn.x, m.pos.y - spawn.y) < 28,
+    const spawn = worldAreaSpawn("redfen");
+    const rect = areaRect("redfen");
+    const near = [...getZone(g, "surface").monsters.values()].filter(
+      (m) => inRect(rect, m.pos) && Math.hypot(m.pos.x - spawn.x, m.pos.y - spawn.y) < 28,
     );
     expect(near.length).toBeGreaterThan(0);
     for (const m of near) {
       const base = MONSTER_TYPES[m.typeId]!;
       expect(m.mlvl).toBe(base.mlvl + 3 * (AREAS.redfen.areaLevel - 1));
     }
-    expect(getZone(g, "redfen")).toBe(zone);
   });
 });
 

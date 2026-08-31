@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { ensureArea, stepSolo } from "./tick";
+import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, soloGame, spawnAt } from "./test-helpers";
 import { MONSTER_TYPES } from "./monsters";
 import { MARKER_TYPES } from "./zone";
+import { getZone } from "./state";
+import { areaRect, inRect } from "./surface";
 import { rollDrop } from "./items/treasure";
 import { createRng } from "./rng";
 
@@ -190,8 +192,12 @@ describe("fen and crag monsters", () => {
 
   test("the redfen prowls with fen monsters", () => {
     const g = soloGame(1);
-    const zone = ensureArea(g, "redfen");
-    const ids = new Set([...zone.monsters.values()].map((mo) => mo.typeId));
+    const rect = areaRect("redfen");
+    const ids = new Set(
+      [...getZone(g, "surface").monsters.values()]
+        .filter((mo) => inRect(rect, mo.pos))
+        .map((mo) => mo.typeId),
+    );
     expect(ids.has("fen_howler")).toBe(true);
     expect(ids.has("bog_maw")).toBe(true);
   });

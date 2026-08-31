@@ -1,10 +1,11 @@
-import { isAreaId, waypointPos, type AreaId } from "./areas";
+import { isAreaId, type AreaId } from "./areas";
 import { createEquipment, createInventory, type Equipment, type Inventory } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
 import { rollDurability } from "./items/generate";
 import { SKILL_IDS, type Klass, type SkillId } from "./skills";
 import { type GameState, type PlayerId } from "./state";
-import { ensureArea } from "./world";
+import { worldWaypointPos } from "./surface";
+import { ensureSurface } from "./world";
 
 const VERSION = 1;
 
@@ -162,11 +163,11 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   recomputePlayerStats(state, p);
   p.life = p.maxLife;
   p.mana = p.maxMana;
-  // Wake at the checkpoint's waypoint — generating its region if this world
-  // hasn't been there yet. Runs inside the join frame, so it lands identically
+  // Wake at the checkpoint's waypoint — generating the surface if this world
+  // hasn't grown it yet. Runs inside the join frame, so it lands identically
   // on every peer, and the fixed outpost rects make the spot layout-safe.
-  ensureArea(state, p.checkpoint);
-  p.zoneId = p.checkpoint;
-  p.pos = waypointPos(p.checkpoint);
+  ensureSurface(state);
+  p.zoneId = "surface";
+  p.pos = { ...worldWaypointPos(p.checkpoint) };
   return true;
 }

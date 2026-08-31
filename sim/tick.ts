@@ -35,9 +35,9 @@ import {
 import { applyCastInput, applySpendSkillInput, leapSystem, manaRegenSystem } from "./systems/skills";
 import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
-import { AREAS, isAreaId, waypointPos, type AreaId } from "./areas";
-import { ensureArea, ensureFloor, ensureOverworld } from "./world";
-import { exitMouth } from "./zone";
+import { isAreaId } from "./areas";
+import { ensureFloor, ensureSurface } from "./world";
+import { areaAt, worldWaypointPos } from "./surface";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 import { SKILL_IDS, type SkillId } from "./skills";
 import { rollDurability } from "./items/generate";
@@ -62,11 +62,11 @@ export const TICK_RATE = 25;
 
 const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 
-export { ensureArea, ensureFloor, ensureOverworld } from "./world";
+export { ensureFloor, ensureSurface } from "./world";
 
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {
-  if (isAreaId(to)) ensureArea(state, to);
+  if (to === "surface") ensureSurface(state);
   else ensureFloor(state, zoneDepth(to));
   p.zoneId = to;
   p.wasInCamp = false; // arrival triggers (restock) re-fire on camp ground
@@ -107,51 +107,16 @@ export function stairsSystem(state: GameState, zone: ZoneState, players: Player[
       if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) > 0.5) continue;
       if (marker.ch === ">") {
         // A barrow mouth on the surface is the way in; below it, stairs descend.
-        travel(state, p, isAreaId(p.zoneId) ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
+        travel(state, p, p.zoneId === "surface" ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
       } else {
-        if (isAreaId(p.zoneId)) continue; // no climbing out of the open sky
+        if (p.zoneId === "surface") continue; // no climbing out of the open sky
         const depth = zoneDepth(p.zoneId);
-        const dest: ZoneId = depth <= 1 ? "overworld" : floorZone(depth - 1);
+        const dest: ZoneId = depth <= 1 ? "surface" : floorZone(depth - 1);
         travel(state, p, dest);
         // Come out beside the stairs you once went down, not on top of them.
         const spot = besideMarker(getZone(state, dest).map, ">");
         if (spot) p.pos = spot;
       }
-      break;
-    }
-  }
-}
-
-/** Where a player arriving from `from` lands in area `to`: its reciprocal exit mouth. */
-function exitEntryPos(to: AreaId, from: ZoneId): Vec {
-  const def = AREAS[to];
-  const back = def.exits.find((e) => e.to === from);
-  if (!back) return { ...def.spawn };
-  const m = exitMouth(def, back);
-  return { x: m.x + 0.5, y: m.y + 0.5 };
-}
-
-/** A player standing in a rim opening crosses into the neighboring region. */
-export function edgeExitSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (!isAreaId(zone.id)) return;
-  const def = AREAS[zone.id];
-  for (const p of players) {
-    if (p.dead || p.zoneId !== zone.id) continue;
-    const cx = Math.floor(p.pos.x);
-    const cy = Math.floor(p.pos.y);
-    for (const e of def.exits) {
-      const inMouth =
-        e.edge === "N"
-          ? cy <= 1 && Math.abs(cx - e.at) <= 1
-          : e.edge === "S"
-            ? cy >= def.height - 2 && Math.abs(cx - e.at) <= 1
-            : e.edge === "W"
-              ? cx <= 1 && Math.abs(cy - e.at) <= 1
-              : cx >= def.width - 2 && Math.abs(cy - e.at) <= 1;
-      if (!inMouth) continue;
-      const from = zone.id;
-      travel(state, p, e.to);
-      p.pos = exitEntryPos(e.to, from);
       break;
     }
   }
@@ -163,14 +128,14 @@ export function edgeExitSystem(state: GameState, zone: ZoneState, players: Playe
  * arrival refills Maren's stock (an occupied camp keeps what it has).
  */
 export function safeGroundArrivalSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (!isAreaId(zone.id)) return;
+  if (zone.id !== "surface") return;
   for (const p of players) {
     const inside = inCamp(zone.map, p.pos);
     if (inside && !p.wasInCamp) {
-      p.checkpoint = zone.id;
-      if (zone.id === "overworld") {
+      p.checkpoint = areaAt(p.pos);
+      if (p.checkpoint === "overworld") {
         const occupied = allPlayers(state).some(
-          (o) => o !== p && o.zoneId === "overworld" && o.wasInCamp,
+          (o) => o !== p && o.zoneId === "surface" && o.wasInCamp && areaAt(o.pos) === "overworld",
         );
         if (!occupied) restock(state, p);
       }
@@ -181,30 +146,32 @@ export function safeGroundArrivalSystem(state: GameState, zone: ZoneState, playe
 
 /** Touching a region's W pad discovers it for good and stamps the checkpoint. */
 export function waypointSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (!isAreaId(zone.id)) return;
-  const area = zone.id;
-  const w = zone.map.markers.find((m) => m.ch === "W");
-  if (!w) return;
-  for (const p of players) {
-    if (p.dead || p.zoneId !== area) continue;
-    if (Math.hypot(p.pos.x - w.x, p.pos.y - w.y) > 1.2) continue;
-    p.checkpoint = area;
-    if (!p.waypoints.includes(area)) {
-      p.waypoints = [...p.waypoints, area].sort();
-      state.events.push({ type: "waypoint_found", playerId: p.id, area });
+  if (zone.id !== "surface") return;
+  for (const w of zone.map.markers) {
+    if (w.ch !== "W") continue;
+    const area = areaAt({ x: w.x, y: w.y });
+    for (const p of players) {
+      if (p.dead || Math.hypot(p.pos.x - w.x, p.pos.y - w.y) > 1.2) continue;
+      p.checkpoint = area;
+      if (!p.waypoints.includes(area)) {
+        p.waypoints = [...p.waypoints, area].sort();
+        state.events.push({ type: "waypoint_found", playerId: p.id, area });
+      }
     }
   }
 }
 
-/** Standing at a waypoint, jump to any other discovered area's waypoint. */
+/** Standing at a waypoint, jump to any other discovered region's waypoint. */
 export function applyWaypointInput(state: GameState, p: Player, input: PlayerInput): void {
   const dest = input.waypointTo;
-  if (!dest || !isAreaId(dest) || dest === p.zoneId) return;
+  if (!dest || !isAreaId(dest) || dest === areaAt(p.pos)) return;
   if (!p.waypoints.includes(dest)) return;
-  const w = getZone(state, p.zoneId).map.markers.find((m) => m.ch === "W");
-  if (!w || Math.hypot(p.pos.x - w.x, p.pos.y - w.y) > 1.6) return;
-  travel(state, p, dest);
-  p.pos = waypointPos(dest);
+  const near = getZone(state, p.zoneId).map.markers.some(
+    (m) => m.ch === "W" && Math.hypot(p.pos.x - m.x, p.pos.y - m.y) <= 1.6,
+  );
+  if (!near) return;
+  travel(state, p, "surface");
+  p.pos = { ...worldWaypointPos(dest) };
 }
 
 /**
@@ -213,8 +180,8 @@ export function applyWaypointInput(state: GameState, p: Player, input: PlayerInp
  * already claimed. Pure scan of the map — no rng, so every client picks the same
  * cells in the same order.
  */
-function campCorpseSpot(overworld: ZoneState, claimed: Set<string>): { x: number; y: number } {
-  const map = overworld.map;
+function campCorpseSpot(surface: ZoneState, claimed: Set<string>): { x: number; y: number } {
+  const map = surface.map;
   const cx = Math.floor(map.spawn.x);
   const cy = Math.floor(map.spawn.y);
   for (let r = 0; r <= 8; r++) {
@@ -243,12 +210,12 @@ export function resetRun(state: GameState): void {
     strays.push(...zone.playerCorpses.values());
   }
   state.zones.clear();
-  const overworld = ensureOverworld(state);
+  const surface = ensureSurface(state);
   ensureFloor(state, 1);
   const claimed = new Set<string>();
   for (const corpse of strays) {
-    corpse.pos = campCorpseSpot(overworld, claimed);
-    overworld.playerCorpses.set(corpse.id, corpse);
+    corpse.pos = campCorpseSpot(surface, claimed);
+    surface.playerCorpses.set(corpse.id, corpse);
   }
   for (const p of allPlayers(state)) {
     p.dead = false;
@@ -257,7 +224,7 @@ export function resetRun(state: GameState): void {
     p.buffUntil = 0;
     // A fresh world starts from camp, but the waypoints you've earned are yours.
     p.checkpoint = "overworld";
-    travel(state, p, "overworld");
+    travel(state, p, "surface");
   }
 }
 
@@ -273,7 +240,7 @@ export function createGame(seed: number): GameState {
     events: [],
     nextId: 1,
   };
-  ensureOverworld(state);
+  ensureSurface(state);
   ensureFloor(state, 1);
   return state;
 }
@@ -294,16 +261,16 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     durability: rollDurability("rusted_blade"),
   };
   const stats = computeStats(equipment);
-  const overworld = getZone(state, "overworld");
+  const surface = getZone(state, "surface");
   const p: Player = {
     id: join.id,
     name: "Wanderer",
     klass: "warrior",
-    zoneId: "overworld",
+    zoneId: "surface",
     wasInCamp: false,
     waypoints: ["overworld"],
     checkpoint: "overworld",
-    pos: { ...overworld.map.spawn },
+    pos: { ...surface.map.spawn },
     speed: PLAYER_SPEED,
     path: [],
     life: stats.maxLife,
@@ -422,7 +389,6 @@ export function step(state: GameState, frame: Frame): void {
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());
     stairsSystem(state, zone, grounded());
-    edgeExitSystem(state, zone, grounded());
     monsterAiSystem(state, zone, here());
     collisionSystem(state, zone, here());
     deathSystem(state, zone, here(), travel);

@@ -4,7 +4,8 @@
 import { AREAS, waypointPos, type AreaId } from "./areas";
 import type { MapMarker, Vec, ZoneMap } from "./map";
 import type { Rng } from "./rng";
-import { areaZone, MARKER_TYPES } from "./zone";
+import { zoneDepth, type ZoneId } from "./state";
+import { areaZone, MARKER_TYPES, zoneName } from "./zone";
 
 /** Registry insertion order — the one iteration order for generation and rendering. */
 export const AREA_ORDER = Object.keys(AREAS) as AreaId[];
@@ -123,6 +124,20 @@ export function worldAreaSpawn(id: AreaId): Vec {
   const s = AREAS[id].spawn;
   return { x: s.x + o.x, y: s.y + o.y };
 }
+
+/** THE difficulty lookup: region level at a surface position, floor number below. */
+export function areaLevelAt(zoneId: ZoneId, pos: Vec): number {
+  return zoneId === "surface" ? AREAS[areaAt(pos)].areaLevel : zoneDepth(zoneId);
+}
+
+/** Display name for a location: the region under `pos` on the surface, depth names below. */
+export function locationTitle(id: ZoneId, pos: Vec): string {
+  if (id === "surface") return AREAS[areaAt(pos)].title;
+  return zoneName(zoneDepth(id));
+}
+
+/** Display name for a region label. */
+export const regionTitle = (area: AreaId): string => AREAS[area].title;
 
 export interface SurfaceMonsterSpawn {
   typeId: string;

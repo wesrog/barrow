@@ -13,6 +13,9 @@ import {
 import { mapFromStrings, inCamp, isWalkable } from "./map";
 import { AREAS } from "./areas";
 import { createRng } from "./rng";
+import { player, soloGame } from "./test-helpers";
+import { resetRun, stepSolo } from "./tick";
+import { getZone } from "./state";
 
 describe("surfaceLayout", () => {
   test("registry order drives iteration", () => {
@@ -146,5 +149,63 @@ describe("stitchSurface", () => {
     const b = stitchSurface(createRng(99));
     expect(Buffer.from(a.map.cells).equals(Buffer.from(b.map.cells))).toBe(true);
     expect(a.monsters).toEqual(b.monsters);
+  });
+});
+
+describe("one surface zone", () => {
+  test("createGame seats the world in a single surface zone", () => {
+    const state = soloGame(3);
+    expect(state.zones.has("surface")).toBe(true);
+    expect(state.zones.has("overworld" as never)).toBe(false);
+    expect(player(state).zoneId).toBe("surface");
+    expect(player(state).pos).toEqual({ x: 7.5, y: 45.5 });
+  });
+
+  test("walking across the corridor changes region, not zone", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.pos = { x: 63.5, y: 45.5 };
+    stepSolo(state, { moveTo: { x: 65.5, y: 45.5 } });
+    for (let i = 0; i < 60; i++) stepSolo(state, {});
+    expect(p.zoneId).toBe("surface");
+    expect(p.pos.x).toBeGreaterThan(64);
+  });
+
+  test("waypoint travel lands on the destination pad, same zone", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.waypoints = ["overworld", "redfen"];
+    p.pos = { ...worldWaypointPos("overworld") };
+    stepSolo(state, { waypointTo: "redfen" });
+    expect(p.zoneId).toBe("surface");
+    expect(p.pos).toEqual(worldWaypointPos("redfen"));
+  });
+
+  test("stairs still swap zones: surface > floor:1 > surface", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.pos = { x: 58.5, y: 69.5 }; // the barrow mouth '>'
+    stepSolo(state, {});
+    expect(p.zoneId).toBe("floor:1");
+    const up = getZone(state, "floor:1").map.markers.find((m) => m.ch === "<")!;
+    p.pos = { x: up.x, y: up.y };
+    stepSolo(state, {});
+    expect(p.zoneId).toBe("surface");
+  });
+
+  test("entering an outpost's safe ground stamps that region as checkpoint", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.pos = { ...worldWaypointPos("redfen") }; // redfen's pad is on its safe ground
+    stepSolo(state, {});
+    expect(p.checkpoint).toBe("redfen");
+  });
+
+  test("resetRun regenerates one surface and reseats everyone at camp", () => {
+    const state = soloGame(3);
+    resetRun(state);
+    expect([...state.zones.keys()].sort()).toEqual(["floor:1", "surface"]);
+    expect(player(state).zoneId).toBe("surface");
+    expect(inRect(worldCampRect("overworld"), player(state).pos)).toBe(true);
   });
 });

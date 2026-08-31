@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { serializeCharacter } from "../sim/save";
 import { createGame, joinPlayer, step, travel } from "../sim/tick";
+import { worldWaypointPos } from "../sim/surface";
 import { deserializeGame, serializeGame } from "./snapshot";
 
 test("snapshot round-trip: the restored game steps identically to the original", () => {
@@ -34,10 +35,10 @@ test("the snapshot carries the world seed and checkpoint fields", () => {
   expect(copy.players.get(0)!.checkpoint).toBe("overworld");
 });
 
-test("a joiner restored into an ungenerated region replays identically on every peer", () => {
-  // The host's world has never generated the redfen; a joiner whose checkpoint
-  // is there forces generation inside the join frame — which must land the same
-  // way on the host and on a snapshot-synced peer.
+test("a joiner restored at a far-off outpost replays identically on every peer", () => {
+  // A joiner whose checkpoint is the redfen wakes on that outpost's pad, half a
+  // world away from camp — which must land the same way on the host and on a
+  // snapshot-synced peer.
   const donor = createGame(5);
   joinPlayer(donor, { id: 0 });
   donor.players.get(0)!.waypoints = ["overworld", "redfen"];
@@ -50,7 +51,8 @@ test("a joiner restored into an ungenerated region replays identically on every 
   const joinFrame = { tick: host.tick, inputs: {}, joins: [{ id: 1, character: raw }] };
   step(host, structuredClone(joinFrame));
   step(peer, structuredClone(joinFrame));
-  expect(host.players.get(1)!.zoneId).toBe("redfen");
+  expect(host.players.get(1)!.zoneId).toBe("surface");
+  expect(host.players.get(1)!.pos).toEqual(worldWaypointPos("redfen"));
   for (let t = 0; t < 60; t++) {
     const f = { tick: host.tick, inputs: {} };
     step(host, structuredClone(f));

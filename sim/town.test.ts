@@ -8,7 +8,7 @@ import type { GameState } from "./state";
 
 /** The solo player back on safe camp ground (where every game begins). */
 function goToCamp(state: GameState): void {
-  travel(state, player(state), "overworld");
+  travel(state, player(state), "surface");
 }
 
 describe("the camp", () => {
@@ -17,12 +17,12 @@ describe("the camp", () => {
     travel(state, player(state), "floor:1");
     const monstersBefore = [...getZone(state, "floor:1").monsters.keys()].sort();
     goToCamp(state);
-    expect(player(state).zoneId).toBe("overworld");
-    expect(inCamp(getZone(state, "overworld").map, player(state).pos)).toBe(true);
-    expect(state.events.some((e) => e.type === "traveled" && e.to === "overworld")).toBe(true);
+    expect(player(state).zoneId).toBe("surface");
+    expect(inCamp(getZone(state, "surface").map, player(state).pos)).toBe(true);
+    expect(state.events.some((e) => e.type === "traveled" && e.to === "surface")).toBe(true);
 
     // Walk into the barrow mouth: back down to floor 1
-    const mouth = getZone(state, "overworld").map.markers.find((m) => m.ch === ">")!;
+    const mouth = getZone(state, "surface").map.markers.find((m) => m.ch === ">")!;
     player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
     expect(player(state).zoneId).toBe("floor:1");
@@ -32,15 +32,15 @@ describe("the camp", () => {
   test("a new run from camp regenerates floor 1", () => {
     const state = soloGame(1);
     stepSolo(state, { newGame: true });
-    expect(player(state).zoneId).toBe("overworld");
-    expect(inCamp(getZone(state, "overworld").map, player(state).pos)).toBe(true);
+    expect(player(state).zoneId).toBe("surface");
+    expect(inCamp(getZone(state, "surface").map, player(state).pos)).toBe(true);
     expect(getZone(state, "floor:1").monsters.size).toBeGreaterThan(0);
   });
 });
 
 describe("talking to the vendor", () => {
   function vendorPos(state: GameState): { x: number; y: number } {
-    const v = getZone(state, "overworld").map.markers.find((m) => m.ch === "V")!;
+    const v = getZone(state, "surface").map.markers.find((m) => m.ch === "V")!;
     return { x: v.x, y: v.y };
   }
 
@@ -77,7 +77,7 @@ describe("talking to the vendor", () => {
 
 describe("the healer", () => {
   function healerPos(state: GameState): { x: number; y: number } {
-    const h = getZone(state, "overworld").map.markers.find((m) => m.ch === "H")!;
+    const h = getZone(state, "surface").map.markers.find((m) => m.ch === "H")!;
     return { x: h.x, y: h.y };
   }
 
@@ -227,7 +227,7 @@ describe("the vendor", () => {
     );
 
     // Standing on the moors outside the palisade is not camp ground either.
-    const map = getZone(state, "overworld").map;
+    const map = getZone(state, "surface").map;
     player(state).equipment.weapon!.durability!.cur = 1;
     player(state).pos = { x: map.camps[0]!.x1 + 2.5, y: player(state).pos.y };
     stepSolo(state, { repair: true });

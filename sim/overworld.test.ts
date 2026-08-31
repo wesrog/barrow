@@ -48,7 +48,7 @@ describe("overworld map", () => {
 
   test("the camp is part of the moors: spawn, vendor, healer, and campfire inside it", () => {
     const map = overworldZone(createRng(9));
-    expect(map.camp).toBeDefined();
+    expect(map.camps.length).toBeGreaterThan(0);
     expect(inCamp(map, map.spawn)).toBe(true);
     for (const ch of ["V", "H", "F"]) {
       const m = map.markers.find((mk) => mk.ch === ch)!;
@@ -138,7 +138,7 @@ describe("camp safety", () => {
     const zone = getZone(g, "overworld");
     const p = player(g);
     // A monster right at the palisade gap, player just inside.
-    const c = zone.map.camp!;
+    const c = zone.map.camps[0]!;
     p.pos = { x: c.x1 - 0.5, y: p.pos.y };
     const m = [...zone.monsters.values()][0]!;
     m.pos = { x: c.x1 + 1.5, y: p.pos.y };

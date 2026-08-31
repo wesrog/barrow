@@ -229,7 +229,7 @@ describe("the vendor", () => {
     // Standing on the moors outside the palisade is not camp ground either.
     const map = getZone(state, "overworld").map;
     player(state).equipment.weapon!.durability!.cur = 1;
-    player(state).pos = { x: map.camp!.x1 + 2.5, y: player(state).pos.y };
+    player(state).pos = { x: map.camps[0]!.x1 + 2.5, y: player(state).pos.y };
     stepSolo(state, { repair: true });
     expect(player(state).equipment.weapon!.durability!.cur).toBe(1);
   });

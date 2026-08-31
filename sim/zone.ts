@@ -261,7 +261,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     placed++;
   }
 
-  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camp: { ...safe } };
+  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: [{ ...safe }] };
 }
 
 /** The moors above the barrow — the overworld row of the area registry. */

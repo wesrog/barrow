@@ -64,7 +64,7 @@ describe("inCamp", () => {
 
   test("positions inside the camp rect are in camp; outside are not", () => {
     const map = mapFromStrings(["@...", "...."]);
-    map.camp = { x0: 0, y0: 0, x1: 2, y1: 2 };
+    map.camps = [{ x0: 0, y0: 0, x1: 2, y1: 2 }];
     expect(inCamp(map, { x: 0.5, y: 0.5 })).toBe(true);
     expect(inCamp(map, { x: 1.9, y: 1.9 })).toBe(true);
     expect(inCamp(map, { x: 2.1, y: 0.5 })).toBe(false);

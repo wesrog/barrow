@@ -9,6 +9,7 @@ import {
   worldCampRect,
   worldWaypointPos,
 } from "./surface";
+import { mapFromStrings, inCamp } from "./map";
 import { AREAS } from "./areas";
 
 describe("surfaceLayout", () => {
@@ -68,5 +69,18 @@ describe("world helpers", () => {
     expect(worldAreaSpawn("overworld")).toEqual({ x: 7.5, y: 45.5 });
     expect(inRect(worldCampRect("overworld"), { x: 7.5, y: 45.5 })).toBe(true);
     expect(inRect(worldCampRect("overworld"), { x: 20, y: 45.5 })).toBe(false);
+  });
+});
+
+describe("camps", () => {
+  test("inCamp checks every rect in camps", () => {
+    const map = mapFromStrings(["....", "....", "....", "...."]);
+    map.camps = [
+      { x0: 0, y0: 0, x1: 2, y1: 2 },
+      { x0: 3, y0: 3, x1: 4, y1: 4 },
+    ];
+    expect(inCamp(map, { x: 1, y: 1 })).toBe(true);
+    expect(inCamp(map, { x: 3.5, y: 3.5 })).toBe(true);
+    expect(inCamp(map, { x: 2.5, y: 2.5 })).toBe(false);
   });
 });

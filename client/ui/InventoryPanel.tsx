@@ -9,6 +9,7 @@ import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
 import { ItemIcon } from "./ItemIcon";
 import { PanelChrome } from "./PanelChrome";
+import { coarsePointer } from "../coarse";
 
 const CELL = 32;
 
@@ -47,6 +48,11 @@ const panelStyle: CSSProperties = {
   top: 16,
   right: 16,
   width: INV_W * CELL + 26,
+  // Small screens: never wider than the viewport, scroll instead of clipping.
+  maxWidth: "calc(100vw - 60px)",
+  maxHeight: "calc(100% - 32px)",
+  overflowY: "auto",
+  overflowX: "auto",
   background: "rgba(12, 11, 15, 0.93)",
   border: "1px solid #3a3442",
   borderRadius: 4,
@@ -59,7 +65,18 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 30px rgba(0,0,0,.6)",
 };
 
-function itemDetail(item: Item): { lines: string[]; color: string } {
+const touchBtnStyle: CSSProperties = {
+  padding: "8px 14px",
+  border: "1px solid #5a5468",
+  borderRadius: 4,
+  background: "rgba(48,42,60,.6)",
+  color: "#e8dcc0",
+  fontFamily: "ui-monospace, monospace",
+  fontSize: 12,
+  cursor: "pointer",
+};
+
+export function itemDetail(item: Item): { lines: string[]; color: string } {
   const base = BASES[item.baseId]!;
   const lines: string[] = [];
   if (base.dmgMin !== undefined) lines.push(`damage ${base.dmgMin}–${base.dmgMax}`);
@@ -92,7 +109,19 @@ export function InventoryPanel({
   onClose: () => void;
 }) {
   const [hovered, setHovered] = useState<Item | null>(null);
+  // Touch has no hover: the first tap selects an item (details + buttons in
+  // the footer), the second tap on the same item equips/unequips it.
+  const [selected, setSelected] = useState<
+    { where: "inv"; entryId: number } | { where: "equip"; slot: EquipSlot } | null
+  >(null);
   const p = localPlayer(game);
+  const selectedItem: Item | null =
+    selected?.where === "inv"
+      ? (p.inventory.entries.find((e) => e.id === selected.entryId)?.item ?? null)
+      : selected?.where === "equip"
+        ? (p.equipment[selected.slot] ?? null)
+        : null;
+  const shown = coarsePointer ? selectedItem : hovered;
 
   return (
     <div style={panelStyle}>
@@ -113,7 +142,19 @@ export function InventoryPanel({
           return (
             <div
               key={slot}
-              onClick={() => item && onUnequip(slot)}
+              onClick={() => {
+                if (!item) return;
+                if (!coarsePointer) {
+                  onUnequip(slot);
+                  return;
+                }
+                if (selected?.where === "equip" && selected.slot === slot) {
+                  onUnequip(slot);
+                  setSelected(null);
+                } else {
+                  setSelected({ where: "equip", slot });
+                }
+              }}
               onMouseEnter={() => item && setHovered(item)}
               onMouseLeave={() => setHovered(null)}
               style={{
@@ -162,9 +203,26 @@ export function InventoryPanel({
           return (
             <div
               key={e.id}
-              onClick={() => onEquip(e.id)}
+              onClick={() => {
+                if (!coarsePointer) {
+                  onEquip(e.id);
+                  return;
+                }
+                if (selected?.where === "inv" && selected.entryId === e.id) {
+                  onEquip(e.id);
+                  setSelected(null);
+                } else {
+                  setSelected({ where: "inv", entryId: e.id });
+                }
+              }}
               onContextMenu={(ev) => {
                 ev.preventDefault();
+                // Long-press on touch selects (drop lives in the footer buttons);
+                // a desktop right-click still drops directly.
+                if (coarsePointer) {
+                  setSelected({ where: "inv", entryId: e.id });
+                  return;
+                }
                 setHovered(null);
                 onDrop(e.id);
               }}
@@ -196,20 +254,58 @@ export function InventoryPanel({
         })}
       </div>
 
-      {/* Hover detail */}
+      {/* Hover (mouse) or selection (touch) detail */}
       <div style={{ minHeight: 64, marginTop: 8, lineHeight: 1.45 }}>
-        {hovered ? (
+        {shown ? (
           <>
-            <div style={{ color: itemDetail(hovered).color }}>{hovered.name}</div>
-            {itemDetail(hovered).lines.map((line, i) => (
+            <div style={{ color: itemDetail(shown).color }}>{shown.name}</div>
+            {itemDetail(shown).lines.map((line, i) => (
               <div key={i} style={{ color: "#948c7d" }}>
                 {line}
               </div>
             ))}
+            {coarsePointer && selected && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                {selected.where === "inv" ? (
+                  <>
+                    <button
+                      style={touchBtnStyle}
+                      onClick={() => {
+                        onEquip(selected.entryId);
+                        setSelected(null);
+                      }}
+                    >
+                      equip
+                    </button>
+                    <button
+                      style={{ ...touchBtnStyle, color: "#e08a8a" }}
+                      onClick={() => {
+                        onDrop(selected.entryId);
+                        setSelected(null);
+                      }}
+                    >
+                      drop
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    style={touchBtnStyle}
+                    onClick={() => {
+                      onUnequip(selected.slot);
+                      setSelected(null);
+                    }}
+                  >
+                    unequip
+                  </button>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <div style={{ color: "#55503f" }}>
-            click to equip / unequip · right-click to drop · i or esc to close
+            {coarsePointer
+              ? "tap an item to inspect · tap it again to equip"
+              : "click to equip / unequip · right-click to drop · i or esc to close"}
           </div>
         )}
       </div>

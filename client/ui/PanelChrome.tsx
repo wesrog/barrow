@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useState } from "react";
+import { coarsePointer } from "../coarse";
 
 // Title bar shared by the HUD's modal panels: title on the left, an X on the
 // right. Negative margins let it bleed to the panel's edges — panels using it
@@ -43,9 +44,11 @@ export function PanelChrome({
           border: `1px solid ${hot ? "#5a5468" : "#3a3442"}`,
           borderRadius: 3,
           background: hot ? "rgba(48,42,60,.6)" : "transparent",
-          width: 18,
-          height: 18,
-          lineHeight: "16px",
+          // A finger needs a fatter close target than a cursor does.
+          width: coarsePointer ? 28 : 18,
+          height: coarsePointer ? 28 : 18,
+          lineHeight: coarsePointer ? "26px" : "16px",
+          fontSize: coarsePointer ? 16 : undefined,
           textAlign: "center",
           flex: "none",
           userSelect: "none",

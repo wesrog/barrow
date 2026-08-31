@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { CLASS_SKILLS, type SkillId } from "../../sim/skills";
 import type { GameState } from "../../sim/state";
 import { PanelChrome } from "./PanelChrome";
+import { coarsePointer } from "../coarse";
 
 const DESCRIPTIONS: Record<SkillId, string> = {
   cleave: "sweep every enemy in reach · +25%/rank · +10% per warcry rank",
@@ -20,6 +21,10 @@ const panelStyle: CSSProperties = {
   top: 16,
   left: 16,
   width: 330,
+  // Phones: shrink to the viewport and scroll rather than clip.
+  maxWidth: "calc(100vw - 60px)",
+  maxHeight: "calc(100% - 32px)",
+  overflowY: "auto",
   background: "rgba(12, 11, 15, 0.93)",
   border: "1px solid #3a3442",
   borderRadius: 4,
@@ -59,7 +64,7 @@ export function SkillPanel({
             onClick={() => canSpend && onSpend(def.id)}
             title={canSpend ? "click to spend a point" : undefined}
             style={{
-              padding: "6px 8px",
+              padding: coarsePointer ? "9px 8px" : "6px 8px",
               marginBottom: 4,
               border: `1px solid ${rank > 0 ? "#5a5468" : "#2c2833"}`,
               borderRadius: 3,
@@ -80,7 +85,11 @@ export function SkillPanel({
           </div>
         );
       })}
-      <div style={{ color: "#55503f", marginTop: 6 }}>s or esc to close · 1–4 to cast</div>
+      <div style={{ color: "#55503f", marginTop: 6 }}>
+        {coarsePointer
+          ? "tap a skill to spend a point · cast from the bar below"
+          : "s or esc to close · 1–4 to cast"}
+      </div>
     </div>
   );
 }

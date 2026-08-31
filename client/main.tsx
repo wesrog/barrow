@@ -48,6 +48,14 @@ function Game({
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  // A point-targeted skill (leap/blink) armed from the hotbar: the next tap on
+  // the world casts it there. Ref mirrors state so pointer handlers see it.
+  const [armedSlot, setArmedSlot] = useState<number | null>(null);
+  const armedRef = useRef<number | null>(null);
+  const setArmed = (slot: number | null) => {
+    armedRef.current = slot;
+    setArmedSlot(slot);
+  };
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [desync, setDesync] = useState(false);
@@ -156,20 +164,49 @@ function Game({
     };
     const onPointerDown = (e: PointerEvent) => {
       unlock(); // first gesture wakes the audio engine
+      if (!e.isPrimary) return; // a second finger must not steer the first
       if (e.button !== 0) return;
       // Only canvas clicks are world clicks — HUD panels handle their own.
       if (!(e.target instanceof HTMLCanvasElement)) return;
+      // An armed point skill spends this tap as its aim, not as a move order.
+      const armed = armedRef.current;
+      if (armed !== null) {
+        setArmed(null);
+        const def = CLASS_SKILLS(localPlayer(game).klass)[armed];
+        const picked = scene.pick(game, e.clientX, e.clientY);
+        if (def && picked) {
+          if (picked.kind === "ground") {
+            uiInputRef.current.cast = { skill: def.id, at: picked.world };
+            return;
+          }
+          if (picked.kind === "monster") {
+            const m = zoneOf(game, localPlayer(game)).monsters.get(picked.id);
+            if (m) {
+              uiInputRef.current.cast = { skill: def.id, at: { ...m.pos } };
+              return;
+            }
+          }
+        }
+        // Anything else (vendor, item, wall): disarm and let the tap act normally.
+      }
       mouseDown = true;
       shiftDown = e.shiftKey;
       lastPointer = { x: e.clientX, y: e.clientY };
       aimFromPointer(true);
     };
     const onPointerMove = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       lastPointer = { x: e.clientX, y: e.clientY };
       shiftDown = e.shiftKey;
     };
-    const onPointerUp = () => {
+    const onPointerUp = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
       mouseDown = false;
+      // A lifted finger hovers nothing — clear the highlight a mouse would keep.
+      if (e.pointerType === "touch") {
+        lastPointer = null;
+        scene.clearHover();
+      }
     };
     // Hotkeys 1–4 map to the local class's skills in hotbar order; each
     // skill's targeting mode decides what the cursor contributes.
@@ -195,6 +232,7 @@ function Game({
         setInvOpen(false);
         setSkillsOpen(false);
         setShopOpen(false);
+        setArmed(null);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
@@ -215,6 +253,7 @@ function Game({
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
     const save = () => {
       if (session.state) saveToStorage(session.state, localId());
@@ -437,6 +476,7 @@ function Game({
         mount.removeEventListener("pointerdown", onPointerDown);
         mount.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
         window.removeEventListener("keydown", onKeyDown);
         clearInterval(saveTimer);
         clearInterval(hudTimer);
@@ -547,12 +587,31 @@ function Game({
       {gameRef.current && (
         <BottomBar
           game={gameRef.current}
+          armedSlot={armedSlot}
+          onSkill={(slot) => {
+            const g = gameRef.current;
+            if (!g) return;
+            const def = CLASS_SKILLS(localPlayer(g).klass)[slot];
+            if (!def) return;
+            if (def.targeting === "point") {
+              // Arm it; the next tap on the world is the aim. Tap again to cancel.
+              setArmed(armedRef.current === slot ? null : slot);
+            } else {
+              // "none" fires as-is; "target" lets the sim pick whatever is in reach.
+              setArmed(null);
+              uiInputRef.current.cast = { skill: def.id };
+            }
+          }}
           onAction={(action) => {
             if (action === "inventory") setInvOpen((open) => !open);
             else if (action === "skills") setSkillsOpen((open) => !open);
             else if (action === "drink") uiInputRef.current.drink = true;
             else if (action === "portal") uiInputRef.current.townPortal = true;
             else if (action === "vendor") setShopOpen((open) => !open);
+            else if (action === "newrun") {
+              if (window.confirm("Start a fresh run? The floors reset and everyone returns to camp."))
+                uiInputRef.current.newGame = true;
+            }
           }}
         />
       )}

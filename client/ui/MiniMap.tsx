@@ -87,6 +87,10 @@ export function MiniMap({ game }: { game: GameState }) {
         zIndex: 3,
         pointerEvents: "none",
         opacity: 0.88,
+        // Phones: keep the widget a corner widget — shrink, preserving ratio.
+        maxWidth: "38vw",
+        maxHeight: "30vh",
+        height: "auto",
       }}
     />
   );

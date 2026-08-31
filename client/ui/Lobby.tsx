@@ -13,6 +13,7 @@ import type { Klass } from "../../sim/skills";
 import { generateName } from "../names";
 
 import { display, mono } from "./fonts";
+import { coarsePointer } from "../coarse";
 
 function joinCodeFromUrl(): string | null {
   try {
@@ -41,7 +42,8 @@ const inputStyle: CSSProperties = {
   background: "#141218",
   color: "#e8dcc0",
   fontFamily: mono,
-  fontSize: 13,
+  // Below 16px, iOS Safari zooms the page in when an input gains focus.
+  fontSize: coarsePointer ? 16 : 13,
   letterSpacing: 2,
   width: 130,
   textTransform: "uppercase",
@@ -164,12 +166,15 @@ export function Lobby({
           flexDirection: "column",
           alignItems: "center",
           gap: 18,
-          padding: "32px 40px",
+          padding: coarsePointer ? "24px 20px" : "32px 40px",
           border: "1px solid #3a3442",
           borderRadius: 6,
           background: "rgba(12,11,15,.85)",
-          minWidth: 300,
-          maxWidth: 380,
+          minWidth: "min(300px, calc(100vw - 48px))",
+          maxWidth: "min(380px, calc(100vw - 24px))",
+          maxHeight: "calc(100% - 24px)",
+          overflowY: "auto",
+          boxSizing: "border-box",
         }}
       >
         <div

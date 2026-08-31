@@ -21,8 +21,15 @@ import {
 } from "./modelRigs";
 import type { GameAssets } from "./models";
 import { playerCss, playerTint } from "./tints";
+import { coarsePointer } from "../coarse";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
+// Portrait phones would otherwise see a corridor a few tiles wide — zoom out
+// until at least this much of the world fits horizontally.
+const MIN_VIEW_WIDTH = 12;
+// Fat-finger slack: how far (px) a tap may miss a thing and still hit it.
+const PICK_SLACK = coarsePointer ? 44 : 30;
+const FLAT_SLACK = coarsePointer ? 34 : 22;
 
 export type PickResult =
   | { kind: "monster"; id: number }
@@ -52,6 +59,8 @@ export interface SceneHandle {
   handleEvent(event: SimEvent, state: GameState): void;
   /** Highlight whatever is under the cursor and set an appropriate cursor. */
   updateHover(state: GameState, clientX: number, clientY: number): void;
+  /** Drop any hover highlight/tooltip — a lifted finger hovers nothing. */
+  clearHover(): void;
   dispose(): void;
 }
 
@@ -96,10 +105,11 @@ export function createScene(
     const h = mount.clientHeight || window.innerHeight;
     renderer.setSize(w, h);
     const aspect = w / h;
-    camera.top = VIEW_HEIGHT / 2;
-    camera.bottom = -VIEW_HEIGHT / 2;
-    camera.left = (-VIEW_HEIGHT * aspect) / 2;
-    camera.right = (VIEW_HEIGHT * aspect) / 2;
+    const viewH = VIEW_HEIGHT * aspect >= MIN_VIEW_WIDTH ? VIEW_HEIGHT : MIN_VIEW_WIDTH / aspect;
+    camera.top = viewH / 2;
+    camera.bottom = -viewH / 2;
+    camera.left = (-viewH * aspect) / 2;
+    camera.right = (viewH * aspect) / 2;
     camera.updateProjectionMatrix();
   };
   resize();
@@ -560,6 +570,15 @@ export function createScene(
       }
     });
   };
+  const tintableOf = (k: string | null): THREE.Object3D | undefined => {
+    if (!k) return undefined;
+    const [kind, raw] = k.split(":");
+    const id = Number(raw);
+    if (kind === "monster") return monsterRigs.get(id)?.group;
+    if (kind === "breakable") return breakableVisuals.get(id);
+    if (kind === "portal") return portalVisuals.get(id);
+    return playerCorpseVisuals.get(id)?.group;
+  };
   const corpseMeshes: THREE.Mesh[] = [];
   let corpseCount = 0;
   const corpseMatByType: Record<string, THREE.MeshStandardMaterial> = {
@@ -849,7 +868,10 @@ export function createScene(
           scene.add(mesh);
           const label = document.createElement("div");
           label.textContent = gi.item.name;
-          label.style.cssText = `position:absolute;color:${colors.css};font-size:11.5px;transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:1px 5px;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:auto;cursor:pointer;`;
+          // Fingers need a fatter tap target than a mouse cursor does.
+          const labelPad = coarsePointer ? "5px 9px" : "1px 5px";
+          const labelSize = coarsePointer ? "12.5px" : "11.5px";
+          label.style.cssText = `position:absolute;color:${colors.css};font-size:${labelSize};transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:${labelPad};white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:auto;cursor:pointer;`;
           const id = gi.id;
           label.addEventListener("pointerdown", (e) => {
             e.stopPropagation();
@@ -1025,7 +1047,7 @@ export function createScene(
       // Forgiving fallback: nearest monster within a generous screen radius.
       {
         let bestId: number | null = null;
-        let bestD = 30; // px
+        let bestD = PICK_SLACK; // px
         for (const [id] of monsterRigs) {
           const monster = zone.monsters.get(id);
           if (!monster) continue;
@@ -1042,7 +1064,7 @@ export function createScene(
       // same near-miss slack the monsters get.
       {
         let best: PickResult = null;
-        let bestD = 22; // px
+        let bestD = FLAT_SLACK; // px
         for (const portal of zone.portals.values()) {
           const at = worldToScreen(portal.pos, 0.3);
           const d = Math.hypot(at.x - cx, at.y - cy);
@@ -1104,18 +1126,9 @@ export function createScene(
         picked && HIGHLIGHT.includes(picked.kind) && "id" in picked
           ? `${picked.kind}:${picked.id}`
           : null;
-      const tintable = (k: string | null): THREE.Object3D | undefined => {
-        if (!k) return undefined;
-        const [kind, raw] = k.split(":");
-        const id = Number(raw);
-        if (kind === "monster") return monsterRigs.get(id)?.group;
-        if (kind === "breakable") return breakableVisuals.get(id);
-        if (kind === "portal") return portalVisuals.get(id);
-        return playerCorpseVisuals.get(id)?.group;
-      };
       if (key !== hoveredKey) {
-        hoverTint(tintable(hoveredKey), false);
-        hoverTint(tintable(key), true);
+        hoverTint(tintableOf(hoveredKey), false);
+        hoverTint(tintableOf(key), true);
         hoveredKey = key;
       }
       renderer.domElement.style.cursor =
@@ -1136,7 +1149,7 @@ export function createScene(
         if (portal) tip = { name: "Town Portal", role: `To ${zoneTitle(portal.link.zone)}` };
       } else if (!picked || picked.kind === "ground") {
         // Stairs, pads, and gates are flat rings — match by cursor proximity.
-        let bestD = 22; // px
+        let bestD = FLAT_SLACK; // px
         for (const ind of areaIndicators) {
           const at = worldToScreen(ind.pos, 0.3);
           const d = Math.hypot(at.x - px, at.y - py);
@@ -1155,6 +1168,15 @@ export function createScene(
       } else {
         tooltip.style.display = "none";
       }
+    },
+
+    clearHover() {
+      if (hoveredKey !== null) {
+        hoverTint(tintableOf(hoveredKey), false);
+        hoveredKey = null;
+      }
+      tooltip.style.display = "none";
+      renderer.domElement.style.cursor = "default";
     },
 
     handleEvent(event, state) {

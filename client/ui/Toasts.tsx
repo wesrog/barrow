@@ -57,7 +57,7 @@ export function Toasts({
     <div
       style={{
         position: "absolute",
-        bottom: 170,
+        bottom: "calc(170px + env(safe-area-inset-bottom, 0px))",
         right: 16,
         display: "flex",
         flexDirection: "column-reverse",

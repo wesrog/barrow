@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>barrow</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,9 +14,18 @@
       rel="stylesheet"
     />
     <style>
-      html, body { margin: 0; height: 100%; background: #0a0a0c; overflow: hidden; }
-      #root { height: 100%; }
-      canvas { display: block; }
+      html, body { margin: 0; height: 100%; background: #0a0a0c; overflow: hidden; overscroll-behavior: none; }
+      body {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: manipulation;
+      }
+      input, textarea { user-select: text; -webkit-user-select: text; }
+      /* dvh tracks the collapsing mobile address bar; plain % is the fallback. */
+      #root { height: 100%; height: 100dvh; }
+      canvas { display: block; touch-action: none; }
     </style>
   </head>
   <body>

@@ -131,6 +131,8 @@ export interface Player {
   waypoints: AreaId[];
   /** Where death and a reload seat this player: last waypoint or safe ground touched. */
   checkpoint: AreaId;
+  /** Last surface region this player stood in; kept while below ground. */
+  region: AreaId;
   level: number;
   xp: number;
   skillPoints: number;
@@ -203,7 +205,8 @@ export type SimEvent =
   | { type: "player_left"; playerId: PlayerId }
   | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
   | { type: "corpse_reclaimed"; playerId: PlayerId }
-  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec };
+  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec }
+  | { type: "region_entered"; playerId: PlayerId; area: AreaId };
 
 export interface ShopEntry {
   item: Item;

@@ -156,6 +156,7 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
     typeof save.checkpoint === "string" && isAreaId(save.checkpoint)
       ? save.checkpoint
       : "overworld";
+  p.region = p.checkpoint;
   // Keep item ids clear of the fresh state's counter.
   for (const e of p.inventory.entries) {
     if (e.id >= state.nextId) state.nextId = e.id + 1;

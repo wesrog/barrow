@@ -209,3 +209,38 @@ describe("one surface zone", () => {
     expect(inRect(worldCampRect("overworld"), player(state).pos)).toBe(true);
   });
 });
+
+describe("region_entered", () => {
+  test("crossing the corridor emits region_entered exactly once", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.pos = { x: 63.5, y: 45.5 };
+    p.region = "overworld";
+    const areas: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      stepSolo(state, i === 0 ? { moveTo: { x: 66.5, y: 45.5 } } : {});
+      for (const e of state.events) {
+        if (e.type === "region_entered") areas.push(e.area);
+      }
+    }
+    expect(areas).toEqual(["redfen"]);
+    expect(p.region).toBe("redfen");
+  });
+
+  test("no event fires while pacing inside one region", () => {
+    const state = soloGame(3);
+    for (let i = 0; i < 10; i++) {
+      stepSolo(state, {});
+      expect(state.events.some((e) => e.type === "region_entered")).toBe(false);
+    }
+  });
+
+  test("descending keeps the last surface region", () => {
+    const state = soloGame(3);
+    const p = player(state);
+    p.pos = { x: 58.5, y: 69.5 };
+    stepSolo(state, {});
+    expect(p.zoneId).toBe("floor:1");
+    expect(p.region).toBe("overworld");
+  });
+});

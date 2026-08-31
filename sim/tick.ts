@@ -122,6 +122,18 @@ export function stairsSystem(state: GameState, zone: ZoneState, players: Player[
   }
 }
 
+/** Track which region each surface player stands in; announce crossings. */
+export function regionSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  if (zone.id !== "surface") return;
+  for (const p of players) {
+    const r = areaAt(p.pos);
+    if (r !== p.region) {
+      p.region = r;
+      state.events.push({ type: "region_entered", playerId: p.id, area: r });
+    }
+  }
+}
+
 /**
  * Crossing onto any region's safe ground counts as arriving in town: the
  * checkpoint stamps there, and in the moors camp — the only stall — a lone
@@ -270,6 +282,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     wasInCamp: false,
     waypoints: ["overworld"],
     checkpoint: "overworld",
+    region: "overworld",
     pos: { ...surface.map.spawn },
     speed: PLAYER_SPEED,
     path: [],
@@ -386,6 +399,7 @@ export function step(state: GameState, frame: Frame): void {
     // Airborne players neither walk nor trip floor triggers until they land.
     const grounded = () => acting().filter((p) => !p.leap);
     movementSystem(grounded());
+    regionSystem(state, zone, grounded());
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());
     stairsSystem(state, zone, grounded());

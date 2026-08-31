@@ -13,6 +13,8 @@ export interface ItemBase {
   defense?: number;
   /** Life restored on drinking (potions). */
   heals?: number;
+  /** Mana restored on drinking (potions). */
+  restoresMana?: number;
 }
 
 const base = (b: ItemBase) => b;
@@ -51,4 +53,12 @@ export const BASES: Record<string, ItemBase> = {
   howler_charm: base({ id: "howler_charm", name: "Howler Charm", slot: "amulet", w: 1, h: 1, levelReq: 24 }),
   // --- potions ---
   minor_potion: base({ id: "minor_potion", name: "Minor Healing Potion", slot: "potion", w: 1, h: 1, levelReq: 1, heals: 35 }),
+  minor_mana_potion: base({ id: "minor_mana_potion", name: "Minor Mana Potion", slot: "potion", w: 1, h: 1, levelReq: 1, restoresMana: 25 }),
 };
+
+/** Which belt row a potion base belongs to; null for anything undrinkable. */
+export function potionKind(baseId: string): "health" | "mana" | null {
+  const base = BASES[baseId];
+  if (!base || base.slot !== "potion") return null;
+  return base.restoresMana !== undefined ? "mana" : "health";
+}

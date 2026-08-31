@@ -1,23 +1,35 @@
 import { hasLineOfSight, isWalkable } from "../map";
 import {
   BLINK_RANGE,
+  CHAINBOLT_FALLOFF,
+  CHAINBOLT_RANGE,
+  CHAINBOLT_TARGETS,
   CLEAVE_RADIUS,
   CRUSH_RANGE,
+  DEATHBLOW_RANGE,
+  FIREBALL_RADIUS,
+  FIREBALL_RANGE,
   FIREBOLT_RANGE,
   FROSTNOVA_RADIUS,
   LEAP_RANGE,
   LEAP_TICKS,
   LEAP_STUN_RADIUS,
   SKILLS,
+  chainboltDamage,
   cleaveMultiplier,
   crushMultiplier,
   damageMultiplier,
+  deathblowMultiplier,
+  fireballDamage,
   fireboltDamage,
   frostnovaChillTicks,
   frostnovaDamage,
   leapMultiplier,
   leapStunTicks,
   spellMultiplier,
+  STOMP_RADIUS,
+  stompMultiplier,
+  stompStunTicks,
   type SkillId,
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
@@ -30,6 +42,7 @@ export function applySpendSkillInput(state: GameState, p: Player, input: PlayerI
   if (!id) return;
   const def = SKILLS[id];
   if (!def || def.klass !== p.klass || p.skillPoints <= 0 || p.level < def.levelReq) return;
+  if (def.prereq && p.skills[def.prereq] <= 0) return;
   p.skills[id]++;
   p.skillPoints--;
 }
@@ -164,6 +177,143 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         skill: "leap",
         pos: { ...p.pos },
         at: { x: cast.at.x, y: cast.at.y },
+        zone: zone.id,
+      });
+      break;
+    }
+    case "stomp": {
+      const targets = [...zone.monsters.values()].filter(
+        (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= STOMP_RADIUS,
+      );
+      if (targets.length === 0) return;
+      if (!spendMana(p, "stomp")) return;
+      const mult = stompMultiplier(p.skills.stomp);
+      const stunFor = stompStunTicks(p.skills.stomp);
+      for (const m of targets) {
+        // A ground slam: no dodging it, like the leap's landing.
+        const amount = rollSkillDamage(state, p, mult);
+        m.life -= amount;
+        m.lastHitBy = p.id;
+        m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + stunFor);
+        state.events.push({
+          type: "monster_hit",
+          id: m.id,
+          amount,
+          pos: { ...m.pos },
+          zone: zone.id,
+        });
+      }
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "stomp",
+        pos: { ...p.pos },
+        zone: zone.id,
+      });
+      break;
+    }
+    case "deathblow": {
+      // Same forgiving targeting as crush: the pick is a hint, reach decides.
+      let m = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
+      if (!m || Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) > DEATHBLOW_RANGE) {
+        m = nearestTo(
+          p.pos,
+          [...zone.monsters.values()].filter(
+            (c) => Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= DEATHBLOW_RANGE,
+          ),
+        );
+      }
+      if (!m) return;
+      if (!spendMana(p, "deathblow")) return;
+      const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow));
+      m.life -= amount;
+      m.lastHitBy = p.id;
+      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "deathblow",
+        pos: { ...m.pos },
+        at: { ...m.pos },
+        zone: zone.id,
+      });
+      break;
+    }
+    case "fireball": {
+      if (!cast.at) return;
+      if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > FIREBALL_RANGE) return;
+      if (!hasLineOfSight(zone.map, p.pos, cast.at)) return;
+      if (!spendMana(p, "fireball")) return;
+      const { min, max } = fireballDamage(p.skills.fireball, p.skills.firebolt);
+      for (const m of zone.monsters.values()) {
+        if (Math.hypot(m.pos.x - cast.at.x, m.pos.y - cast.at.y) > FIREBALL_RADIUS) continue;
+        const amount = Math.max(
+          1,
+          Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
+        );
+        m.life -= amount;
+        m.lastHitBy = p.id;
+        state.events.push({
+          type: "monster_hit",
+          id: m.id,
+          amount,
+          pos: { ...m.pos },
+          zone: zone.id,
+        });
+      }
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "fireball",
+        pos: { ...p.pos },
+        at: { x: cast.at.x, y: cast.at.y },
+        zone: zone.id,
+      });
+      state.events.push({
+        type: "exploded",
+        pos: { x: cast.at.x, y: cast.at.y },
+        radius: FIREBALL_RADIUS,
+        zone: zone.id,
+      });
+      break;
+    }
+    case "chainbolt": {
+      const inSight = (c: { pos: { x: number; y: number } }) =>
+        Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= CHAINBOLT_RANGE &&
+        hasLineOfSight(zone.map, p.pos, c.pos);
+      const targets = [...zone.monsters.values()]
+        .filter(inSight)
+        .sort(
+          (a, b) =>
+            Math.hypot(a.pos.x - p.pos.x, a.pos.y - p.pos.y) -
+            Math.hypot(b.pos.x - p.pos.x, b.pos.y - p.pos.y),
+        )
+        .slice(0, CHAINBOLT_TARGETS);
+      if (targets.length === 0) return;
+      if (!spendMana(p, "chainbolt")) return;
+      const { min, max } = chainboltDamage(p.skills.chainbolt);
+      targets.forEach((m, i) => {
+        const falloff = i === 0 ? 1 : CHAINBOLT_FALLOFF;
+        const amount = Math.max(
+          1,
+          Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * falloff),
+        );
+        m.life -= amount;
+        m.lastHitBy = p.id;
+        state.events.push({
+          type: "monster_hit",
+          id: m.id,
+          amount,
+          pos: { ...m.pos },
+          zone: zone.id,
+        });
+      });
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "chainbolt",
+        pos: { ...p.pos },
+        at: { ...targets[0]!.pos },
         zone: zone.id,
       });
       break;

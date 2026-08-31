@@ -94,6 +94,10 @@ describe("character save", () => {
       frostnova: 0,
       focus: 0,
       blink: 0,
+      stomp: 0,
+      deathblow: 0,
+      fireball: 0,
+      chainbolt: 0,
     });
   });
 

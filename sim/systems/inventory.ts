@@ -2,13 +2,14 @@ import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState }
 import {
   BELT_SIZE,
   POTION_HEAL,
+  POTION_MANA,
   computeStats,
   placeItem,
   removeEntry,
   slotForItem,
   type EquipSlot,
 } from "../character";
-import { BASES } from "../items/bases";
+import { BASES, potionKind } from "../items/bases";
 import { findPath, smoothPath } from "../path";
 
 const PICKUP_RANGE = 1.0;
@@ -113,13 +114,34 @@ export function repairAll(state: GameState, p: Player): boolean {
   return true;
 }
 
+/** Stow a potion into its belt row if there's room. False means the row is full. */
+export function stowPotion(p: Player, kind: "health" | "mana"): boolean {
+  if (kind === "mana") {
+    if (p.manaBelt >= BELT_SIZE) return false;
+    p.manaBelt++;
+  } else {
+    if (p.belt >= BELT_SIZE) return false;
+    p.belt++;
+  }
+  return true;
+}
+
 export function applyDrinkInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!input.drink) return;
+  if (input.drink === "mana") {
+    if (p.manaBelt <= 0 || p.mana >= p.maxMana) return;
+    p.manaBelt--;
+    const restored = Math.min(POTION_MANA, Math.ceil(p.maxMana - p.mana));
+    p.mana = Math.min(p.maxMana, p.mana + POTION_MANA);
+    state.events.push({ type: "potion_drunk", playerId: p.id, healed: restored, kind: "mana" });
+    return;
+  }
+  // "health", or the legacy boolean `true` from older clients.
   if (p.belt <= 0 || p.life >= p.maxLife) return;
   p.belt--;
   const healed = Math.min(POTION_HEAL, p.maxLife - p.life);
   p.life += healed;
-  state.events.push({ type: "potion_drunk", playerId: p.id, healed });
+  state.events.push({ type: "potion_drunk", playerId: p.id, healed, kind: "health" });
 }
 
 export function applyPickupInput(state: GameState, p: Player, input: PlayerInput): void {
@@ -153,9 +175,8 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
     if (d <= PICKUP_RANGE) {
       p.pickupTarget = null;
       p.path = [];
-      const isPotion = BASES[target.item.baseId]!.slot === "potion";
-      if (isPotion && p.belt < BELT_SIZE) {
-        p.belt++;
+      const kind = potionKind(target.item.baseId);
+      if (kind && stowPotion(p, kind)) {
         zone.groundItems.delete(target.id);
         state.events.push({
           type: "item_picked",
@@ -261,8 +282,9 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
     if (!entry) return;
     const base = BASES[entry.item.baseId]!;
     if (base.slot === "potion") {
-      if (p.belt < BELT_SIZE) p.belt++;
-      else placeItem(p.inventory, entry.id, entry.item);
+      if (!stowPotion(p, potionKind(entry.item.baseId)!)) {
+        placeItem(p.inventory, entry.id, entry.item);
+      }
       return;
     }
     if (base.levelReq > p.level) {

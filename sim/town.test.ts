@@ -21,9 +21,9 @@ describe("the camp", () => {
     expect(inCamp(getZone(state, "overworld").map, player(state).pos)).toBe(true);
     expect(state.events.some((e) => e.type === "traveled" && e.to === "overworld")).toBe(true);
 
-    // Walk onto the travel pad: back down to floor 1
-    const pad = getZone(state, "overworld").map.markers.find((m) => m.ch === "P")!;
-    player(state).pos = { x: pad.x, y: pad.y };
+    // Walk into the barrow mouth: back down to floor 1
+    const mouth = getZone(state, "overworld").map.markers.find((m) => m.ch === ">")!;
+    player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
     expect(player(state).zoneId).toBe("floor:1");
     expect([...getZone(state, "floor:1").monsters.keys()].sort()).toEqual(monstersBefore);
@@ -107,6 +107,51 @@ describe("the healer", () => {
     travel(state, player(state), "floor:1");
     stepSolo(state, { talkHealer: true });
     expect(player(state).healerTarget).toBe(false);
+  });
+
+  test("arriving at Sera also opens her potion stall", () => {
+    const state = soloGame(1);
+    stepSolo(state, { talkHealer: true });
+    let opened = false;
+    for (let i = 0; i < 200 && !opened; i++) {
+      stepSolo(state, {});
+      opened = state.events.some((e) => e.type === "healer_opened");
+    }
+    expect(opened).toBe(true);
+  });
+
+  test("buying potions fills the matching belt row and charges gold", () => {
+    const state = soloGame(1);
+    player(state).gold = 100;
+    stepSolo(state, { buyPotion: "health" });
+    expect(player(state).belt).toBe(1);
+    expect(player(state).gold).toBe(75);
+    stepSolo(state, { buyPotion: "mana" });
+    expect(player(state).manaBelt).toBe(1);
+    expect(player(state).gold).toBe(45);
+    expect(state.events.filter((e) => e.type === "bought")).toHaveLength(1);
+  });
+
+  test("a full belt row spills potion purchases into the pack", () => {
+    const state = soloGame(1);
+    player(state).gold = 1000;
+    player(state).belt = 4;
+    stepSolo(state, { buyPotion: "health" });
+    expect(player(state).belt).toBe(4);
+    expect(player(state).inventory.entries).toHaveLength(1);
+  });
+
+  test("potion purchases are refused in the crypt and when broke", () => {
+    const state = soloGame(1);
+    player(state).gold = 5;
+    stepSolo(state, { buyPotion: "health" }); // broke
+    expect(player(state).belt).toBe(0);
+    expect(player(state).gold).toBe(5);
+    player(state).gold = 100;
+    travel(state, player(state), "floor:1");
+    stepSolo(state, { buyPotion: "health" }); // not in camp
+    expect(player(state).belt).toBe(0);
+    expect(player(state).gold).toBe(100);
   });
 
   test("walking somewhere else cancels the approach", () => {

@@ -1,5 +1,5 @@
 import { createRng } from "./rng";
-import { inCamp, isWalkable, type Vec } from "./map";
+import { inCamp, isWalkable, type Vec, type ZoneMap } from "./map";
 import {
   allPlayers,
   floorZone,
@@ -39,9 +39,11 @@ import { AREAS, isAreaId, waypointPos, type AreaId } from "./areas";
 import { ensureArea, ensureFloor, ensureOverworld } from "./world";
 import { exitMouth } from "./zone";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
+import { SKILL_IDS, type SkillId } from "./skills";
 import { rollDurability } from "./items/generate";
 import { durabilitySystem } from "./systems/inventory";
 import {
+  applyBuyPotionInput,
   applyCastPortalInput,
   applyShopInput,
   applyTalkHealerInput,
@@ -82,17 +84,40 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   state.events.push({ type: "traveled", playerId: p.id, to });
 }
 
-/** A player standing on a '>' marker heads one floor deeper. Runs after movement. */
+/** A walkable cell center adjacent to a marker — where climbers land so they
+ * stand beside the stairs (or the barrow mouth) without re-triggering them. */
+function besideMarker(map: ZoneMap, ch: string): Vec | null {
+  const marker = map.markers.find((m) => m.ch === ch);
+  if (!marker) return null;
+  const cx = Math.floor(marker.x);
+  const cy = Math.floor(marker.y);
+  for (const [dx, dy] of [[0, 1], [1, 0], [0, -1], [-1, 0]] as const) {
+    if (isWalkable(map, cx + dx, cy + dy)) return { x: cx + dx + 0.5, y: cy + dy + 0.5 };
+  }
+  return null;
+}
+
+/** A player standing on a '>' marker heads one floor deeper; on '<', one floor
+ * back up — surfacing beside the barrow mouth from floor 1. Runs after movement. */
 export function stairsSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   for (const p of players) {
     if (p.dead || p.zoneId !== zone.id) continue;
     for (const marker of zone.map.markers) {
-      if (marker.ch !== ">") continue;
-      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
+      if (marker.ch !== ">" && marker.ch !== "<") continue;
+      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) > 0.5) continue;
+      if (marker.ch === ">") {
         // A barrow mouth on the surface is the way in; below it, stairs descend.
         travel(state, p, isAreaId(p.zoneId) ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
-        break;
+      } else {
+        if (isAreaId(p.zoneId)) continue; // no climbing out of the open sky
+        const depth = zoneDepth(p.zoneId);
+        const dest: ZoneId = depth <= 1 ? "overworld" : floorZone(depth - 1);
+        travel(state, p, dest);
+        // Come out beside the stairs you once went down, not on top of them.
+        const spot = besideMarker(getZone(state, dest).map, ">");
+        if (spot) p.pos = spot;
       }
+      break;
     }
   }
 }
@@ -128,21 +153,6 @@ export function edgeExitSystem(state: GameState, zone: ZoneState, players: Playe
       travel(state, p, e.to);
       p.pos = exitEntryPos(e.to, from);
       break;
-    }
-  }
-}
-
-/** A player standing on the camp's 'P' pad descends to floor 1. */
-export function travelPadSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (zone.id !== "overworld") return;
-  for (const p of players) {
-    if (p.dead || p.zoneId !== "overworld") continue;
-    for (const marker of zone.map.markers) {
-      if (marker.ch !== "P") continue;
-      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
-        travel(state, p, floorZone(1));
-        break;
-      }
     }
   }
 }
@@ -318,20 +328,12 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     level: 1,
     xp: 0,
     skillPoints: 0,
-    skills: {
-      cleave: 0,
-      crush: 0,
-      warcry: 0,
-      leap: 0,
-      firebolt: 0,
-      frostnova: 0,
-      focus: 0,
-      blink: 0,
-    },
+    skills: Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>,
     mana: stats.maxMana,
     maxMana: stats.maxMana,
     buffUntil: 0,
     belt: 0,
+    manaBelt: 0,
     gold: 0,
     inventory: createInventory(),
     equipment,
@@ -392,6 +394,7 @@ export function step(state: GameState, frame: Frame): void {
     applyTalkVendorInput(state, p, input);
     applyTalkHealerInput(state, p, input);
     applyShopInput(state, p, input);
+    applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);
     applyCastPortalInput(state, p, input);
     applyUsePortalInput(state, p, input);
@@ -416,7 +419,6 @@ export function step(state: GameState, frame: Frame): void {
     // Airborne players neither walk nor trip floor triggers until they land.
     const grounded = () => acting().filter((p) => !p.leap);
     movementSystem(grounded());
-    travelPadSystem(state, zone, grounded());
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());
     stairsSystem(state, zone, grounded());

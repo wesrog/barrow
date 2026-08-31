@@ -70,11 +70,18 @@ export function xpSystem(state: GameState): void {
     const p = state.players.get(id);
     if (!p) continue;
     p.xp += gained;
+    let leveled = false;
     while (p.xp >= xpForLevel(p.level + 1)) {
       p.level++;
       p.skillPoints++;
+      leveled = true;
       state.events.push({ type: "level_up", playerId: p.id, level: p.level });
     }
     recomputePlayerStats(state, p);
+    // A new level is a fresh wind: life and mana come back in full.
+    if (leveled) {
+      p.life = p.maxLife;
+      p.mana = p.maxMana;
+    }
   }
 }

@@ -6,6 +6,7 @@ export const INV_W = 10;
 export const INV_H = 4;
 export const BELT_SIZE = 4;
 export const POTION_HEAL = 35;
+export const POTION_MANA = 25;
 
 export interface InvEntry {
   id: number;

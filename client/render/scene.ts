@@ -183,9 +183,11 @@ export function createScene(
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
-  // Stair cells get a real stairwell instead of a floor tile.
+  // Stair cells (down and up) get a real stairwell instead of a floor tile.
   const stairCells = new Set(
-    map.markers.filter((m) => m.ch === ">").map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
+    map.markers
+      .filter((m) => m.ch === ">" || m.ch === "<")
+      .map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
   );
   if (!outdoor) {
     for (let y = 0; y < map.height; y++) {
@@ -207,6 +209,91 @@ export function createScene(
           if (isWalkable(map, x, y - 1)) placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE);
           if (isWalkable(map, x + 1, y)) placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE);
           if (isWalkable(map, x - 1, y)) placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE);
+        }
+      }
+    }
+
+    // --- Crypt dressing: coffins, bone piles, and columns along the walls ---
+    // Deterministic from the cell hash, hugging wall-adjacent floor so the
+    // walking lanes stay readable. Pure decoration — nothing here collides.
+    const markerCells = new Set(
+      map.markers.map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
+    );
+    const coffinBase = flatMat(0x453424, 1);
+    const coffinLid = flatMat(0x574433, 1);
+    const boneMat = flatMat(0xcfc4a8, 0.9);
+    const makeCoffin = (h: number): THREE.Group => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.4), coffinBase);
+      body.position.y = 0.1;
+      g.add(body);
+      // The head end is broader — two overlapping boxes fake the casket taper.
+      const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.48), coffinBase);
+      shoulders.position.set(-0.12, 0.1, 0);
+      g.add(shoulders);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.05, 0.44), coffinLid);
+      if (h % 5 === 0) {
+        // Ajar: the lid slid sideways, whatever rested inside long gone.
+        lid.position.set(0.1, 0.23, 0.14);
+        lid.rotation.z = 0.12;
+      } else {
+        lid.position.y = 0.22;
+      }
+      g.add(lid);
+      g.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+      return g;
+    };
+    const makeBonePile = (h: number): THREE.Group => {
+      const g = new THREE.Group();
+      for (let i = 0; i < 3 + (h % 2); i++) {
+        const bit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05 + ((h >> i) % 3) * 0.015, 0), boneMat);
+        bit.position.set(((h >> (i * 2)) % 5 - 2) * 0.07, 0.04, ((h >> (i * 2 + 3)) % 5 - 2) * 0.07);
+        bit.castShadow = true;
+        g.add(bit);
+      }
+      const shard = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.24, 4), boneMat);
+      shard.rotation.set(Math.PI / 2, 0, (h % 628) / 100);
+      shard.position.y = 0.04;
+      g.add(shard);
+      return g;
+    };
+    const spawnX = map.spawn.x;
+    const spawnY = map.spawn.y;
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (!isWalkable(map, x, y)) continue;
+        const key = `${x},${y}`;
+        if (stairCells.has(key) || markerCells.has(key)) continue;
+        if (Math.hypot(x + 0.5 - spawnX, y + 0.5 - spawnY) < 2.5) continue;
+        const nearWall =
+          !isWalkable(map, x, y + 1) ||
+          !isWalkable(map, x, y - 1) ||
+          !isWalkable(map, x + 1, y) ||
+          !isWalkable(map, x - 1, y);
+        if (!nearWall) continue;
+        const h = hash(x, y);
+        const jx = x + 0.5 + ((h >> 9) % 5 - 2) * 0.06;
+        const jz = y + 0.5 + ((h >> 12) % 5 - 2) * 0.06;
+        if (h % 23 === 3) {
+          const coffin = makeCoffin(h);
+          coffin.position.set(jx, 0, jz);
+          coffin.rotation.y = ((h >> 4) % 4) * (Math.PI / 2) + ((h >> 7) % 20 - 10) * 0.02;
+          scene.add(coffin);
+        } else if (h % 29 === 5) {
+          const bones = makeBonePile(h);
+          bones.position.set(jx, 0, jz);
+          scene.add(bones);
+        } else if (h % 61 === 7) {
+          placePiece(assets.dungeon.column, x + 0.5, y + 0.5, ((h >> 5) % 4) * (Math.PI / 2), {
+            x: 0.3,
+            y: 0.34,
+            z: 0.3,
+          });
         }
       }
     }
@@ -318,10 +405,66 @@ export function createScene(
     stairGlows.push(glow);
   }
 
+  // --- Stairs up: stone steps climbing toward a warm daylight glow ---
+  for (const marker of map.markers) {
+    if (marker.ch !== "<") continue;
+    const cx = Math.floor(marker.x);
+    const cy = Math.floor(marker.y);
+    // You walk in from the open side; the steps rise away from it.
+    const approaches = [
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: 0, dy: -1 },
+      { dx: -1, dy: 0 },
+    ];
+    const open = approaches.find((a) => isWalkable(map, cx + a.dx, cy + a.dy)) ?? approaches[0]!;
+    const rise = { x: -open.dx, y: -open.dy };
+    const stepMat = flatMat(0x5c5768, 0.95);
+    for (let s = 0; s < 4; s++) {
+      const height = 0.14 + s * 0.16;
+      const step = new THREE.Mesh(
+        new THREE.BoxGeometry(rise.x !== 0 ? 0.24 : 0.78, height, rise.y !== 0 ? 0.24 : 0.78),
+        stepMat,
+      );
+      const along = -0.33 + s * 0.22;
+      step.position.set(marker.x + rise.x * along, height / 2, marker.y + rise.y * along);
+      step.castShadow = true;
+      step.receiveShadow = true;
+      scene.add(step);
+    }
+    // A warm rim and glow: the way back toward the sky.
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.56, 4),
+      new THREE.MeshBasicMaterial({ color: 0xe8c27a, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.rotation.z = Math.PI / 4;
+    rim.position.set(marker.x, 0.05, marker.y);
+    scene.add(rim);
+    // A shaft of daylight spilling down the well — tall enough to show over
+    // the walls that box the stairs in, so the way out reads from anywhere.
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.4, 2.6, 8, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xf5dfa0,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    beam.position.set(marker.x, 1.3, marker.y);
+    scene.add(beam);
+    const glow = new THREE.PointLight(0xf5c877, 3.4, 5.5, 1.7);
+    glow.position.set(marker.x, 1.4, marker.y);
+    scene.add(glow);
+    stairGlows.push(glow);
+  }
+
   const placePieceLater: (() => void)[] = [];
 
-  // --- Travel pads: slowly turning arcane rings. P descends, W is the waypoint ---
-  const PAD_COLORS: Record<string, number> = { P: 0x7fb8f5, W: 0xc9a84c };
+  // --- Travel pads: the waypoint's slowly turning arcane ring ---
+  const PAD_COLORS: Record<string, number> = { W: 0xc9a84c };
   const padRings: THREE.Mesh[] = [];
   for (const marker of map.markers) {
     const color = PAD_COLORS[marker.ch];
@@ -440,6 +583,41 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
+  // --- Campfire (camp): stones, crossed logs, and a breathing flame ---
+  for (const marker of map.markers) {
+    if (marker.ch !== "F") continue;
+    const fire = new THREE.Group();
+    fire.position.set(marker.x, 0, marker.y);
+    const stoneMat = flatMat(0x55524e, 1);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
+      stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
+      stone.castShadow = true;
+      fire.add(stone);
+    }
+    const logMat = flatMat(0x3d2c1c, 1);
+    for (let i = 0; i < 3; i++) {
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
+      log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
+      log.position.y = 0.12;
+      log.castShadow = true;
+      fire.add(log);
+    }
+    const flame = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.16, 0),
+      new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: 0xff8c28, emissiveIntensity: 2.4 }),
+    );
+    flame.position.y = 0.32;
+    fire.add(flame);
+    scene.add(fire);
+    const light = new THREE.PointLight(0xff9a45, 5, 8, 1.7);
+    light.position.set(marker.x, 1.1, marker.y);
+    scene.add(light);
+    // Riding the torch flicker keeps the fire breathing with everything else.
+    torches.push({ flame, light, seed: 43 });
+  }
+
   // --- Heroes: one animated KayKit barbarian per player standing in this zone ---
   interface HeroEntry {
     rig: HeroModelRig;
@@ -538,7 +716,8 @@ export function createScene(
   // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
   const AREA_INFO: Record<string, { name: string; role: string }> = {
     ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
-    P: { name: "Travel Pad", role: `Down to ${zoneTitle("floor:1")}` },
+    "<": { name: "Stairs Up", role: "Climbs back toward daylight" },
+    F: { name: "Campfire", role: "The heart of the camp" },
   };
   const areaIndicators = map.markers
     .filter((m) => m.ch in AREA_INFO)
@@ -1047,8 +1226,8 @@ export function createScene(
         }
         if (bestId !== null) return { kind: "monster", id: bestId };
       }
-      // Portals and bodies lie flat, so their silhouettes are thin — allow the
-      // same near-miss slack the monsters get.
+      // Portals, bodies, and dropped loot lie flat, so their silhouettes are
+      // thin — allow the same near-miss slack the monsters get.
       {
         let best: PickResult = null;
         let bestD = 22; // px
@@ -1066,6 +1245,14 @@ export function createScene(
           if (d < bestD) {
             bestD = d;
             best = { kind: "corpse", id: pc.id };
+          }
+        }
+        for (const gi of zone.groundItems.values()) {
+          const at = worldToScreen(gi.pos, 0.2);
+          const d = Math.hypot(at.x - cx, at.y - cy);
+          if (d < bestD) {
+            bestD = d;
+            best = { kind: "item", id: gi.id };
           }
         }
         if (best) return best;
@@ -1330,6 +1517,22 @@ export function createScene(
           } else if (event.skill === "crush") {
             caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
             shake(0.12);
+          } else if (event.skill === "stomp") {
+            caster?.oneShot("2H_Melee_Attack_Slice", { timeScale: 1.4 });
+            ring(event.pos, 2.2, 0xb5a582, 300);
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
+            shake(0.16);
+          } else if (event.skill === "deathblow") {
+            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.7 });
+            if (event.at) fx.burst(event.at.x, 0.5, event.at.y, 0xc03030, 14, 2.8);
+            shake(0.2);
+          } else if (event.skill === "fireball") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.4 });
+            shake(0.08); // the blast itself arrives as an `exploded` event
+          } else if (event.skill === "chainbolt") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6 });
+            ring(event.pos, 1.6, 0x9ad1f5, 220);
+            shake(0.08);
           } else if (event.skill === "firebolt") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
             if (event.at) fx.burst(event.at.x, 0.4, event.at.y, 0xe08a3c, 12, 2.4);

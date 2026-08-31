@@ -7,10 +7,14 @@ export type SkillId =
   | "crush"
   | "warcry"
   | "leap"
+  | "stomp"
+  | "deathblow"
   | "firebolt"
   | "frostnova"
   | "focus"
-  | "blink";
+  | "blink"
+  | "fireball"
+  | "chainbolt";
 
 /** How the client aims a cast: none = fire-and-forget, target = a monster, point = a ground spot. */
 export type Targeting = "none" | "target" | "point";
@@ -27,6 +31,8 @@ export interface SkillDef {
   buffTicks: number;
   /** Ticks the cast occupies the shared action cooldown — tuned to the animation. */
   castTicks: number;
+  /** Tree link: this skill needs a rank here before points can go in. */
+  prereq?: SkillId;
 }
 
 export const SKILLS: Record<SkillId, SkillDef> = {
@@ -34,19 +40,34 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   crush: { id: "crush", name: "Crush", klass: "warrior", targeting: "target", levelReq: 2, manaCost: 4, buffTicks: 0, castTicks: 14 },
   warcry: { id: "warcry", name: "Warcry", klass: "warrior", targeting: "none", levelReq: 4, manaCost: 6, buffTicks: 500, castTicks: 15 },
   leap: { id: "leap", name: "Leap", klass: "warrior", targeting: "point", levelReq: 6, manaCost: 5, buffTicks: 0, castTicks: 20 },
+  stomp: { id: "stomp", name: "Stomp", klass: "warrior", targeting: "none", levelReq: 9, manaCost: 7, buffTicks: 0, castTicks: 16, prereq: "leap" },
+  deathblow: { id: "deathblow", name: "Deathblow", klass: "warrior", targeting: "target", levelReq: 12, manaCost: 8, buffTicks: 0, castTicks: 16, prereq: "crush" },
   firebolt: { id: "firebolt", name: "Firebolt", klass: "witch", targeting: "target", levelReq: 1, manaCost: 4, buffTicks: 0, castTicks: 14 },
   frostnova: { id: "frostnova", name: "Frost Nova", klass: "witch", targeting: "none", levelReq: 2, manaCost: 6, buffTicks: 0, castTicks: 15 },
   focus: { id: "focus", name: "Focus", klass: "witch", targeting: "none", levelReq: 4, manaCost: 5, buffTicks: 500, castTicks: 12 },
   blink: { id: "blink", name: "Blink", klass: "witch", targeting: "point", levelReq: 6, manaCost: 6, buffTicks: 0, castTicks: 16 },
+  fireball: { id: "fireball", name: "Fireball", klass: "witch", targeting: "point", levelReq: 9, manaCost: 9, buffTicks: 0, castTicks: 16, prereq: "firebolt" },
+  chainbolt: { id: "chainbolt", name: "Chain Bolt", klass: "witch", targeting: "none", levelReq: 12, manaCost: 10, buffTicks: 0, castTicks: 15, prereq: "fireball" },
 };
 
-/** A class's four skills, in hotbar (and unlock) order. */
+/** Every skill id, in definition (and therefore save/init) order. */
+export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
+
+/** A class's skills, in hotbar (and unlock) order. */
 export function CLASS_SKILLS(klass: Klass): SkillDef[] {
   return Object.values(SKILLS).filter((d) => d.klass === klass);
 }
 
 export const CLEAVE_RADIUS = 1.8;
 export const CRUSH_RANGE = 1.6;
+export const STOMP_RADIUS = 2.2;
+export const DEATHBLOW_RANGE = 1.6;
+export const FIREBALL_RANGE = 8;
+export const FIREBALL_RADIUS = 2.0;
+export const CHAINBOLT_RANGE = 8;
+export const CHAINBOLT_TARGETS = 3;
+/** Second and third chain bolt strikes land at this fraction of full damage. */
+export const CHAINBOLT_FALLOFF = 0.7;
 export const LEAP_RANGE = 8;
 export const LEAP_STUN_RADIUS = 1.6;
 /** Airborne travel time — the stun and landing hit resolve when the flight ends. */
@@ -77,6 +98,34 @@ export function leapStunTicks(rank: number): number {
 /** Leap landing: 150% weapon damage, +40% per extra rank. The slam always hits. */
 export function leapMultiplier(rank: number): number {
   return 1.5 + 0.4 * (rank - 1);
+}
+
+/** Stomp: 120% weapon damage around you, +30% per extra rank. Always hits. */
+export function stompMultiplier(rank: number): number {
+  return 1.2 + 0.3 * (rank - 1);
+}
+
+export function stompStunTicks(rank: number): number {
+  return 20 + 5 * (rank - 1);
+}
+
+/** Deathblow: 300% weapon damage, +75% per extra rank. Always hits. */
+export function deathblowMultiplier(rank: number): number {
+  return 3 + 0.75 * (rank - 1);
+}
+
+/** Fireball: spell blast by rank, +8% per Firebolt rank (synergy). */
+export function fireballDamage(rank: number, fireboltRank: number): { min: number; max: number } {
+  const synergy = 1 + 0.08 * fireboltRank;
+  return {
+    min: Math.floor((8 + 4 * (rank - 1)) * synergy),
+    max: Math.floor((14 + 6 * (rank - 1)) * synergy),
+  };
+}
+
+/** Chain Bolt: per-strike spell damage by rank. */
+export function chainboltDamage(rank: number): { min: number; max: number } {
+  return { min: 6 + 3 * (rank - 1), max: 11 + 4 * (rank - 1) };
 }
 
 /** Firebolt: spell damage by rank, +10% per Focus rank (synergy). Spells never miss. */

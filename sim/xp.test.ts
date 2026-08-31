@@ -47,6 +47,25 @@ describe("xp and leveling", () => {
     expect(state.events.some((e) => e.type === "level_up")).toBe(true);
   });
 
+  test("leveling up restores life and mana in full", () => {
+    const state = createGameOn(1, openMap());
+    player(state).xp = xpForLevel(2) - 1;
+    player(state).life = 5;
+    player(state).mana = 0;
+    slay(state, "skitter");
+    expect(player(state).level).toBe(2);
+    expect(player(state).life).toBe(player(state).maxLife);
+    expect(player(state).mana).toBe(player(state).maxMana);
+  });
+
+  test("xp gains without a level-up do not heal", () => {
+    const state = createGameOn(1, openMap());
+    player(state).life = 5;
+    slay(state, "skitter"); // 6 xp, nowhere near level 2
+    expect(player(state).level).toBe(1);
+    expect(player(state).life).toBe(5);
+  });
+
   test("a single large xp gain can grant multiple levels", () => {
     const state = createGameOn(1, openMap());
     player(state).xp = xpForLevel(3) - 1; // one skitter's 6 xp crosses 2 and 3

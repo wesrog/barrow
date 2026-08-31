@@ -140,6 +140,8 @@ export interface Player {
   buffUntil: number;
   /** Healing potions on the belt. */
   belt: number;
+  /** Mana potions on the belt's second row. */
+  manaBelt: number;
   gold: number;
   inventory: Inventory;
   equipment: Equipment;
@@ -179,7 +181,7 @@ export type SimEvent =
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
-  | { type: "potion_drunk"; playerId: PlayerId; healed: number }
+  | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }
   | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
@@ -187,6 +189,7 @@ export type SimEvent =
   | { type: "item_broke"; playerId: PlayerId; name: string }
   | { type: "repaired"; playerId: PlayerId; cost: number }
   | { type: "shop_opened"; playerId: PlayerId }
+  | { type: "healer_opened"; playerId: PlayerId }
   | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }
@@ -243,8 +246,10 @@ export interface PlayerInput {
   spendSkill?: SkillId;
   /** Cast a skill, optionally at a ground position or monster target. */
   cast?: { skill: SkillId; at?: Vec; target?: number };
-  /** Drink a healing potion from the belt. */
-  drink?: boolean;
+  /** Drink a potion from the belt. Legacy `true` means "health". */
+  drink?: "health" | "mana";
+  /** Buy a potion straight from Sera's stall (town only). */
+  buyPotion?: "health" | "mana";
   /** Start a fresh run: forget the floors, revive, keep the character. */
   newGame?: boolean;
   /** Cast a two-way portal pair between here and camp. */

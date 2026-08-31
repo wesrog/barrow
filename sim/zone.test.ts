@@ -118,10 +118,10 @@ describe("zones", () => {
     expect(f3.maxLife).toBeGreaterThan(f1.maxLife);
   });
 
-  test("standing on the camp pad travels to floor:1; stairs go one deeper", () => {
+  test("standing at the barrow mouth travels to floor:1; stairs go one deeper", () => {
     const g = soloGame(1);
-    const pad = getZone(g, "overworld").map.markers.find((m) => m.ch === "P")!;
-    player(g).pos = { x: pad.x, y: pad.y };
+    const mouth = getZone(g, "overworld").map.markers.find((m) => m.ch === ">")!;
+    player(g).pos = { x: mouth.x, y: mouth.y };
     stepSolo(g, {});
     expect(player(g).zoneId).toBe("floor:1");
     expect(g.events.some((e) => e.type === "traveled" && e.to === "floor:1")).toBe(true);
@@ -129,6 +129,38 @@ describe("zones", () => {
     player(g).pos = { x: stairs.x, y: stairs.y };
     stepSolo(g, {});
     expect(player(g).zoneId).toBe("floor:2");
+  });
+
+  test("the crypt's stairs up climb one floor toward daylight", () => {
+    const g = soloGame(1);
+    travel(g, player(g), "floor:2");
+    const up = getZone(g, "floor:2").map.markers.find((m) => m.ch === "<")!;
+    expect(up).toBeDefined();
+    player(g).pos = { x: up.x, y: up.y };
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("floor:1");
+    // Lands beside floor 1's down-stairs — near them, but not on the trigger.
+    const down = getZone(g, "floor:1").map.markers.find((m) => m.ch === ">")!;
+    const d = Math.hypot(player(g).pos.x - down.x, player(g).pos.y - down.y);
+    expect(d).toBeGreaterThan(0.5);
+    expect(d).toBeLessThanOrEqual(1.5);
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("floor:1"); // standing beside stairs stays put
+  });
+
+  test("floor 1's stairs up surface beside the barrow mouth", () => {
+    const g = soloGame(1);
+    travel(g, player(g), "floor:1");
+    const up = getZone(g, "floor:1").map.markers.find((m) => m.ch === "<")!;
+    player(g).pos = { x: up.x, y: up.y };
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("overworld");
+    const mouth = getZone(g, "overworld").map.markers.find((m) => m.ch === ">")!;
+    const d = Math.hypot(player(g).pos.x - mouth.x, player(g).pos.y - mouth.y);
+    expect(d).toBeGreaterThan(0.5);
+    expect(d).toBeLessThanOrEqual(1.5);
+    stepSolo(g, {});
+    expect(player(g).zoneId).toBe("overworld"); // beside the mouth, not back in it
   });
 
   test("floors persist: a cleared monster stays dead after leaving and returning", () => {

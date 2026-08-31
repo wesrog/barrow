@@ -330,3 +330,116 @@ describe("mana", () => {
     expect(player(state).mana).toBeLessThanOrEqual(player(state).maxMana);
   });
 });
+
+describe("skill tree prerequisites", () => {
+  test("elite skills refuse points until their prerequisite has a rank", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "stomp" }); // requires a rank of leap
+    expect(player(state).skills.stomp).toBe(0);
+    stepSolo(state, { spendSkill: "leap" });
+    stepSolo(state, { spendSkill: "stomp" });
+    expect(player(state).skills.stomp).toBe(1);
+    stepSolo(state, { spendSkill: "deathblow" }); // requires crush
+    expect(player(state).skills.deathblow).toBe(0);
+    stepSolo(state, { spendSkill: "crush" });
+    stepSolo(state, { spendSkill: "deathblow" });
+    expect(player(state).skills.deathblow).toBe(1);
+  });
+
+  test("the witch's chain runs firebolt → fireball → chainbolt", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "fireball" });
+    expect(player(state).skills.fireball).toBe(0); // no firebolt yet
+    stepSolo(state, { spendSkill: "chainbolt" });
+    expect(player(state).skills.chainbolt).toBe(0); // no fireball yet
+    stepSolo(state, { spendSkill: "firebolt" });
+    stepSolo(state, { spendSkill: "fireball" });
+    expect(player(state).skills.fireball).toBe(1);
+    stepSolo(state, { spendSkill: "chainbolt" });
+    expect(player(state).skills.chainbolt).toBe(1);
+  });
+});
+
+describe("stomp", () => {
+  test("slams and stuns everything around the warrior", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "leap" });
+    stepSolo(state, { spendSkill: "stomp" });
+    const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
+    const b = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // far away
+    stepSolo(state, { cast: { skill: "stomp" } });
+    const hitIds = state.events.filter((e) => e.type === "monster_hit").map((e) => (e as any).id);
+    expect(hitIds).toContain(a.id);
+    expect(hitIds).not.toContain(b.id);
+    expect(a.stunnedUntil).toBeGreaterThan(state.tick);
+  });
+});
+
+describe("deathblow", () => {
+  test("lands one huge always-hit blow on the nearest target in reach", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "crush" });
+    stepSolo(state, { spendSkill: "deathblow" });
+    const m = spawnAt(state, "shambler", { x: 2.2, y: 1.5 });
+    const lifeBefore = m.life;
+    stepSolo(state, { cast: { skill: "deathblow" } });
+    expect(m.life).toBeLessThan(lifeBefore);
+    expect(state.events.some((e) => e.type === "skill_cast" && (e as any).skill === "deathblow")).toBe(true);
+  });
+});
+
+describe("fireball", () => {
+  test("explodes at the aimed point, burning everything in the blast", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "firebolt" });
+    stepSolo(state, { spendSkill: "fireball" });
+    const a = spawnAt(state, "skitter", { x: 6.5, y: 2.5 });
+    const b = spawnAt(state, "skitter", { x: 6.9, y: 3.1 });
+    const c = spawnAt(state, "skitter", { x: 1.5, y: 3.5 }); // outside the blast
+    stepSolo(state, { cast: { skill: "fireball", at: { x: 6.5, y: 2.5 } } });
+    const hitIds = state.events.filter((e) => e.type === "monster_hit").map((e) => (e as any).id);
+    expect(hitIds).toContain(a.id);
+    expect(hitIds).toContain(b.id);
+    expect(hitIds).not.toContain(c.id);
+    expect(state.events.some((e) => e.type === "exploded")).toBe(true);
+  });
+
+  test("needs a rank in firebolt first and a target point in range", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "firebolt" });
+    stepSolo(state, { spendSkill: "fireball" });
+    spawnAt(state, "skitter", { x: 6.5, y: 2.5 });
+    stepSolo(state, { cast: { skill: "fireball", at: { x: 60, y: 60 } } }); // out of range
+    expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
+  });
+});
+
+describe("chainbolt", () => {
+  test("strikes up to three nearest enemies in sight", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "firebolt" });
+    stepSolo(state, { spendSkill: "fireball" });
+    stepSolo(state, { spendSkill: "chainbolt" });
+    const a = spawnAt(state, "skitter", { x: 3.5, y: 1.5 });
+    const b = spawnAt(state, "skitter", { x: 4.5, y: 2.5 });
+    const c = spawnAt(state, "skitter", { x: 5.5, y: 3.5 });
+    const d = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // fourth wheel
+    stepSolo(state, { cast: { skill: "chainbolt" } });
+    const hitIds = state.events.filter((e) => e.type === "monster_hit").map((e) => (e as any).id);
+    expect(hitIds).toContain(a.id);
+    expect(hitIds).toContain(b.id);
+    expect(hitIds).toContain(c.id);
+    expect(hitIds).not.toContain(d.id);
+  });
+});

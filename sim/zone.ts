@@ -16,15 +16,16 @@ export const MARKER_TYPES: Record<string, string> = {
 };
 
 /**
- * The crypt under the barrow. '#' wall, '.' floor, '@' spawn,
+ * The crypt under the barrow. '#' wall, '.' floor, '@' spawn, '<' the stairs
+ * back up (a dead-end nook so ordinary pathing never trips it),
  * z/s/r/e monsters, B the Barrow Lord in his vault.
  */
 export function cryptZone(): ZoneMap {
   return mapFromStrings([
     "######################################",
     "#@........#..........#....z.....#...#",
-    "#.........#....s.....#..........#.r.#",
-    "#...##....#..........#...####...#...#",
+    "#<#.......#....s.....#..........#.r.#",
+    "##..##....#..........#...####...#...#",
     "#...##....####...#####...#..#.......#",
     "#..............s.........#..#...z...#",
     "#......z..................ss........#",

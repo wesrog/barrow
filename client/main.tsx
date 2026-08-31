@@ -8,8 +8,9 @@ import { BIOME_PALETTES, type BiomePalette } from "./render/biomes";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
-import { CLASS_SKILLS } from "../sim/skills";
+import { SKILLS, type SkillId } from "../sim/skills";
 import { zoneTitle } from "../sim/zone";
+import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
@@ -19,16 +20,19 @@ import { Lobby } from "./ui/Lobby";
 import { MiniMap } from "./ui/MiniMap";
 import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
+import { HealerPanel } from "./ui/HealerPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
 import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
+import { ZoneIntro, type ZoneIntroMsg } from "./ui/ZoneIntro";
 import { Reveal } from "./ui/Reveal";
 
 const TICK_MS = 1000 / TICK_RATE;
 
 let nextToastId = 1;
+let nextIntroSeq = 1;
 
 /** The biome palette for a zone, or undefined for the crypt's dungeon look. */
 function zonePalette(zoneId: ZoneId): BiomePalette | undefined {
@@ -57,7 +61,11 @@ function Game({
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
+  const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
+  const hotbarRef = useRef<Hotbar>([null, null, null, null]);
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [desync, setDesync] = useState(false);
@@ -94,6 +102,8 @@ function Game({
       if (disposed) return;
       const game = session.state!;
       gameRef.current = game;
+      hotbarRef.current = loadHotbar(localPlayer(game).klass);
+      setHotbar(hotbarRef.current);
       setReady(true);
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
@@ -110,6 +120,20 @@ function Game({
         zonePalette(localPlayer(game).zoneId),
       );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
+
+      // A black veil the zone crossing fades out from, so the world swap under
+      // it reads as walking through, not teleporting.
+      const fadeEl = document.createElement("div");
+      fadeEl.style.cssText =
+        "position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:3;";
+      mount.appendChild(fadeEl);
+      const fadeThrough = () => {
+        fadeEl.style.transition = "none";
+        fadeEl.style.opacity = "1";
+        void fadeEl.offsetHeight; // commit the opaque frame before easing out
+        fadeEl.style.transition = "opacity .6s ease-out";
+        fadeEl.style.opacity = "0";
+      };
 
     let pending: PlayerInput = {};
     // Every player's position as of the last tick — the scene interpolates the
@@ -188,11 +212,13 @@ function Game({
     const onPointerUp = () => {
       mouseDown = false;
     };
-    // Hotkeys 1–4 map to the local class's skills in hotbar order; each
-    // skill's targeting mode decides what the cursor contributes.
+    // Cast keys q/w/e/r fire whatever skill the player bound to each slot;
+    // each skill's targeting mode decides what the cursor contributes.
     const castSlot = (slot: number) => {
-      const def = CLASS_SKILLS(localPlayer(game).klass)[slot];
-      if (!def) return;
+      const id = hotbarRef.current[slot];
+      if (!id) return;
+      const def = SKILLS[id];
+      if (def.klass !== localPlayer(game).klass) return;
       const input = uiInputRef.current;
       if (def.targeting === "none") {
         input.cast = { skill: def.id };
@@ -216,10 +242,12 @@ function Game({
         setInvOpen(false);
         setSkillsOpen(false);
         setShopOpen(false);
+        setHealerOpen(false);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
-      else if (e.key === "q") uiInputRef.current.drink = true;
+      else if (e.key === "1") uiInputRef.current.drink = "health";
+      else if (e.key === "2") uiInputRef.current.drink = "mana";
       else if (e.key === "n") uiInputRef.current.newGame = true;
       else if (e.key === "t") uiInputRef.current.townPortal = true;
       else if (e.key === "v") setShopOpen((open) => !open);
@@ -228,10 +256,10 @@ function Game({
         wipeStorage();
         window.location.reload();
       }
-      else if (e.key === "1") castSlot(0);
-      else if (e.key === "2") castSlot(1);
-      else if (e.key === "3") castSlot(2);
-      else if (e.key === "4") castSlot(3);
+      else if (e.key === "q") castSlot(0);
+      else if (e.key === "w") castSlot(1);
+      else if (e.key === "e") castSlot(2);
+      else if (e.key === "r") castSlot(3);
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
@@ -326,7 +354,11 @@ function Game({
               play("pickup");
               break;
             case "potion_drunk":
-              scene.addDamageNumber(localPlayer(game).pos, `+${e.healed}`, "#7fd97f");
+              scene.addDamageNumber(
+                localPlayer(game).pos,
+                `+${e.healed}`,
+                e.kind === "mana" ? "#7fa3f5" : "#7fd97f",
+              );
               play("potion");
               break;
             case "level_up":
@@ -342,9 +374,19 @@ function Game({
               break;
             case "traveled":
               play("portal");
-              if (e.to !== "overworld") setShopOpen(false);
+              if (e.to !== "overworld") {
+                setShopOpen(false);
+                setHealerOpen(false);
+              }
               if (e.playerId === localId()) {
                 setWaypointsOpen(false);
+                // The big "entering a new land" card, D2-style.
+                const depth = zoneDepth(e.to);
+                setIntro({
+                  seq: nextIntroSeq++,
+                  title: zoneTitle(e.to),
+                  sub: isAreaId(e.to) ? undefined : `depth ${depth}`,
+                });
                 save(); // a zone crossing is a moment worth keeping
               }
               break;
@@ -357,6 +399,9 @@ function Game({
               break;
             case "shop_opened":
               setShopOpen(true);
+              break;
+            case "healer_opened":
+              setHealerOpen(true);
               break;
             case "healed":
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
@@ -388,7 +433,11 @@ function Game({
               } else if (e.skill === "cleave") play("cleave");
               else if (e.skill === "crush") play("crush");
               else if (e.skill === "leap") play("leap");
+              else if (e.skill === "stomp") play("leapland");
+              else if (e.skill === "deathblow") play("crush");
               else if (e.skill === "firebolt") play("spit");
+              else if (e.skill === "fireball") play("spit");
+              else if (e.skill === "chainbolt") play("spit");
               else if (e.skill === "frostnova") play("cleave");
               else if (e.skill === "blink") play("leap");
               else if (e.skill === "focus") {
@@ -447,7 +496,8 @@ function Game({
       // Waiting on the network: don't let the accumulator hoard the stall.
       if (starved) acc = Math.min(acc, TICK_MS);
       if (sawEvents) setVersion((v) => v + 1);
-      // Traveling swaps the zone map — rebuild the whole scene around it.
+      // Traveling swaps the zone map — rebuild the whole scene around it,
+      // hidden behind a quick fade so the crossing feels continuous.
       const currentMap = zoneOf(game, localPlayer(game)).map;
       if (currentMap !== sceneMap) {
         scene.dispose();
@@ -460,6 +510,8 @@ function Game({
         );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
+        mount.appendChild(fadeEl); // stay above the fresh canvas
+        fadeThrough();
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPositions, acc / TICK_MS);
@@ -477,6 +529,7 @@ function Game({
         window.removeEventListener("beforeunload", onUnload);
         driver.stop();
         scene.dispose();
+        fadeEl.remove();
         gameRef.current = null;
       };
     })();
@@ -577,14 +630,17 @@ function Game({
         onExpire={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))}
       />
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
+      {gameRef.current && <ZoneIntro intro={intro} />}
       {gameRef.current && <PartyStrip game={gameRef.current} />}
       {gameRef.current && (
         <BottomBar
           game={gameRef.current}
+          hotbar={hotbar}
           onAction={(action) => {
             if (action === "inventory") setInvOpen((open) => !open);
             else if (action === "skills") setSkillsOpen((open) => !open);
-            else if (action === "drink") uiInputRef.current.drink = true;
+            else if (action === "drinkHealth") uiInputRef.current.drink = "health";
+            else if (action === "drinkMana") uiInputRef.current.drink = "mana";
             else if (action === "portal") uiInputRef.current.townPortal = true;
             else if (action === "vendor") setShopOpen((open) => !open);
           }}
@@ -608,6 +664,17 @@ function Game({
           />
         )}
       </Reveal>
+      <Reveal open={healerOpen && gameRef.current !== null && onCampGround(gameRef.current)}>
+        {gameRef.current && onCampGround(gameRef.current) && (
+          <HealerPanel
+            game={gameRef.current}
+            onBuy={(kind) => {
+              uiInputRef.current.buyPotion = kind;
+            }}
+            onClose={() => setHealerOpen(false)}
+          />
+        )}
+      </Reveal>
       <Reveal open={waypointsOpen && gameRef.current !== null}>
         {gameRef.current && (
           <WaypointPanel
@@ -623,8 +690,16 @@ function Game({
         {gameRef.current && (
           <SkillPanel
             game={gameRef.current}
+            hotbar={hotbar}
             onSpend={(skill) => {
               uiInputRef.current.spendSkill = skill;
+            }}
+            onAssign={(slot: number, skill: SkillId) => {
+              const game = gameRef.current;
+              if (!game) return;
+              const bar = assignHotbar(localPlayer(game).klass, slot, skill);
+              hotbarRef.current = bar;
+              setHotbar(bar);
             }}
             onClose={() => setSkillsOpen(false)}
           />

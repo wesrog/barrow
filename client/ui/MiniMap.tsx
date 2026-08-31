@@ -53,6 +53,9 @@ export function MiniMap({ game }: { game: GameState }) {
         if (marker.ch === ">") {
           ctx.fillStyle = "#7fb8c9";
           ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);
+        } else if (marker.ch === "<") {
+          ctx.fillStyle = "#f5c877";
+          ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);
         } else if (marker.ch === "W") {
           ctx.fillStyle = "#c9a84c";
           ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);

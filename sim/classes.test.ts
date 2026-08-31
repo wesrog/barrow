@@ -61,13 +61,22 @@ describe("class stats", () => {
 });
 
 describe("class skill rosters", () => {
-  test("each class gets its own four skills in hotbar order", () => {
-    expect(CLASS_SKILLS("warrior").map((d) => d.id)).toEqual(["cleave", "crush", "warcry", "leap"]);
+  test("each class gets its own six skills in unlock order", () => {
+    expect(CLASS_SKILLS("warrior").map((d) => d.id)).toEqual([
+      "cleave",
+      "crush",
+      "warcry",
+      "leap",
+      "stomp",
+      "deathblow",
+    ]);
     expect(CLASS_SKILLS("witch").map((d) => d.id)).toEqual([
       "firebolt",
       "frostnova",
       "focus",
       "blink",
+      "fireball",
+      "chainbolt",
     ]);
   });
 

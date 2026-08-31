@@ -1,4 +1,4 @@
-import { BASES } from "../items/bases";
+import { BASES, potionKind } from "../items/bases";
 import { rollItem, type Item, type Rarity } from "../items/generate";
 import {
   getZone,
@@ -10,8 +10,8 @@ import {
   type ZoneId,
   type ZoneState,
 } from "../state";
-import { BELT_SIZE, placeItem, removeEntry } from "../character";
-import { repairAll } from "./inventory";
+import { placeItem, removeEntry } from "../character";
+import { repairAll, stowPotion } from "./inventory";
 import { findPath, smoothPath } from "../path";
 import { inCamp, isWalkable } from "../map";
 
@@ -62,24 +62,41 @@ const SHOP_BASES = [
   "howler_charm",
 ];
 
-/** Refill Maren's stall for the arriving player. Runs when they walk into an empty camp. */
+/** Refill Maren's stall for the arriving player. Runs when they walk into an
+ * empty camp. Gear only — potions are Sera's trade now. */
 export function restock(state: GameState, p: Player): void {
   const rng = state.rng;
   const ilvl = Math.max(1, p.level);
   const stock: GameState["shop"] = [];
-  for (let i = 0; i < 2; i++) {
-    stock.push({ item: rollItem(rng, "minor_potion", 1, "normal"), price: 25 });
-  }
   // Maren stocks what the buyer can grow into soon — not endgame steel at level 2.
   const pool = SHOP_BASES.filter((id) => BASES[id]!.levelReq <= p.level + 3);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 6; i++) {
     const baseId = pool[rng.int(0, pool.length - 1)]!;
     // The last slot always carries something magic — the window-shopping hook.
-    const rarity: Rarity = i === 3 || rng.next() < 0.35 ? "magic" : "normal";
+    const rarity: Rarity = i === 5 || rng.next() < 0.35 ? "magic" : "normal";
     const item = rollItem(rng, baseId, ilvl, rarity);
     stock.push({ item, price: itemValue(item) });
   }
   state.shop = stock;
+}
+
+/** Sera's fixed potion prices — her supply never runs dry. */
+export const POTION_PRICES = { health: 25, mana: 30 } as const;
+
+/** Buy a potion from Sera: straight onto the belt, or into the pack if the row is full. */
+export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerInput): void {
+  const kind = input.buyPotion;
+  if (!kind || !onCampGround(state, p)) return;
+  const price = POTION_PRICES[kind];
+  if (p.gold < price) return;
+  const baseId = kind === "mana" ? "minor_mana_potion" : "minor_potion";
+  const item = rollItem(state.rng, baseId, 1, "normal");
+  if (!stowPotion(p, kind) && !placeItem(p.inventory, state.nextId++, item)) {
+    state.events.push({ type: "inventory_full", playerId: p.id });
+    return;
+  }
+  p.gold -= price;
+  state.events.push({ type: "bought", playerId: p.id, name: item.name, price });
 }
 
 /** Click on Maren: start walking over to trade. */
@@ -125,6 +142,7 @@ export function healerSystem(state: GameState, zone: ZoneState, players: Player[
       p.life = p.maxLife;
       p.mana = p.maxMana;
       state.events.push({ type: "healed", playerId: p.id });
+      state.events.push({ type: "healer_opened", playerId: p.id });
     } else if (p.path.length === 0) {
       const cells = findPath(
         map,
@@ -178,10 +196,9 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
   if (input.buy !== undefined) {
     const entry = state.shop[input.buy];
     if (entry && p.gold >= entry.price) {
-      const isPotion = BASES[entry.item.baseId]!.slot === "potion";
+      const kind = potionKind(entry.item.baseId);
       let delivered = false;
-      if (isPotion && p.belt < BELT_SIZE) {
-        p.belt++;
+      if (kind && stowPotion(p, kind)) {
         delivered = true;
       } else {
         delivered = placeItem(p.inventory, state.nextId++, entry.item);
@@ -297,7 +314,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
  * Walk toward a targeted portal; riding it teleports to the linked end (persistent —
  * not consumed). `travel` is injected by the caller (defined in `tick.ts`, which is
  * also where this system is wired in) so this module never has to import upward from
- * the orchestrator — the same reason `stairsSystem`/`travelPadSystem` live in tick.ts
+ * the orchestrator — the same reason `stairsSystem` lives in tick.ts
  * itself rather than here.
  */
 export function portalSystem(

@@ -46,11 +46,11 @@ describe("overworld map", () => {
     }
   });
 
-  test("the camp is part of the moors: spawn, vendor, healer, and pad inside it", () => {
+  test("the camp is part of the moors: spawn, vendor, healer, and campfire inside it", () => {
     const map = overworldZone(createRng(9));
     expect(map.camp).toBeDefined();
     expect(inCamp(map, map.spawn)).toBe(true);
-    for (const ch of ["V", "H", "P"]) {
+    for (const ch of ["V", "H", "F"]) {
       const m = map.markers.find((mk) => mk.ch === ch)!;
       expect(m).toBeDefined();
       expect(inCamp(map, m)).toBe(true);
@@ -92,12 +92,9 @@ describe("overworld travel", () => {
     expect(player(g).zoneId).toBe("floor:1");
   });
 
-  test("the camp travel pad descends to floor 1", () => {
+  test("no travel pad remains — the barrow mouth is the only way down", () => {
     const g = soloGame(1);
-    const pad = getZone(g, "overworld").map.markers.find((m) => m.ch === "P")!;
-    player(g).pos = { x: pad.x, y: pad.y };
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1");
+    expect(getZone(g, "overworld").map.markers.some((m) => m.ch === "P")).toBe(false);
   });
 });
 

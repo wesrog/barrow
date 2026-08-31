@@ -2,7 +2,7 @@ import { isAreaId, waypointPos, type AreaId } from "./areas";
 import { createEquipment, createInventory, type Equipment, type Inventory } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
 import { rollDurability } from "./items/generate";
-import type { Klass, SkillId } from "./skills";
+import { SKILL_IDS, type Klass, type SkillId } from "./skills";
 import { type GameState, type PlayerId } from "./state";
 import { ensureArea } from "./world";
 
@@ -18,6 +18,8 @@ export interface CharacterSave {
   skillPoints: number;
   skills: Record<SkillId, number>;
   belt: number;
+  /** Mana potions on the belt's second row. Missing on older saves. */
+  manaBelt?: number;
   gold?: number;
   inventory: Inventory;
   equipment: Equipment;
@@ -41,6 +43,7 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     skillPoints: p.skillPoints,
     skills: { ...p.skills },
     belt: p.belt,
+    manaBelt: p.manaBelt,
     gold: p.gold,
     inventory: p.inventory,
     equipment: p.equipment,
@@ -85,17 +88,6 @@ export function newCharacterRaw(name: string, klass: Klass): string {
   };
   return JSON.stringify(save);
 }
-
-const SKILL_IDS: SkillId[] = [
-  "cleave",
-  "crush",
-  "warcry",
-  "leap",
-  "firebolt",
-  "frostnova",
-  "focus",
-  "blink",
-];
 
 /** Every known skill rank as a finite number, or null if the saved shape is
  * unusable. Ranks a save omits (an older save, a newer skill) come back as 0 —
@@ -144,6 +136,7 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.skillPoints = save.skillPoints;
   p.skills = skills;
   p.belt = save.belt;
+  p.manaBelt = Number.isFinite(save.manaBelt) ? save.manaBelt! : 0;
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;
   p.inventory = save.inventory;
   p.equipment = save.equipment;

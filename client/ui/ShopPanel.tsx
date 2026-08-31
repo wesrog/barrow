@@ -121,7 +121,7 @@ export function ShopPanel({
         {repairCost === 0 ? "gear is in good shape" : `repair all — ${repairCost}g`}
       </div>
       <div style={{ color: "#55503f", marginTop: 8, textAlign: "center" }}>
-        v or esc to close · step on the blue ring to return below
+        v or esc to close · sister vess sells potions
       </div>
     </div>
   );

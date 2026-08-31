@@ -8,9 +8,10 @@ import {
   type SimEvent,
 } from "../../sim/state";
 import { MONSTER_TYPES } from "../../sim/monsters";
-import { zoneTitle } from "../../sim/zone";
+import { AREAS } from "../../sim/areas";
+import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
-import type { BiomePalette } from "./biomes";
+import { BIOME_PALETTES } from "./biomes";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -66,9 +67,9 @@ export function createScene(
   map: ZoneMap,
   assets: GameAssets,
   onItemClick?: (id: number) => void,
-  palette?: BiomePalette,
+  surface = false,
 ): SceneHandle {
-  const outdoor = palette !== undefined;
+  const outdoor = surface;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -86,10 +87,13 @@ export function createScene(
   const dbg = window as unknown as { __scenes: THREE.Scene[] };
   (dbg.__scenes ??= []).push(scene); // TEMP debug
   // Regions sit under their biome's night sky; the crypt under dead black.
-  const bg = palette ? palette.bg : 0x0a0a0c;
+  // Outdoors the sky starts on the spawn region's palette and the per-frame
+  // blend (below) corrects to wherever the hero actually stands.
+  const startPal = outdoor ? BIOME_PALETTES[AREAS[areaAt(map.spawn)].biome] : null;
+  const bg = startPal ? startPal.bg : 0x0a0a0c;
   scene.background = new THREE.Color(bg);
-  scene.fog = palette
-    ? new THREE.Fog(bg, palette.fogNear, palette.fogFar)
+  scene.fog = startPal
+    ? new THREE.Fog(bg, startPal.fogNear, startPal.fogFar)
     : new THREE.Fog(bg, 20, 40);
   const fx = new Effects(scene);
 
@@ -111,11 +115,10 @@ export function createScene(
   window.addEventListener("resize", resize);
 
   // --- Lights ---
-  scene.add(
-    palette
-      ? new THREE.AmbientLight(palette.ambient, palette.ambientIntensity)
-      : new THREE.AmbientLight(0x6a6a80, 0.5),
-  );
+  const ambient = startPal
+    ? new THREE.AmbientLight(startPal.ambient, startPal.ambientIntensity)
+    : new THREE.AmbientLight(0x6a6a80, 0.5);
+  scene.add(ambient);
   const moon = new THREE.DirectionalLight(0xb8c4e0, outdoor ? 1.3 : 1.1);
   moon.position.set(18, 30, 8);
   moon.castShadow = true;
@@ -132,6 +135,43 @@ export function createScene(
   const heroLight = new THREE.PointLight(0xffb35c, 8, 9, 1.6);
   heroLight.position.set(0, 1.6, 0);
   scene.add(heroLight);
+
+  // --- Atmosphere: the surface is one scene, so sky, fog and ambient follow
+  // the hero across region borders instead of snapping at a zone change ---
+  const BLEND = 10; // cells on each side of a border that participate in the mix
+  const bands = AREA_ORDER.map((id) => ({
+    rect: areaRect(id),
+    pal: BIOME_PALETTES[AREAS[id].biome],
+  })).sort((a, b) => a.rect.x0 - b.rect.x0);
+  const bgColor = new THREE.Color();
+  const ambColor = new THREE.Color();
+  const tmpColor = new THREE.Color();
+
+  /** Blend the hero's region palette with a neighbor's near the border. */
+  const applyAtmosphere = (x: number) => {
+    let i = bands.findIndex((b) => x < b.rect.x1);
+    if (i < 0) i = bands.length - 1;
+    const cur = bands[i]!;
+    let other = cur;
+    let t = 0; // 0 = pure current, 0.5 = standing on the border
+    if (i > 0 && x - cur.rect.x0 < BLEND) {
+      other = bands[i - 1]!;
+      t = 0.5 * (1 - (x - cur.rect.x0) / BLEND);
+    } else if (i < bands.length - 1 && cur.rect.x1 - x < BLEND) {
+      other = bands[i + 1]!;
+      t = 0.5 * (1 - (cur.rect.x1 - x) / BLEND);
+    }
+    bgColor.set(cur.pal.bg).lerp(tmpColor.set(other.pal.bg), t);
+    (scene.background as THREE.Color).copy(bgColor);
+    const fog = scene.fog as THREE.Fog;
+    fog.color.copy(bgColor);
+    fog.near = cur.pal.fogNear + (other.pal.fogNear - cur.pal.fogNear) * t;
+    fog.far = cur.pal.fogFar + (other.pal.fogFar - cur.pal.fogFar) * t;
+    ambColor.set(cur.pal.ambient).lerp(tmpColor.set(other.pal.ambient), t);
+    ambient.color.copy(ambColor);
+    ambient.intensity =
+      cur.pal.ambientIntensity + (other.pal.ambientIntensity - cur.pal.ambientIntensity) * t;
+  };
 
   // --- Environment from the KayKit dungeon set: brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
@@ -298,54 +338,15 @@ export function createScene(
       }
     }
   } else {
-    // --- Open ground: one biome-tinted plane, then instanced crags, dead pines, tufts ---
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(map.width, map.height),
-      flatMat(palette!.ground, 1),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(map.width / 2, 0, map.height / 2);
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    const rockMats: THREE.Matrix4[] = [];
-    const pineMats: THREE.Matrix4[] = [];
-    const trunkMats: THREE.Matrix4[] = [];
-    const tuftMats: THREE.Matrix4[] = [];
+    // --- Open ground: every region lays its own biome-tinted plane over its
+    // slice of the world, then instanced crags, dead pines and tufts in its
+    // own colors. Cell hashes stay keyed on world coordinates, so the scatter
+    // is the same wherever a region happens to sit in the layout. ---
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const eul = new THREE.Euler();
     const scl = new THREE.Vector3();
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const h = hash(x, y);
-        const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
-        const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
-        if (!isWalkable(map, x, y)) {
-          if (stairCells.has(`${x},${y}`)) continue;
-          const border = x === 0 || y === 0 || x === map.width - 1 || y === map.height - 1;
-          if (border || h % 5 < 3) {
-            const s = 0.6 + ((h >> 6) % 45) / 100;
-            eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
-            m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
-            rockMats.push(m.clone());
-          } else {
-            const s = 0.75 + ((h >> 6) % 55) / 100;
-            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-            m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
-            pineMats.push(m.clone());
-            m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
-            trunkMats.push(m.clone());
-          }
-        } else if (h % 11 === 0) {
-          quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-          const s = 0.7 + ((h >> 7) % 60) / 100;
-          m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
-          tuftMats.push(m.clone());
-        }
-      }
-    }
     const addInstanced = (
       geo: THREE.BufferGeometry,
       color: number,
@@ -358,10 +359,56 @@ export function createScene(
       mesh.receiveShadow = true;
       scene.add(mesh);
     };
-    addInstanced(new THREE.IcosahedronGeometry(0.62, 0), palette!.rock, rockMats, true);
-    addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), palette!.pine, pineMats, true);
-    addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), palette!.trunk, trunkMats, false);
-    addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), palette!.tuft, tuftMats, false);
+    for (const areaId of AREA_ORDER) {
+      const rect = areaRect(areaId);
+      const pal = BIOME_PALETTES[AREAS[areaId].biome];
+      const rw = rect.x1 - rect.x0;
+      const rh = rect.y1 - rect.y0;
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh), flatMat(pal.ground, 1));
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(rect.x0 + rw / 2, 0, rect.y0 + rh / 2);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const rockMats: THREE.Matrix4[] = [];
+      const pineMats: THREE.Matrix4[] = [];
+      const trunkMats: THREE.Matrix4[] = [];
+      const tuftMats: THREE.Matrix4[] = [];
+      for (let y = rect.y0; y < rect.y1; y++) {
+        for (let x = rect.x0; x < rect.x1; x++) {
+          const h = hash(x, y);
+          const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
+          const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
+          if (!isWalkable(map, x, y)) {
+            if (stairCells.has(`${x},${y}`)) continue;
+            const border =
+              x === rect.x0 || y === rect.y0 || x === rect.x1 - 1 || y === rect.y1 - 1;
+            if (border || h % 5 < 3) {
+              const s = 0.6 + ((h >> 6) % 45) / 100;
+              eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
+              m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
+              rockMats.push(m.clone());
+            } else {
+              const s = 0.75 + ((h >> 6) % 55) / 100;
+              quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+              m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
+              pineMats.push(m.clone());
+              m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
+              trunkMats.push(m.clone());
+            }
+          } else if (h % 11 === 0) {
+            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+            const s = 0.7 + ((h >> 7) % 60) / 100;
+            m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
+            tuftMats.push(m.clone());
+          }
+        }
+      }
+      addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
+      addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
+      addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
+      addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
+    }
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---
@@ -926,10 +973,14 @@ export function createScene(
         }
       }
       heroLight.position.set(px, 1.6, py);
+      if (outdoor) applyAtmosphere(px);
 
-      // Sync monster rigs with sim state
+      // Sync monster rigs with sim state. Only the hero's neighborhood keeps a
+      // skinned rig — the surface holds hundreds of monsters at once — and the
+      // drop radius trails the create radius so pacing a border doesn't churn.
       for (const [id, rig] of monsterRigs) {
-        if (!zoneOf(state, me).monsters.has(id)) {
+        const monster = zoneOf(state, me).monsters.get(id);
+        if (!monster || Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 32) {
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
@@ -941,6 +992,7 @@ export function createScene(
       for (const monster of zoneOf(state, me).monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
+          if (Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 28) continue;
           rig = makeMonsterModelRig(assets, monster.typeId);
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
@@ -1002,7 +1054,9 @@ export function createScene(
         }
       }
       for (const [id, bar] of healthBars) {
-        if (!zoneOf(state, me).monsters.has(id)) {
+        // A bar outlives its rig when the monster wanders out of the window;
+        // drop it too, or it freezes at the last screen position it had.
+        if (!zoneOf(state, me).monsters.has(id) || !monsterRigs.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
         }
@@ -1334,7 +1388,7 @@ export function createScene(
         if (m && type) tip = { name: type.name, role: `Monster — level ${m.mlvl}` };
       } else if (picked?.kind === "portal") {
         const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
-        if (portal) tip = { name: "Town Portal", role: `To ${zoneTitle(portal.link.zone)}` };
+        if (portal) tip = { name: "Town Portal", role: `To ${locationTitle(portal.link.zone, portal.link.pos)}` };
       } else if (!picked || picked.kind === "ground") {
         // Stairs, pads, and gates are flat rings — match by cursor proximity.
         let bestD = 22; // px

@@ -1,8 +1,8 @@
+import { areaLevelOf } from "./areas";
 import { isWalkable, type Vec } from "./map";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
 import {
-  zoneDepth,
   zoneOf,
   type GameState,
   type Player,
@@ -110,7 +110,7 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
     zone: zone.id,
   });
 
-  const depthBonus = (zoneDepth(zone.id) - 1) * 3;
+  const depthBonus = (areaLevelOf(zone.id) - 1) * 3;
   const item =
     target.kind === "chest"
       ? rollDrop(state.rng, "standard", 5 + depthBonus, { guaranteed: true, minRarity: "magic" })

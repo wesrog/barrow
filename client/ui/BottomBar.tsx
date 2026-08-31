@@ -3,6 +3,8 @@ import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { CLASS_SKILLS, SKILLS, type SkillId } from "../../sim/skills";
 import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
+import { isAreaId } from "../../sim/areas";
+import { zoneTitle } from "../../sim/zone";
 import { inCamp } from "../../sim/map";
 
 const mono = "ui-monospace, monospace";
@@ -242,10 +244,10 @@ export function BottomBar({
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
           lvl {p.level} ·{" "}
-          {localPlayer(game).zoneId === "overworld"
+          {isAreaId(localPlayer(game).zoneId)
             ? inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)
-              ? "the camp"
-              : "the moors"
+              ? "safe ground"
+              : zoneTitle(localPlayer(game).zoneId).toLowerCase()
             : `depth ${zoneDepth(localPlayer(game).zoneId)}`}{" "}
           ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>

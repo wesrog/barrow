@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { zoneOf } from "../sim/state";
+import { inCamp, isWalkable } from "../sim/map";
 import { player, soloGame } from "../sim/test-helpers";
 import { joinPlayer } from "../sim/tick";
 import { BASE_STATS, LIFE_PER_LEVEL, placeItem } from "../sim/character";
@@ -33,10 +34,10 @@ describe("character save", () => {
     expect(player(b).inventory.entries).toHaveLength(1);
     expect(player(b).inventory.entries[0]!.item.name).toBe("Gleaming Bone Ring");
     expect(player(b).equipment.weapon?.baseId).toBe("rusted_blade");
-    // Derived stats recomputed for level 5, revived at spawn
+    // Derived stats recomputed for level 5, revived on the camp's safe ground
     expect(player(b).maxLife).toBe(BASE_STATS.maxLife + 4 * LIFE_PER_LEVEL);
     expect(player(b).life).toBe(player(b).maxLife);
-    expect(player(b).pos).toEqual(zoneOf(b, player(b)).map.spawn);
+    expect(inCamp(zoneOf(b, player(b)).map, player(b).pos)).toBe(true);
   });
 
   test("garbage data is rejected without corrupting the game", () => {
@@ -107,5 +108,71 @@ describe("character save", () => {
     joinPlayer(b, { id: 1, character: raw });
     expect(b.players.get(1)!.level).toBe(4);
     expect(b.players.get(1)!.gold).toBe(77);
+  });
+});
+
+describe("checkpoint persistence", () => {
+  test("the save carries the world seed, checkpoint, and discovered waypoints", () => {
+    const a = soloGame(41);
+    player(a).waypoints = ["overworld", "redfen"];
+    player(a).checkpoint = "redfen";
+    const save = JSON.parse(serializeCharacter(a, 0));
+    expect(save.worldSeed).toBe(41);
+    expect(save.checkpoint).toBe("redfen");
+    expect(save.waypoints).toEqual(["overworld", "redfen"]);
+  });
+
+  test("a restored character wakes at their checkpoint outpost", () => {
+    const a = soloGame(1);
+    player(a).waypoints = ["overworld", "redfen"];
+    player(a).checkpoint = "redfen";
+    const raw = serializeCharacter(a, 0);
+    const b = soloGame(2);
+    expect(applyCharacter(b, 0, raw)).toBe(true);
+    expect(player(b).zoneId).toBe("redfen");
+    expect(b.zones.has("redfen")).toBe(true);
+    expect(player(b).waypoints).toEqual(["overworld", "redfen"]);
+    expect(player(b).checkpoint).toBe("redfen");
+    const map = zoneOf(b, player(b)).map;
+    expect(isWalkable(map, Math.floor(player(b).pos.x), Math.floor(player(b).pos.y))).toBe(true);
+  });
+
+  test("garbled checkpoint fields fall back to camp without rejecting the hero", () => {
+    const a = soloGame(1);
+    const save = JSON.parse(serializeCharacter(a, 0));
+    save.checkpoint = "atlantis";
+    save.waypoints = ["overworld", "atlantis", 7];
+    const b = soloGame(2);
+    expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
+    expect(player(b).zoneId).toBe("overworld");
+    expect(player(b).checkpoint).toBe("overworld");
+    expect(player(b).waypoints).toEqual(["overworld"]);
+  });
+
+  test("reaching a town on foot is enough — no waypoint touch needed to resume there", () => {
+    // Walking into an outpost stamps the checkpoint before its waypoint is
+    // ever touched; the reload still honors it.
+    const a = soloGame(1);
+    const save = JSON.parse(serializeCharacter(a, 0));
+    save.checkpoint = "redfen";
+    save.waypoints = ["overworld"];
+    const b = soloGame(2);
+    expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
+    expect(player(b).zoneId).toBe("redfen");
+    expect(player(b).checkpoint).toBe("redfen");
+    expect(player(b).waypoints).toEqual(["overworld"]);
+  });
+
+  test("a save from before checkpoints still applies, seated at camp", () => {
+    const a = soloGame(1);
+    const save = JSON.parse(serializeCharacter(a, 0));
+    delete save.worldSeed;
+    delete save.checkpoint;
+    delete save.waypoints;
+    const b = soloGame(2);
+    expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
+    expect(player(b).zoneId).toBe("overworld");
+    expect(player(b).waypoints).toEqual(["overworld"]);
+    expect(player(b).checkpoint).toBe("overworld");
   });
 });

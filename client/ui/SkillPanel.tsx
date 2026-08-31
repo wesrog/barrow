@@ -8,7 +8,7 @@ const DESCRIPTIONS: Record<SkillId, string> = {
   cleave: "sweep every enemy in reach · +25%/rank · +10% per warcry rank",
   crush: "guaranteed heavy blow · 200% +50%/rank",
   warcry: "battle shout, +damage for 20s · also empowers cleave",
-  leap: "jump to a spot, stunning enemies where you land",
+  leap: "jump to a spot, crushing and stunning enemies where you land",
   firebolt: "hurl fire at a distant enemy · never misses · +10% per focus rank",
   frostnova: "icy burst around you, chilling everything it touches",
   focus: "gather your will, +spell damage for 20s · also empowers firebolt",

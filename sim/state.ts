@@ -1,3 +1,4 @@
+import type { AreaId } from "./areas";
 import type { Rng } from "./rng";
 import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
@@ -6,13 +7,13 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
 
-export type ZoneId = "overworld" | `floor:${number}`;
+export type ZoneId = AreaId | `floor:${number}`;
 
 export const floorZone = (n: number): ZoneId => `floor:${n}`;
 
-/** The moors = 1; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
+/** floor:N = N; any surface area = 1. Areas take their level from the registry. */
 export function zoneDepth(id: ZoneId): number {
-  if (id === "overworld") return 1;
+  if (!id.startsWith("floor:")) return 1;
   return Number(id.slice("floor:".length));
 }
 
@@ -125,6 +126,10 @@ export interface Player {
   portalTarget: number | null;
   /** Player corpse id being walked to for reclaiming, if any. */
   reclaimTarget: number | null;
+  /** Areas whose waypoint this player has touched. Sorted; arrays serialize, Sets don't. */
+  waypoints: AreaId[];
+  /** Where death and a reload seat this player: last waypoint or safe ground touched. */
+  checkpoint: AreaId;
   level: number;
   xp: number;
   skillPoints: number;
@@ -165,10 +170,12 @@ export type SimEvent =
       typeId: string;
       pos: Vec;
       xp: number;
+      mlvl: number;
       zone: ZoneId;
       killer: PlayerId | null;
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
+  | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
@@ -201,6 +208,8 @@ export interface ShopEntry {
 
 export interface GameState {
   tick: number;
+  /** The seed this world was created from; persisted so a hero can come home. */
+  seed: number;
   rng: Rng;
   /** The world: the moors (camp included) plus every floor generated so far. */
   zones: Map<ZoneId, ZoneState>;
@@ -240,6 +249,8 @@ export interface PlayerInput {
   newGame?: boolean;
   /** Cast a two-way portal pair between here and camp. */
   townPortal?: boolean;
+  /** Standing at a waypoint: jump to this discovered area's waypoint. */
+  waypointTo?: AreaId;
   /** Walk to and ride this portal id. */
   usePortal?: number;
   /** Walk to and reclaim this player corpse id. */

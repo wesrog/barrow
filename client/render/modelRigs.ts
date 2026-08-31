@@ -316,6 +316,29 @@ const MONSTER_LOOKS: Record<
     weapon: "skeleton_staff",
     tint: 0x9a8ab8,
   },
+  fen_howler: {
+    model: "skeleton_rogue",
+    idle: "Idle",
+    walk: "Running_A",
+    scale: 0.55,
+    tint: 0x6a8a4a,
+  },
+  bog_maw: {
+    model: "skeleton_mage",
+    idle: "Idle",
+    walk: "Walking_A",
+    scale: 0.78,
+    weapon: "skeleton_staff",
+    tint: 0x5a7a52,
+  },
+  cairn_wight: {
+    model: "skeleton_warrior",
+    idle: "Idle_Combat",
+    walk: "Walking_A",
+    scale: 0.9,
+    weapon: "skeleton_axe",
+    tint: 0xd8d2c0,
+  },
   barrow_lord: {
     model: "skeleton_warrior",
     idle: "Idle_Combat",
@@ -360,8 +383,8 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
 
 /** Attack clip for a monster swing. */
 export function monsterAttackClip(typeId: string): string {
-  if (typeId === "gravespit") return "Spellcast_Shoot";
-  if (typeId === "barrow_lord") return "2H_Melee_Attack_Slice";
-  if (typeId === "skitter") return "Unarmed_Melee_Attack_Punch_A";
+  if (typeId === "gravespit" || typeId === "bog_maw") return "Spellcast_Shoot";
+  if (typeId === "barrow_lord" || typeId === "cairn_wight") return "2H_Melee_Attack_Slice";
+  if (typeId === "skitter" || typeId === "fen_howler") return "Unarmed_Melee_Attack_Punch_A";
   return "1H_Melee_Attack_Slice_Horizontal";
 }

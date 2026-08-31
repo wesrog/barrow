@@ -98,10 +98,10 @@ describe("player attacking", () => {
   test("attacking a monster walks into range and kills it", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "skitter", { x: 8.5, y: 2.5 });
-    stepSolo(game, { attack: m.id });
     let died = false;
+    // Hold the click: the client re-sends the attack input every tick.
     for (let i = 0; i < 600 && !died; i++) {
-      stepSolo(game, {});
+      stepSolo(game, { attack: m.id });
       if (game.events.some((e) => e.type === "monster_died" && e.id === m.id)) died = true;
     }
     expect(died).toBe(true);
@@ -109,13 +109,49 @@ describe("player attacking", () => {
     expect(playerZone(game).corpses.some((c) => c.typeId === "skitter")).toBe(true);
   });
 
+  test("a single attack input swings once, then disengages", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 60; i++) {
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBe(1);
+    expect(player(game).attackTarget).toBeNull();
+  });
+
+  test("a single click on a distant monster still walks into range for its one swing", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 8.5, y: 2.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 200; i++) {
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBe(1);
+  });
+
+  test("holding the attack (input re-sent every tick) keeps swinging", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 60; i++) {
+      stepSolo(game, { attack: m.id });
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBeGreaterThanOrEqual(2);
+  });
+
   test("monster hits emit events with damage amounts", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
-    stepSolo(game, { attack: m.id });
     const amounts: number[] = [];
     for (let i = 0; i < 200 && playerZone(game).monsters.has(m.id); i++) {
-      stepSolo(game, {});
+      stepSolo(game, { attack: m.id });
       for (const e of game.events) {
         if (e.type === "monster_hit" && e.id === m.id) amounts.push(e.amount);
       }
@@ -141,7 +177,7 @@ describe("swing events", () => {
     const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let swings = 0;
     for (let i = 0; i < 30; i++) {
-      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, { attack: m.id });
       swings += game.events.filter((e) => e.type === "player_swing").length;
     }
     // swingEvery is 12 ticks: at least two swings in 30
@@ -228,7 +264,7 @@ describe("contact frames", () => {
     const swingTicks: number[] = [];
     const hitTicks: number[] = [];
     for (let i = 0; i < 120; i++) {
-      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, { attack: m.id });
       for (const e of game.events) {
         if (e.type === "player_swing") swingTicks.push(game.tick);
         if (e.type === "monster_hit") hitTicks.push(game.tick);

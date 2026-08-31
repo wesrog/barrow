@@ -126,6 +126,18 @@ export function currentCharacterId(): string | null {
   return loadRoster().current;
 }
 
+/** The world seed a slot's hero last played in, if their save recorded one. */
+export function worldSeedOf(id: string): number | null {
+  const entry = loadRoster().chars.find((c) => c.id === id);
+  if (!entry) return null;
+  try {
+    const save = JSON.parse(entry.raw) as CharacterSave;
+    return Number.isFinite(save.worldSeed) ? save.worldSeed! : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Autosave: overwrite the current slot's payload. No current slot, no save. */
 export function saveCurrent(raw: string): void {
   const roster = loadRoster();

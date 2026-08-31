@@ -7,6 +7,7 @@ import {
   deleteCharacter,
   listCharacters,
   selectCharacter,
+  worldSeedOf,
   type CharacterSummary,
 } from "../roster";
 import type { Klass } from "../../sim/skills";
@@ -77,10 +78,13 @@ export function Lobby({
     return target ? (selectCharacter(target.id) ?? undefined) : undefined;
   };
 
+  /** The chosen hero's saved world, so a reload comes back to the same moors. */
+  const worldSeed = (): number => (chosen ? worldSeedOf(chosen.id) : null) ?? (Date.now() >>> 0);
+
   const startSolo = () => {
     setError(null);
     setBusy("solo");
-    onReady(localDriver(Date.now() >>> 0, characterRaw()), null);
+    onReady(localDriver(worldSeed(), characterRaw()), null);
   };
 
   const startHost = async () => {
@@ -88,7 +92,7 @@ export function Lobby({
     setBusy("host");
     try {
       const { driver, code: roomCode } = await hostDriver(
-        Date.now() >>> 0,
+        worldSeed(),
         SIGNAL_URL,
         characterRaw(),
       );

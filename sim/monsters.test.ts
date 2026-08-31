@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { stepSolo } from "./tick";
-import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
+import { ensureArea, stepSolo } from "./tick";
+import { createGameOn, player, playerZone, soloGame, spawnAt } from "./test-helpers";
 import { MONSTER_TYPES } from "./monsters";
+import { MARKER_TYPES } from "./zone";
 import { rollDrop } from "./items/treasure";
 import { createRng } from "./rng";
 
@@ -168,5 +169,30 @@ describe("crowding", () => {
     for (let i = 0; i < 60; i++) stepSolo(state, {});
     const d = Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y);
     expect(d).toBeGreaterThan(0.3);
+  });
+});
+
+describe("fen and crag monsters", () => {
+  test("the new rows exist with their signature behaviors", () => {
+    // A fast pack hunter, a ranged lobber, and a heavy telegraphed hitter.
+    expect(MONSTER_TYPES.fen_howler!.speed).toBeGreaterThan(MONSTER_TYPES.shambler!.speed);
+    expect(MONSTER_TYPES.bog_maw!.ranged).toBeGreaterThan(0);
+    expect(MONSTER_TYPES.cairn_wight!.windup).toBeGreaterThan(0);
+    // Levels climb past the crypt originals so their loot keeps unlocking.
+    expect(MONSTER_TYPES.cairn_wight!.mlvl).toBeGreaterThan(MONSTER_TYPES.shambler!.mlvl);
+  });
+
+  test("their marker chars populate zones", () => {
+    expect(MARKER_TYPES.h).toBe("fen_howler");
+    expect(MARKER_TYPES.m).toBe("bog_maw");
+    expect(MARKER_TYPES.w).toBe("cairn_wight");
+  });
+
+  test("the redfen prowls with fen monsters", () => {
+    const g = soloGame(1);
+    const zone = ensureArea(g, "redfen");
+    const ids = new Set([...zone.monsters.values()].map((mo) => mo.typeId));
+    expect(ids.has("fen_howler")).toBe(true);
+    expect(ids.has("bog_maw")).toBe(true);
   });
 });

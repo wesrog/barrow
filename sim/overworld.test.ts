@@ -151,4 +151,20 @@ describe("camp safety", () => {
     expect(inCamp(zone.map, m.pos)).toBe(false);
     expect(p.life).toBe(p.maxLife);
   });
+
+  test("monsters keep wandering while everyone stands in camp", () => {
+    const g = soloGame(1);
+    const zone = getZone(g, "overworld");
+    const p = player(g);
+    expect(inCamp(zone.map, p.pos)).toBe(true);
+    const m = [...zone.monsters.values()][0]!;
+    const home = { ...m.pos };
+    let moved = false;
+    for (let i = 0; i < 500; i++) {
+      stepSolo(g, {});
+      expect(m.ai).toBe("idle");
+      if (Math.hypot(m.pos.x - home.x, m.pos.y - home.y) > 0.3) moved = true;
+    }
+    expect(moved).toBe(true);
+  });
 });

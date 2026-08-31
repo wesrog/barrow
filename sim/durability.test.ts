@@ -34,8 +34,8 @@ describe("durability", () => {
     m.life = 1000000;
     m.dmgMin = 0;
     m.dmgMax = 0;
-    stepSolo(state, { attack: m.id });
-    for (let i = 0; i < 3000; i++) stepSolo(state, {});
+    // Hold the attack: re-sending each tick re-arms the target (auto-attack).
+    for (let i = 0; i < 3000; i++) stepSolo(state, { attack: m.id });
     expect(weapon.durability!.cur).toBeLessThan(start);
     expect(weapon.durability!.cur).toBeGreaterThanOrEqual(0);
   });

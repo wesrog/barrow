@@ -13,9 +13,12 @@ export interface TreasureClass {
 
 const LOW_WEAPONS = ["rusted_blade", "hatchet"];
 const MID_WEAPONS = ["war_maul", "twin_fang", "grave_scythe"];
+const HIGH_WEAPONS = ["dire_flail", "moon_glaive", "kingsbane"];
 const LOW_ARMOR = ["cracked_helm", "rag_tunic", "worn_boots"];
 const MID_ARMOR = ["bone_visage", "studded_jerkin", "grave_plate", "chain_greaves"];
+const HIGH_ARMOR = ["iron_barbute", "wyrm_skull", "lamellar_coat", "bogsteel_plate", "marsh_striders", "cragwalkers"];
 const JEWELRY = ["bone_ring", "grave_amulet"];
+const HIGH_JEWELRY = ["wight_band", "howler_charm"];
 
 export const TREASURE_CLASSES: Record<string, TreasureClass> = {
   trash: {
@@ -25,6 +28,7 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
       { baseIds: LOW_WEAPONS, weight: 12 },
       { baseIds: LOW_ARMOR, weight: 14 },
       { baseIds: JEWELRY, weight: 4 },
+      { baseIds: [...HIGH_WEAPONS, ...HIGH_ARMOR], weight: 4 },
       { baseIds: ["minor_potion"], weight: 14 },
     ],
     rarityBonus: 1,
@@ -35,9 +39,12 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
     entries: [
       { baseIds: LOW_WEAPONS, weight: 10 },
       { baseIds: MID_WEAPONS, weight: 8 },
+      { baseIds: HIGH_WEAPONS, weight: 6 },
       { baseIds: LOW_ARMOR, weight: 10 },
       { baseIds: MID_ARMOR, weight: 8 },
+      { baseIds: HIGH_ARMOR, weight: 6 },
       { baseIds: JEWELRY, weight: 5 },
+      { baseIds: HIGH_JEWELRY, weight: 2 },
       { baseIds: ["minor_potion"], weight: 12 },
     ],
     rarityBonus: 1.5,
@@ -48,9 +55,12 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
     entries: [
       { baseIds: MID_WEAPONS, weight: 12 },
       { baseIds: MID_ARMOR, weight: 12 },
+      { baseIds: HIGH_WEAPONS, weight: 10 },
+      { baseIds: HIGH_ARMOR, weight: 10 },
       { baseIds: LOW_WEAPONS, weight: 6 },
       { baseIds: LOW_ARMOR, weight: 6 },
       { baseIds: JEWELRY, weight: 8 },
+      { baseIds: HIGH_JEWELRY, weight: 4 },
     ],
     rarityBonus: 4,
   },

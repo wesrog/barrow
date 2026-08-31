@@ -136,6 +136,11 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
           zone: zone.id,
         });
         p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+        // One input buys one swing. Holding the button re-sends the attack
+        // every tick, which re-arms the target before the next cooldown ends —
+        // that's what makes click-and-hold auto-attack while a single click
+        // stays a single swing (and leaves skills free to fire between them).
+        p.attackTarget = null;
       }
     } else {
       p.path = pathToward(zone.map, p.pos, target.pos);
@@ -190,13 +195,16 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
       m.strikeAt = null;
       continue;
     }
-    // Nobody left standing here: idle monsters over an empty or dead zone.
+    // Nobody left standing here: monsters drop aggro but keep ambling.
     const p = nearestPlayer(living, m.pos);
     if (!p) {
-      m.ai = "idle";
-      m.path = [];
+      if (m.ai !== "idle") {
+        m.ai = "idle";
+        m.path = [];
+      }
       m.windingUntil = null;
       m.strikeAt = null;
+      idleWander(state, zone, m);
       continue;
     }
     // A swing in flight: damage lands at the contact frame.
@@ -339,6 +347,7 @@ export function deathSystem(
       typeId: m.typeId,
       pos: { ...m.pos },
       xp: m.xp,
+      mlvl: m.mlvl,
       zone: zone.id,
       killer: m.lastHitBy,
     });
@@ -429,7 +438,7 @@ export function deathSystem(
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
 
     // Immediate respawn on camp ground — there is no persistent "you are dead" state.
-    travel(state, p, "overworld");
+    travel(state, p, p.checkpoint);
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;

@@ -3,7 +3,7 @@ import { mapFromStrings } from "./map";
 import { createGame, joinPlayer, stepSolo } from "./tick";
 import { createGameOn, player, spawnAt } from "./test-helpers";
 import { xpForLevel, LIFE_PER_LEVEL } from "./character";
-import { xpSystem } from "./systems/xp";
+import { xpPenalty, xpSystem } from "./systems/xp";
 import type { GameState } from "./state";
 
 const openMap = () =>
@@ -77,6 +77,7 @@ describe("xp split", () => {
       xp: 12,
       zone: p0.zoneId,
       killer: p0.id,
+      mlvl: 2,
     });
     xpSystem(state);
     expect(p0.xp).toBe(12);
@@ -95,6 +96,7 @@ describe("xp split", () => {
       xp: 100,
       zone: p0.zoneId,
       killer: p0.id,
+      mlvl: 2,
     });
     xpSystem(state);
     // floor(100 / 2 * 1.35) = 67
@@ -119,6 +121,7 @@ describe("xp split", () => {
       xp: 100,
       zone: p0.zoneId,
       killer: p0.id,
+      mlvl: 2,
     });
     xpSystem(state);
     // n=2 (killer + bystander): floor(100 / 2 * 1.35) = 67
@@ -141,6 +144,7 @@ describe("xp split", () => {
       xp: 50,
       zone: "floor:1",
       killer: p0.id,
+      mlvl: 2,
     });
     xpSystem(state);
     expect(p0.xp).toBe(50);
@@ -160,9 +164,68 @@ describe("xp split", () => {
       xp: 100,
       zone: p0.zoneId,
       killer: null,
+      mlvl: 2,
     });
     xpSystem(state);
     expect(p0.xp).toBe(67);
     expect(p1.xp).toBe(67);
+  });
+});
+
+describe("xp falloff", () => {
+  test("full xp within 5 levels of the kill, in either direction", () => {
+    expect(xpPenalty(1, 2)).toBe(1);
+    expect(xpPenalty(10, 5)).toBe(1); // gap exactly 5
+    expect(xpPenalty(3, 9)).toBe(1); // monster above player
+  });
+
+  test("xp fades 15% per level beyond a 5-level gap", () => {
+    expect(xpPenalty(12, 5)).toBeCloseTo(0.7); // gap 7
+    expect(xpPenalty(14, 5)).toBeCloseTo(0.4); // gap 9
+  });
+
+  test("xp never falls below 5%", () => {
+    expect(xpPenalty(30, 2)).toBe(0.05);
+  });
+
+  test("an out-leveled kill grants reduced xp", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    p0.level = 12;
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "shambler",
+      pos: { ...p0.pos },
+      xp: 12,
+      zone: p0.zoneId,
+      killer: p0.id,
+      mlvl: 5,
+    });
+    xpSystem(state);
+    expect(p0.xp).toBe(8); // gap 7: floor(12 * 0.7)
+  });
+
+  test("falloff is per recipient: the low-level partner keeps the full share", () => {
+    const state = createGame(1);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p0.level = 18;
+    p1.level = 3;
+    p1.pos = { ...p0.pos };
+    state.events.push({
+      type: "monster_died",
+      id: 1,
+      typeId: "shambler",
+      pos: { ...p0.pos },
+      xp: 100,
+      zone: p0.zoneId,
+      killer: p0.id,
+      mlvl: 5,
+    });
+    xpSystem(state);
+    // share = floor(100 / 2 * 1.35) = 67
+    expect(p0.xp).toBe(3); // gap 13 -> 5%: floor(67 * 0.05)
+    expect(p1.xp).toBe(67); // gap -2 -> full
   });
 });

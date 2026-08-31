@@ -168,6 +168,14 @@ describe("blink", () => {
     expect(bystander.stunnedUntil).toBe(0);
   });
 
+  test("arrives at the exact aim point, not the cell center", () => {
+    const state = createGameOn(1, arena());
+    makeWitch(state);
+    stepSolo(state, { spendSkill: "blink" });
+    stepSolo(state, { cast: { skill: "blink", at: { x: 6.2, y: 1.8 } } });
+    expect(player(state).pos).toEqual({ x: 6.2, y: 1.8 });
+  });
+
   test("refuses walls and spots beyond range", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);

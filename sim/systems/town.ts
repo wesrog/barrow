@@ -49,6 +49,17 @@ const SHOP_BASES = [
   "chain_greaves",
   "bone_ring",
   "grave_amulet",
+  "dire_flail",
+  "moon_glaive",
+  "kingsbane",
+  "iron_barbute",
+  "wyrm_skull",
+  "lamellar_coat",
+  "bogsteel_plate",
+  "marsh_striders",
+  "cragwalkers",
+  "wight_band",
+  "howler_charm",
 ];
 
 /** Refill Maren's stall for the arriving player. Runs when they walk into an empty camp. */
@@ -59,8 +70,10 @@ export function restock(state: GameState, p: Player): void {
   for (let i = 0; i < 2; i++) {
     stock.push({ item: rollItem(rng, "minor_potion", 1, "normal"), price: 25 });
   }
+  // Maren stocks what the buyer can grow into soon — not endgame steel at level 2.
+  const pool = SHOP_BASES.filter((id) => BASES[id]!.levelReq <= p.level + 3);
   for (let i = 0; i < 4; i++) {
-    const baseId = SHOP_BASES[rng.int(0, SHOP_BASES.length - 1)]!;
+    const baseId = pool[rng.int(0, pool.length - 1)]!;
     // The last slot always carries something magic — the window-shopping hook.
     const rarity: Rarity = i === 3 || rng.next() < 0.35 ? "magic" : "normal";
     const item = rollItem(rng, baseId, ilvl, rarity);

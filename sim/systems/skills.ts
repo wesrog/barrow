@@ -15,6 +15,7 @@ import {
   fireboltDamage,
   frostnovaChillTicks,
   frostnovaDamage,
+  leapMultiplier,
   leapStunTicks,
   spellMultiplier,
   type SkillId,
@@ -151,7 +152,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       // Takeoff only — leapSystem carries the flight; the stun lands with the player.
       p.leap = {
         from: { ...p.pos },
-        to: { x: cell.x + 0.5, y: cell.y + 0.5 },
+        to: { x: cast.at.x, y: cast.at.y },
         startTick: state.tick,
         endTick: state.tick + LEAP_TICKS,
       };
@@ -162,7 +163,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         playerId: p.id,
         skill: "leap",
         pos: { ...p.pos },
-        at: { x: cell.x + 0.5, y: cell.y + 0.5 },
+        at: { x: cast.at.x, y: cast.at.y },
         zone: zone.id,
       });
       break;
@@ -247,7 +248,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > BLINK_RANGE) return;
       if (!spendMana(p, "blink")) return;
-      p.pos = { x: cell.x + 0.5, y: cell.y + 0.5 };
+      p.pos = { x: cast.at.x, y: cast.at.y };
       p.path = [];
       p.attackTarget = null;
       state.events.push({
@@ -262,7 +263,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
   }
 }
 
-/** Carry leaping players through the air; landing snaps to the cell and stuns. */
+/** Carry leaping players through the air; landing hits the aim point and stuns. */
 export function leapSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   for (const p of players) {
     const leap = p.leap;
@@ -275,9 +276,20 @@ export function leapSystem(state: GameState, zone: ZoneState, players: Player[])
       p.pos = { ...leap.to };
       p.leap = null;
       const stunFor = leapStunTicks(p.skills.leap);
+      const mult = leapMultiplier(p.skills.leap);
       for (const m of zone.monsters.values()) {
         if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= LEAP_STUN_RADIUS) {
           m.stunnedUntil = state.tick + stunFor;
+          const amount = rollSkillDamage(state, p, mult);
+          m.life -= amount;
+          m.lastHitBy = p.id;
+          state.events.push({
+            type: "monster_hit",
+            id: m.id,
+            amount,
+            pos: { ...m.pos },
+            zone: zone.id,
+          });
         }
       }
       state.events.push({ type: "leap_land", playerId: p.id, pos: { ...p.pos }, zone: zone.id });

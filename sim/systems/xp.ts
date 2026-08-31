@@ -38,15 +38,31 @@ export function xpShares(
 }
 
 /**
+ * Kills far below a player's level fade out as a source of xp: full value
+ * within 5 levels, then -15% per level of gap, floored at 5%. Per recipient —
+ * party members above and below the monster's level are penalized separately.
+ */
+export function xpPenalty(playerLevel: number, mlvl: number): number {
+  const gap = playerLevel - mlvl;
+  if (gap <= 5) return 1;
+  return Math.max(0.05, 1 - (gap - 5) * 0.15);
+}
+
+/**
  * Collect xp from this tick's kills and process level-ups. Runs after deathSystem.
- * Each kill's xp splits among the killer and nearby party members via xpShares.
+ * Each kill's xp splits among the killer and nearby party members via xpShares,
+ * then each share fades by that player's xpPenalty against the monster's level.
  */
 export function xpSystem(state: GameState): void {
   const gains = new Map<PlayerId, number>();
   for (const e of state.events) {
     if (e.type !== "monster_died") continue;
     const shares = xpShares(state, e.zone, e.pos, e.killer, e.xp);
-    for (const [id, amount] of shares) gains.set(id, (gains.get(id) ?? 0) + amount);
+    for (const [id, amount] of shares) {
+      const p = state.players.get(id)!;
+      const faded = Math.floor(amount * xpPenalty(p.level, e.mlvl));
+      gains.set(id, (gains.get(id) ?? 0) + faded);
+    }
   }
   if (gains.size === 0) return;
   for (const [id, gained] of gains) {

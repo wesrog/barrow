@@ -1,8 +1,10 @@
+import { isAreaId, waypointPos, type AreaId } from "./areas";
 import { createEquipment, createInventory, type Equipment, type Inventory } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
 import { rollDurability } from "./items/generate";
 import type { Klass, SkillId } from "./skills";
-import { zoneOf, type GameState, type PlayerId } from "./state";
+import { type GameState, type PlayerId } from "./state";
+import { ensureArea } from "./world";
 
 const VERSION = 1;
 
@@ -19,6 +21,12 @@ export interface CharacterSave {
   gold?: number;
   inventory: Inventory;
   equipment: Equipment;
+  /** Seed of the world this character last played; the lobby reuses it. */
+  worldSeed?: number;
+  /** Area to resume at. Unknown or undiscovered values fall back to camp. */
+  checkpoint?: string;
+  /** Discovered waypoint area ids; filtered to areas this build knows. */
+  waypoints?: string[];
 }
 
 export function serializeCharacter(state: GameState, playerId: PlayerId): string {
@@ -36,6 +44,9 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     gold: p.gold,
     inventory: p.inventory,
     equipment: p.equipment,
+    worldSeed: state.seed,
+    checkpoint: p.checkpoint,
+    waypoints: p.waypoints,
   };
   return JSON.stringify(save);
 }
@@ -136,6 +147,21 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;
   p.inventory = save.inventory;
   p.equipment = save.equipment;
+  // Checkpoint fields are lenient where the rest is strict: a garbled area name
+  // shouldn't brick the hero. Normalization is a pure function of the payload,
+  // so every peer replaying this join computes the identical result.
+  const waypoints = Array.isArray(save.waypoints)
+    ? [...new Set(save.waypoints.filter((w): w is AreaId => typeof w === "string" && isAreaId(w)))]
+    : [];
+  if (!waypoints.includes("overworld")) waypoints.push("overworld");
+  p.waypoints = waypoints.sort();
+  // Any registry area is a valid checkpoint — outposts stamp it on arrival,
+  // before their waypoint is ever touched — and every area's safe spot is
+  // fixed, so restoring there is layout-safe in any world.
+  p.checkpoint =
+    typeof save.checkpoint === "string" && isAreaId(save.checkpoint)
+      ? save.checkpoint
+      : "overworld";
   // Keep item ids clear of the fresh state's counter.
   for (const e of p.inventory.entries) {
     if (e.id >= state.nextId) state.nextId = e.id + 1;
@@ -143,6 +169,11 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   recomputePlayerStats(state, p);
   p.life = p.maxLife;
   p.mana = p.maxMana;
-  p.pos = { ...zoneOf(state, p).map.spawn };
+  // Wake at the checkpoint's waypoint — generating its region if this world
+  // hasn't been there yet. Runs inside the join frame, so it lands identically
+  // on every peer, and the fixed outpost rects make the spot layout-safe.
+  ensureArea(state, p.checkpoint);
+  p.zoneId = p.checkpoint;
+  p.pos = waypointPos(p.checkpoint);
   return true;
 }

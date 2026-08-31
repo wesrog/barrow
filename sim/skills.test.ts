@@ -228,6 +228,32 @@ describe("leap", () => {
     expect(player(state).pos.y).toBeCloseTo(3.5);
   });
 
+  test("damages monsters around the landing spot, leaving distant ones unhurt", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "leap" });
+    const near = spawnAt(state, "skitter", { x: 7.5, y: 3.4 });
+    const far = spawnAt(state, "skitter", { x: 2.5, y: 8.5 });
+    const nearLife = near.life;
+    const farLife = far.life;
+    stepSolo(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
+    expect(near.life).toBe(nearLife); // nothing lands until touchdown
+    while (player(state).leap) stepSolo(state, {});
+    expect(near.life).toBeLessThan(nearLife);
+    expect(far.life).toBe(farLife);
+    expect(state.events.some((e) => e.type === "monster_hit" && e.id === near.id)).toBe(true);
+  });
+
+  test("lands on the exact aim point, not the cell center", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "leap" });
+    stepSolo(state, { cast: { skill: "leap", at: { x: 7.2, y: 3.8 } } });
+    while (player(state).leap) stepSolo(state, {});
+    expect(player(state).pos.x).toBeCloseTo(7.2);
+    expect(player(state).pos.y).toBeCloseTo(3.8);
+  });
+
   test("cannot leap into a wall or across the map", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);

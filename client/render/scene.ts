@@ -10,6 +10,7 @@ import {
 import { MONSTER_TYPES } from "../../sim/monsters";
 import { zoneTitle } from "../../sim/zone";
 import { localId, localPlayer } from "../local";
+import type { BiomePalette } from "./biomes";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -32,6 +33,7 @@ export type PickResult =
   | { kind: "corpse"; id: number }
   | { kind: "vendor" }
   | { kind: "healer" }
+  | { kind: "waypoint" }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -64,8 +66,9 @@ export function createScene(
   map: ZoneMap,
   assets: GameAssets,
   onItemClick?: (id: number) => void,
-  outdoor = false,
+  palette?: BiomePalette,
 ): SceneHandle {
+  const outdoor = palette !== undefined;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -82,10 +85,12 @@ export function createScene(
   const scene = new THREE.Scene();
   const dbg = window as unknown as { __scenes: THREE.Scene[] };
   (dbg.__scenes ??= []).push(scene); // TEMP debug
-  // The moors sit under an open night sky; the crypt under dead black.
-  const bg = outdoor ? 0x0c1310 : 0x0a0a0c;
+  // Regions sit under their biome's night sky; the crypt under dead black.
+  const bg = palette ? palette.bg : 0x0a0a0c;
   scene.background = new THREE.Color(bg);
-  scene.fog = outdoor ? new THREE.Fog(bg, 24, 52) : new THREE.Fog(bg, 20, 40);
+  scene.fog = palette
+    ? new THREE.Fog(bg, palette.fogNear, palette.fogFar)
+    : new THREE.Fog(bg, 20, 40);
   const fx = new Effects(scene);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
@@ -106,7 +111,11 @@ export function createScene(
   window.addEventListener("resize", resize);
 
   // --- Lights ---
-  scene.add(new THREE.AmbientLight(outdoor ? 0x70806e : 0x6a6a80, outdoor ? 0.65 : 0.5));
+  scene.add(
+    palette
+      ? new THREE.AmbientLight(palette.ambient, palette.ambientIntensity)
+      : new THREE.AmbientLight(0x6a6a80, 0.5),
+  );
   const moon = new THREE.DirectionalLight(0xb8c4e0, outdoor ? 1.3 : 1.1);
   moon.position.set(18, 30, 8);
   moon.castShadow = true;
@@ -202,10 +211,10 @@ export function createScene(
       }
     }
   } else {
-    // --- The moors: one heath plane, then instanced crags, dead pines, tufts ---
+    // --- Open ground: one biome-tinted plane, then instanced crags, dead pines, tufts ---
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(map.width, map.height),
-      flatMat(0x1f2a1b, 1),
+      flatMat(palette!.ground, 1),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(map.width / 2, 0, map.height / 2);
@@ -262,10 +271,10 @@ export function createScene(
       mesh.receiveShadow = true;
       scene.add(mesh);
     };
-    addInstanced(new THREE.IcosahedronGeometry(0.62, 0), 0x3c4046, rockMats, true);
-    addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), 0x17231a, pineMats, true);
-    addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), 0x2c2018, trunkMats, false);
-    addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), 0x2a381f, tuftMats, false);
+    addInstanced(new THREE.IcosahedronGeometry(0.62, 0), palette!.rock, rockMats, true);
+    addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), palette!.pine, pineMats, true);
+    addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), palette!.trunk, trunkMats, false);
+    addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), palette!.tuft, tuftMats, false);
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---
@@ -311,8 +320,8 @@ export function createScene(
 
   const placePieceLater: (() => void)[] = [];
 
-  // --- Travel pads: slowly turning arcane rings. P descends, O/C pass the moor gate ---
-  const PAD_COLORS: Record<string, number> = { P: 0x7fb8f5 };
+  // --- Travel pads: slowly turning arcane rings. P descends, W is the waypoint ---
+  const PAD_COLORS: Record<string, number> = { P: 0x7fb8f5, W: 0xc9a84c };
   const padRings: THREE.Mesh[] = [];
   for (const marker of map.markers) {
     const color = PAD_COLORS[marker.ch];
@@ -1088,6 +1097,11 @@ export function createScene(
         }
       }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
+      // The waypoint ring lies flat on the ground — claim clicks landing on it.
+      for (const marker of map.markers) {
+        if (marker.ch !== "W") continue;
+        if (Math.hypot(hit.x - marker.x, hit.z - marker.y) < 0.9) return { kind: "waypoint" };
+      }
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
     },
 

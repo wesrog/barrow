@@ -74,6 +74,11 @@ export function leapStunTicks(rank: number): number {
   return 30 + 10 * (rank - 1);
 }
 
+/** Leap landing: 150% weapon damage, +40% per extra rank. The slam always hits. */
+export function leapMultiplier(rank: number): number {
+  return 1.5 + 0.4 * (rank - 1);
+}
+
 /** Firebolt: spell damage by rank, +10% per Focus rank (synergy). Spells never miss. */
 export function fireboltDamage(rank: number, focusRank: number): { min: number; max: number } {
   const synergy = 1 + 0.1 * focusRank;

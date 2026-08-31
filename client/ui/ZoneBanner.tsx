@@ -1,6 +1,7 @@
 import { localPlayer } from "../local";
 import { display } from "./fonts";
 import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
+import { isAreaId } from "../../sim/areas";
 import { CAMP_TITLE, zoneTitle } from "../../sim/zone";
 import { inCamp } from "../../sim/map";
 
@@ -9,7 +10,7 @@ export function ZoneBanner({ game }: { game: GameState }) {
   const p = localPlayer(game);
   const zoneId = p.zoneId;
   const depth = zoneDepth(zoneId);
-  const underground = zoneId !== "overworld";
+  const underground = !isAreaId(zoneId);
   const onCampGround = zoneId === "overworld" && inCamp(zoneOf(game, p).map, p.pos);
   return (
     <div

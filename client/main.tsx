@@ -1,12 +1,15 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
-import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { zoneDepth, zoneOf, type GameState, type PlayerInput, type ZoneId } from "../sim/state";
+import { AREAS, isAreaId } from "../sim/areas";
 import { inCamp } from "../sim/map";
+import { BIOME_PALETTES, type BiomePalette } from "./render/biomes";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { CLASS_SKILLS } from "../sim/skills";
+import { zoneTitle } from "../sim/zone";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
@@ -19,12 +22,18 @@ import { ShopPanel } from "./ui/ShopPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
+import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
 import { Reveal } from "./ui/Reveal";
 
 const TICK_MS = 1000 / TICK_RATE;
 
 let nextToastId = 1;
+
+/** The biome palette for a zone, or undefined for the crypt's dungeon look. */
+function zonePalette(zoneId: ZoneId): BiomePalette | undefined {
+  return isAreaId(zoneId) ? BIOME_PALETTES[AREAS[zoneId].biome] : undefined;
+}
 
 /** Is the local player standing on the camp's safe ground? */
 function onCampGround(game: GameState): boolean {
@@ -48,6 +57,7 @@ function Game({
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [waypointsOpen, setWaypointsOpen] = useState(false);
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [desync, setDesync] = useState(false);
@@ -97,7 +107,7 @@ function Game({
         zoneOf(game, localPlayer(game)).map,
         assets,
         onItemClick,
-        localPlayer(game).zoneId === "overworld",
+        zonePalette(localPlayer(game).zoneId),
       );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
@@ -150,6 +160,13 @@ function Game({
       } else if (picked.kind === "corpse" && allowAttack) {
         pending.reclaim = picked.id;
         delete pending.moveTo;
+      } else if (picked.kind === "waypoint" && allowAttack) {
+        // Near the ring the panel opens; from afar the click walks you to it.
+        const me = localPlayer(game);
+        const w = zoneOf(game, me).map.markers.find((m) => m.ch === "W");
+        if (w && Math.hypot(me.pos.x - w.x, me.pos.y - w.y) <= 2) setWaypointsOpen(true);
+        else if (w) pending.moveTo = { x: w.x, y: w.y };
+        delete pending.attack;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
       }
@@ -186,6 +203,10 @@ function Game({
       if (def.targeting === "target") {
         // The sim auto-targets whatever is in reach; the pick is only a hint.
         input.cast = { skill: def.id, target: picked?.kind === "monster" ? picked.id : undefined };
+      } else if (picked?.kind === "monster") {
+        // Point skills aimed at a monster land on the monster, not underneath it.
+        const m = zoneOf(game, localPlayer(game)).monsters.get(picked.id);
+        if (m) input.cast = { skill: def.id, at: { x: m.pos.x, y: m.pos.y } };
       } else if (picked?.kind === "ground") {
         input.cast = { skill: def.id, at: picked.world };
       }
@@ -256,8 +277,8 @@ function Game({
             case "player_died": {
               const depth = zoneDepth(e.zone);
               pushToast(
-                e.zone === "overworld"
-                  ? `P${e.playerId + 1} fell in the moors`
+                isAreaId(e.zone)
+                  ? `P${e.playerId + 1} fell in ${zoneTitle(e.zone)}`
                   : depth > 0
                     ? `P${e.playerId + 1} fell on floor ${depth}`
                     : `P${e.playerId + 1} died`,
@@ -322,6 +343,17 @@ function Game({
             case "traveled":
               play("portal");
               if (e.to !== "overworld") setShopOpen(false);
+              if (e.playerId === localId()) {
+                setWaypointsOpen(false);
+                save(); // a zone crossing is a moment worth keeping
+              }
+              break;
+            case "waypoint_found":
+              if (e.playerId === localId()) {
+                pushToast(`waypoint found: ${zoneTitle(e.area)}`);
+                play("levelup");
+                save(); // the new checkpoint survives even an immediate crash
+              }
               break;
             case "shop_opened":
               setShopOpen(true);
@@ -373,7 +405,9 @@ function Game({
      * this tick hasn't arrived yet, so the world holds where it is. */
     const runTick = (gatherInput: boolean): boolean => {
       if (gatherInput) {
-        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(shiftDown);
+        // Holding the button re-aims every tick; the sim clears its target
+        // after each swing, so this re-send is what makes hold = auto-attack.
+        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(true);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
       }
@@ -422,7 +456,7 @@ function Game({
           currentMap,
           assets,
           onItemClick,
-          localPlayer(game).zoneId === "overworld",
+          zonePalette(localPlayer(game).zoneId),
         );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
@@ -571,6 +605,17 @@ function Game({
               uiInputRef.current.repair = true;
             }}
             onClose={() => setShopOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={waypointsOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <WaypointPanel
+            game={gameRef.current}
+            onTravel={(area) => {
+              uiInputRef.current.waypointTo = area;
+            }}
+            onClose={() => setWaypointsOpen(false)}
           />
         )}
       </Reveal>

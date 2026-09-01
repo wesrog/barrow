@@ -18,6 +18,8 @@ import { MiniMap } from "./ui/MiniMap";
 import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
 import { HealerPanel } from "./ui/HealerPanel";
+import { DialoguePanel } from "./ui/DialoguePanel";
+import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
@@ -55,6 +57,7 @@ function Game({
   const [shopOpen, setShopOpen] = useState(false);
   const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [dialogueNpc, setDialogueNpc] = useState<NpcId | null>(null);
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -233,6 +236,7 @@ function Game({
         setSkillsOpen(false);
         setShopOpen(false);
         setHealerOpen(false);
+        setDialogueNpc(null);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
@@ -378,6 +382,7 @@ function Game({
               // Any travel leaves the camp behind.
               setShopOpen(false);
               setHealerOpen(false);
+              setDialogueNpc(null);
               if (e.playerId === localId()) {
                 setWaypointsOpen(false);
                 // Every `traveled` is a teleport — stairs, portals, waypoints,
@@ -417,6 +422,10 @@ function Game({
             case "healed":
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
               play("potion");
+              break;
+            case "npc_talk":
+              setDialogueNpc(e.npcId);
+              play("potion"); // any soft cue; a dedicated "talk" sound is optional
               break;
             case "inventory_full":
               scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
@@ -684,6 +693,19 @@ function Game({
               uiInputRef.current.buyPotion = kind;
             }}
             onClose={() => setHealerOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={dialogueNpc !== null && gameRef.current !== null}>
+        {gameRef.current && dialogueNpc && (
+          <DialoguePanel
+            game={gameRef.current}
+            npcId={dialogueNpc}
+            onAccept={(q) => { uiInputRef.current.acceptQuest = q; }}
+            onTurnIn={(q) => { uiInputRef.current.turnInQuest = q; }}
+            onTrade={() => { setDialogueNpc(null); setShopOpen(true); }}
+            onWares={() => { setDialogueNpc(null); setHealerOpen(true); }}
+            onClose={() => setDialogueNpc(null)}
           />
         )}
       </Reveal>

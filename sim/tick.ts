@@ -318,6 +318,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     inventory: createInventory(),
     equipment,
     magicFind: 0,
+    quests: {},
   };
   state.players.set(join.id, p);
   if (join.character) applyCharacter(state, join.id, join.character);

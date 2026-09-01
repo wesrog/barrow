@@ -1,8 +1,6 @@
 import type { AreaId } from "./areas";
 import type { Vec } from "./map";
-
-// Replaced by ./quests in the next task.
-type QuestId = string;
+import type { QuestId } from "./quests";
 
 export type NpcId = "maren" | "sera" | "betha" | "corvin" | "aldous";
 
@@ -24,12 +22,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
   maren: {
     id: "maren", name: "Maren", title: "Camp Trader", area: "overworld",
     pos: { x: 4.5, y: 29.5 }, // the V marker's spot
-    quests: [], idle: ["Buying or selling, it's all the same coin."],
+    quests: ["moor_wights", "find_redfen"], idle: ["Buying or selling, it's all the same coin."],
   },
   sera: {
     id: "sera", name: "Sera", title: "Camp Healer", area: "overworld",
     pos: { x: 4.5, y: 35.5 }, // the H marker's spot
-    quests: [], idle: ["Hold still. There. Good as dawn."],
+    quests: ["grave_moss"], idle: ["Hold still. There. Good as dawn."],
   },
   betha: {
     id: "betha", name: "Odd Betha", title: "Hermit of the Redfen", area: "redfen",

@@ -7,6 +7,7 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
 import type { Npc } from "./npcs";
+import type { QuestLog } from "./quests";
 
 /** The whole open-air world is one zone; the barrow's floors are the rest. */
 export type ZoneId = "surface" | `floor:${number}`;
@@ -151,6 +152,8 @@ export interface Player {
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
+  /** Per-hero quest log; absent key = never started. Saves with the character. */
+  quests: QuestLog;
 }
 
 export interface GroundItem {

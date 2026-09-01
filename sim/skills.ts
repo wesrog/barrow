@@ -81,7 +81,7 @@ export const LEAP_STUN_RADIUS = 1.6;
 export const LEAP_TICKS = 10;
 export const FIREBOLT_RANGE = 12;
 export const FROSTNOVA_RADIUS = 2.5;
-export const BLINK_RANGE = 8;
+export const BLINK_RANGE = 12;
 
 /** Cleave: 100% weapon damage, +25% per extra rank, +10% per Warcry rank (synergy). */
 export function cleaveMultiplier(cleaveRank: number, warcryRank: number): number {

@@ -3,7 +3,16 @@ import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { computeHitChance, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
+import { dropSpot } from "./systems/combat";
 import { createRng } from "./rng";
+import type { ZoneMap } from "./map";
+
+/** A hand-built map: floor only at the given cells, wall everywhere else. */
+function wallMap(width: number, height: number, floor: [number, number][]): ZoneMap {
+  const cells = new Uint8Array(width * height);
+  for (const [x, y] of floor) cells[y * width + x] = 1;
+  return { width, height, cells, spawn: { x: 0.5, y: 0.5 }, markers: [], camps: [] };
+}
 
 const arena = () =>
   mapFromStrings([
@@ -309,5 +318,43 @@ describe("contact frames", () => {
     expect(swingTick).toBeGreaterThan(-1);
     expect(hurtTick).toBeGreaterThan(swingTick);
     expect(hurtTick - swingTick).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("dropSpot", () => {
+  test("leaves the scattered point alone when its own cell is walkable", () => {
+    const floor: [number, number][] = [];
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) floor.push([x, y]);
+    const map = wallMap(12, 12, floor);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    const check = createRng(1);
+    const expected = {
+      x: pos.x + (check.next() - 0.5) * 1.4,
+      y: pos.y + (check.next() - 0.5) * 1.4,
+    };
+    expect(result).toEqual(expected);
+    // Confirm the scatter actually moved it off the cell center — this is
+    // pinning "unchanged", not a snap that happens to land nearby.
+    expect(result).not.toEqual({ x: 5.5, y: 5.5 });
+  });
+
+  test("snaps to the nearest walkable cell when the scatter lands in a wall", () => {
+    // Seed 1's first two draws scatter (5.5, 5.5) into cell (5, 4), which is
+    // wall here; the only floor is (7, 4).
+    const map = wallMap(12, 12, [[7, 4]]);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    expect(result).toEqual({ x: 7.5, y: 4.5 });
+  });
+
+  test("falls back to the origin position when no walkable cell exists nearby", () => {
+    const map = wallMap(12, 12, []);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    expect(result).toEqual(pos);
   });
 });

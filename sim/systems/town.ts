@@ -17,9 +17,6 @@ import { approachPath } from "./movement";
 import { isWalkable } from "../map";
 import { inRect, worldCampRect } from "../surface";
 
-/** How close you must stand to Maren before he'll talk shop. */
-const TALK_RANGE = 1.4;
-
 /** How close you must stand to a portal before it whisks you away. */
 const PORTAL_RANGE = 0.6;
 
@@ -35,6 +32,7 @@ export function onCampGround(p: Player): boolean {
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
   const base = BASES[item.baseId]!;
+  if (base.slot === "quest") return 0;
   if (base.slot === "potion") return 25;
   const rarityMult: Record<Rarity, number> = { normal: 1, magic: 2.5, rare: 5, unique: 8 };
   return Math.floor((12 + base.levelReq * 8 + item.mods.length * 22) * rarityMult[item.rarity]);
@@ -105,97 +103,6 @@ export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerIn
   state.events.push({ type: "bought", playerId: p.id, name: item.name, price });
 }
 
-/** Click on Maren: start walking over to trade. */
-export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkVendor || p.zoneId !== "surface") return;
-  p.vendorTarget = true;
-  p.healerTarget = false;
-  p.attackTarget = null;
-  p.pickupTarget = null;
-  p.smashTarget = null;
-  p.portalTarget = null;
-  p.reclaimTarget = null;
-  p.path = [];
-}
-
-/** Click on Sera: start walking over for a mending. */
-export function applyTalkHealerInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkHealer || p.zoneId !== "surface") return;
-  p.healerTarget = true;
-  p.vendorTarget = false;
-  p.attackTarget = null;
-  p.pickupTarget = null;
-  p.smashTarget = null;
-  p.portalTarget = null;
-  p.reclaimTarget = null;
-  p.path = [];
-}
-
-/** Walk toward the H marker; within talking range, life and mana come back in full. */
-export function healerSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  const map = zone.map;
-  const marker = map.markers.find((m) => m.ch === "H");
-  for (const p of players) {
-    if (!p.healerTarget) continue;
-    if (!marker) {
-      p.healerTarget = false;
-      continue;
-    }
-    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
-    if (d <= TALK_RANGE) {
-      p.healerTarget = false;
-      p.path = [];
-      p.life = p.maxLife;
-      p.mana = p.maxMana;
-      state.events.push({ type: "healed", playerId: p.id });
-      state.events.push({ type: "healer_opened", playerId: p.id });
-    } else if (p.path.length === 0) {
-      const cells = findPath(
-        map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
-      );
-      if (cells === null) {
-        p.healerTarget = false;
-        continue;
-      }
-      p.path = smoothPath(map, p.pos, cells);
-      p.path.push({ x: marker.x, y: marker.y });
-    }
-  }
-}
-
-/** Walk toward the V marker; within talking range, the shop opens. */
-export function vendorSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  const map = zone.map;
-  const marker = map.markers.find((m) => m.ch === "V");
-  for (const p of players) {
-    if (!p.vendorTarget) continue;
-    if (!marker) {
-      p.vendorTarget = false;
-      continue;
-    }
-    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
-    if (d <= TALK_RANGE) {
-      p.vendorTarget = false;
-      p.path = [];
-      state.events.push({ type: "shop_opened", playerId: p.id });
-    } else if (p.path.length === 0) {
-      const cells = findPath(
-        map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
-      );
-      if (cells === null) {
-        p.vendorTarget = false;
-        continue;
-      }
-      p.path = smoothPath(map, p.pos, cells);
-      p.path.push({ x: marker.x, y: marker.y });
-    }
-  }
-}
-
 export function applyShopInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!onCampGround(p)) return;
 
@@ -223,8 +130,9 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
   }
 
   if (input.sell !== undefined) {
-    const entry = removeEntry(p.inventory, input.sell);
-    if (entry) {
+    const entry = p.inventory.entries.find((e) => e.id === input.sell);
+    if (entry && BASES[entry.item.baseId]!.slot !== "quest") {
+      removeEntry(p.inventory, entry.id);
       const price = Math.max(1, Math.floor(itemValue(entry.item) / 4));
       p.gold += price;
       state.events.push({ type: "sold", playerId: p.id, name: entry.item.name, price });
@@ -310,8 +218,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.reclaimTarget = null;
   p.path = [];
 }

@@ -18,7 +18,11 @@ import { MiniMap } from "./ui/MiniMap";
 import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
 import { HealerPanel } from "./ui/HealerPanel";
+import { DialoguePanel } from "./ui/DialoguePanel";
+import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
+import { QuestTracker } from "./ui/QuestTracker";
+import { QUESTS } from "../sim/quests";
 import { SkillPanel } from "./ui/SkillPanel";
 import { SystemMenu } from "./ui/SystemMenu";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
@@ -56,13 +60,15 @@ function Game({
   const [shopOpen, setShopOpen] = useState(false);
   const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [dialogueNpc, setDialogueNpc] = useState<NpcId | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // The keydown handler is registered once, so it reads open/closed through
   // refs that re-sync on every render.
   const menuOpenRef = useRef(false);
   menuOpenRef.current = menuOpen;
   const panelsOpenRef = useRef(false);
-  panelsOpenRef.current = invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen;
+  panelsOpenRef.current =
+    invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || dialogueNpc !== null;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -116,6 +122,7 @@ function Game({
         mount,
         zoneOf(game, localPlayer(game)).map,
         assets,
+        [...zoneOf(game, localPlayer(game)).npcs.values()],
         onItemClick,
         localPlayer(game).zoneId === "surface",
       );
@@ -184,11 +191,8 @@ function Game({
       } else if (picked.kind === "breakable") {
         pending.smash = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "vendor") {
-        pending.talkVendor = true;
-        delete pending.moveTo;
-      } else if (picked.kind === "healer") {
-        pending.talkHealer = true;
+      } else if (picked.kind === "npc") {
+        pending.talkNpc = picked.id;
         delete pending.moveTo;
       } else if (picked.kind === "portal") {
         pending.usePortal = picked.id;
@@ -262,6 +266,7 @@ function Game({
           setShopOpen(false);
           setHealerOpen(false);
           setWaypointsOpen(false);
+          setDialogueNpc(null);
         } else setMenuOpen(true);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
@@ -408,6 +413,7 @@ function Game({
               // Any travel leaves the camp behind.
               setShopOpen(false);
               setHealerOpen(false);
+              setDialogueNpc(null);
               if (e.playerId === localId()) {
                 setWaypointsOpen(false);
                 // Every `traveled` is a teleport — stairs, portals, waypoints,
@@ -444,15 +450,23 @@ function Game({
                 save(); // the new checkpoint survives even an immediate crash
               }
               break;
-            case "shop_opened":
-              setShopOpen(true);
-              break;
-            case "healer_opened":
-              setHealerOpen(true);
-              break;
             case "healed":
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
               play("potion");
+              break;
+            case "npc_talk":
+              setDialogueNpc(e.npcId);
+              play("potion"); // any soft cue; a dedicated "talk" sound is optional
+              break;
+            case "quest_accepted":
+              pushToast(`quest taken: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              break;
+            case "quest_completed":
+              scene.addDamageNumber(localPlayer(game).pos, "quest complete!", "#f0c96a");
+              pushToast(`quest complete: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              save(); // a finished quest survives even an immediate crash
               break;
             case "inventory_full":
               scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
@@ -552,6 +566,7 @@ function Game({
           mount,
           currentMap,
           assets,
+          [...zoneOf(game, localPlayer(game)).npcs.values()],
           onItemClick,
           localPlayer(game).zoneId === "surface",
         );
@@ -677,6 +692,7 @@ function Game({
         onExpire={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))}
       />
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
+      {gameRef.current && <QuestTracker game={gameRef.current} />}
       {gameRef.current && <ZoneIntro intro={intro} />}
       {gameRef.current && <PartyStrip game={gameRef.current} />}
       {gameRef.current && (
@@ -719,6 +735,19 @@ function Game({
               uiInputRef.current.buyPotion = kind;
             }}
             onClose={() => setHealerOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={dialogueNpc !== null && gameRef.current !== null}>
+        {gameRef.current && dialogueNpc && (
+          <DialoguePanel
+            game={gameRef.current}
+            npcId={dialogueNpc}
+            onAccept={(q) => { uiInputRef.current.acceptQuest = q; }}
+            onTurnIn={(q) => { uiInputRef.current.turnInQuest = q; }}
+            onTrade={() => { setDialogueNpc(null); setShopOpen(true); }}
+            onWares={() => { setDialogueNpc(null); setHealerOpen(true); }}
+            onClose={() => setDialogueNpc(null)}
           />
         )}
       </Reveal>

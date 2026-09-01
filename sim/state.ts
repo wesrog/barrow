@@ -6,6 +6,8 @@ import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
+import type { Npc, NpcId } from "./npcs";
+import type { QuestId, QuestLog } from "./quests";
 
 /** The whole open-air world is one zone; the barrow's floors are the rest. */
 export type ZoneId = "surface" | `floor:${number}`;
@@ -28,6 +30,7 @@ export interface ZoneState {
   corpses: Corpse[];
   portals: Map<number, Portal>;
   playerCorpses: Map<number, PlayerCorpse>;
+  npcs: Map<number, Npc>;
 }
 
 /** A dead player's stripped gear, waiting to be walked back to and reclaimed. */
@@ -119,10 +122,8 @@ export interface Player {
   pickupTarget: number | null;
   /** Breakable id being walked to for smashing, if any. */
   smashTarget: number | null;
-  /** Walking over to Maren to trade (town only). */
-  vendorTarget: boolean;
-  /** Walking over to Sera for healing (town only). */
-  healerTarget: boolean;
+  /** NPC entity id being walked to for a word, if any. */
+  npcTarget: number | null;
   /** Portal id being walked to for riding, if any. */
   portalTarget: number | null;
   /** Player corpse id being walked to for reclaiming, if any. */
@@ -149,6 +150,8 @@ export interface Player {
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
+  /** Per-hero quest log; absent key = never started. Saves with the character. */
+  quests: QuestLog;
 }
 
 export interface GroundItem {
@@ -191,8 +194,10 @@ export type SimEvent =
   | { type: "gold_picked"; playerId: PlayerId; amount: number }
   | { type: "item_broke"; playerId: PlayerId; name: string }
   | { type: "repaired"; playerId: PlayerId; cost: number }
-  | { type: "shop_opened"; playerId: PlayerId }
-  | { type: "healer_opened"; playerId: PlayerId }
+  | { type: "npc_talk"; playerId: PlayerId; npcId: NpcId }
+  | { type: "quest_accepted"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_completed"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_progress"; playerId: PlayerId; quest: QuestId; count: number; needed: number }
   | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }
@@ -264,10 +269,12 @@ export interface PlayerInput {
   usePortal?: number;
   /** Walk to and reclaim this player corpse id. */
   reclaim?: number;
-  /** Walk to the vendor and open the shop (town only). */
-  talkVendor?: boolean;
-  /** Walk to the healer for a full restore (town only). */
-  talkHealer?: boolean;
+  /** NPC entity id to walk to and talk with. */
+  talkNpc?: number;
+  /** Accept this quest from its giver (must be in range and offered). */
+  acceptQuest?: QuestId;
+  /** Turn in this quest at its turn-in npc (must be in range and objective met). */
+  turnInQuest?: QuestId;
   /** Buy the shop entry at this index (town only). */
   buy?: number;
   /** Sell this inventory entry to the vendor (town only). */

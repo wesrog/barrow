@@ -9,6 +9,8 @@ import {
 } from "../../sim/state";
 import { MONSTER_TYPES } from "../../sim/monsters";
 import { potionKind } from "../../sim/items/bases";
+import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
+import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
@@ -33,8 +35,7 @@ export type PickResult =
   | { kind: "breakable"; id: number }
   | { kind: "portal"; id: number }
   | { kind: "corpse"; id: number }
-  | { kind: "vendor" }
-  | { kind: "healer" }
+  | { kind: "npc"; id: number }
   | { kind: "waypoint"; pos: Vec }
   | { kind: "ground"; world: Vec }
   | null;
@@ -67,6 +68,7 @@ export function createScene(
   mount: HTMLElement,
   map: ZoneMap,
   assets: GameAssets,
+  npcs: Npc[],
   onItemClick?: (id: number) => void,
   surface = false,
 ): SceneHandle {
@@ -528,34 +530,83 @@ export function createScene(
     scene.add(glow);
   }
 
-  // --- Vendor (town): a knight minding the stall ---
-  let vendorRig: Rig | null = null;
+  // --- Market stall (town): crates and a barrel beside the V marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "V") continue;
-    vendorRig = makeMonsterModelRig(assets, "__vendor__") as Rig;
-    scene.add(vendorRig.group);
-    vendorRig.group.position.set(marker.x, 0, marker.y);
-    vendorRig.group.rotation.y = Math.PI * 0.75;
-    // A market stall: crates and a barrel beside the knight
     placePieceLater.push(() => {
       placePiece(assets.dungeon.crates, marker.x + 0.9, marker.y + 0.3, 0.4, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.chest, marker.x + 0.1, marker.y + 0.9, Math.PI, { x: 0.35, y: 0.35, z: 0.35 });
     });
   }
-  // --- Healer (town): a pale knight at a candlelit shrine ---
-  let healerRig: Rig | null = null;
+  // --- Candlelit shrine (town): a quiet glow beside the H marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "H") continue;
-    healerRig = makeMonsterModelRig(assets, "__healer__") as Rig;
-    scene.add(healerRig.group);
-    healerRig.group.position.set(marker.x, 0, marker.y);
-    healerRig.group.rotation.y = -Math.PI * 0.65;
     const shrineGlow = new THREE.PointLight(0xf5dfa0, 1.8, 4, 1.8);
     shrineGlow.position.set(marker.x, 1.1, marker.y);
     scene.add(shrineGlow);
   }
   for (const fn of placePieceLater) fn();
+
+  // --- NPCs: one knight-model rig per entity, tinted so each reads apart ---
+  const NPC_TINTS: Record<NpcId, number> = {
+    maren: 0x8a5a2c, // camp trader — warm leather
+    sera: 0xd8cfc0, // camp healer — pale cloth
+    betha: 0x4a6a4a, // redfen hermit — moss green
+    corvin: 0x5a5a6e, // gallowmire soldier — cold steel-blue
+    aldous: 0xc9a84c, // barrow sentinel — gilded
+  };
+  const npcRigs = new Map<number, Rig>();
+  for (const npc of npcs) {
+    const rig = makeMonsterModelRig(assets, "__vendor__") as Rig;
+    scene.add(rig.group);
+    rig.group.position.set(npc.pos.x, 0, npc.pos.y);
+    // Stable per-entity facing rather than one fixed pose for everyone.
+    rig.group.rotation.y = (npc.id * 1.7) % (Math.PI * 2);
+    const tint = new THREE.Color(NPC_TINTS[npc.npcId]);
+    rig.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.lerp(tint, 0.4);
+      }
+    });
+    npcRigs.set(npc.id, rig);
+  }
+
+  // --- NPC quest indicators: a floating icon showing what each NPC has for you ---
+  const makeIndicatorTexture = (glyph: string, color: string): THREE.CanvasTexture => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "bold 46px sans-serif";
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, 32, 34);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  };
+  const NPC_INDICATOR_TEXTURES: Record<"offer" | "turnin" | "progress", THREE.CanvasTexture> = {
+    offer: makeIndicatorTexture("!", "#f0c96a"),
+    turnin: makeIndicatorTexture("?", "#f0c96a"),
+    progress: makeIndicatorTexture("?", "#8f8778"),
+  };
+  const npcIndicatorSprites = new Map<number, THREE.Sprite>();
+  for (const npc of npcs) {
+    const material = new THREE.SpriteMaterial({
+      map: NPC_INDICATOR_TEXTURES.offer,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.5, 0.5, 1);
+    sprite.position.set(npc.pos.x, 1.8, npc.pos.y);
+    sprite.visible = false;
+    sprite.renderOrder = 10;
+    scene.add(sprite);
+    npcIndicatorSprites.set(npc.id, sprite);
+  }
 
   // --- Gold piles ---
   const goldVisuals = new Map<number, THREE.Group>();
@@ -755,10 +806,6 @@ export function createScene(
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
   // --- Hover tooltip: name + what it is, following the cursor ---
-  const NPC_INFO = {
-    vendor: { name: "Bram the Peddler", role: "Vendor — trades and repairs gear" },
-    healer: { name: "Sister Vess", role: "Healer — mends wounds for free" },
-  } as const;
   // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
   const AREA_INFO: Record<string, { name: string; role: string }> = {
     ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
@@ -1184,10 +1231,21 @@ export function createScene(
         v.rig.animate(frameNow, 0, 0);
       }
 
-      // Town dressing: the portal ring turns, the vendor idles
+      // Town dressing: the portal ring turns, the NPCs idle
       for (const [i, ring] of padRings.entries()) ring.rotation.z = performance.now() / 1400 + i;
-      vendorRig?.animate(frameNow, 0, 0);
-      healerRig?.animate(frameNow, 0, 0);
+      for (const rig of npcRigs.values()) rig.animate(frameNow, 0, 0);
+
+      // NPC quest indicators: swap the overhead icon to match this player's
+      // standing with each NPC (cheap per-frame work — visibility + texture).
+      for (const npc of npcs) {
+        const sprite = npcIndicatorSprites.get(npc.id);
+        if (!sprite) continue;
+        const indicator = npcIndicator(me, npc.npcId);
+        sprite.visible = indicator !== null;
+        if (indicator !== null) {
+          (sprite.material as THREE.SpriteMaterial).map = NPC_INDICATOR_TEXTURES[indicator];
+        }
+      }
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
       if (zoneOf(state, me).corpses.length < corpseCount) {
@@ -1264,6 +1322,14 @@ export function createScene(
           if (v.group === obj) return { kind: "corpse", id };
         }
       }
+      const npcHits = raycaster.intersectObjects([...npcRigs.values()].map((r) => r.group), true);
+      if (npcHits.length > 0) {
+        let obj: THREE.Object3D | null = npcHits[0]!.object;
+        while (obj && obj.parent !== scene) obj = obj.parent;
+        for (const [id, rig] of npcRigs) {
+          if (rig.group === obj) return { kind: "npc", id };
+        }
+      }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
       const itemHits = raycaster.intersectObjects(itemMeshes, false);
@@ -1271,14 +1337,6 @@ export function createScene(
         for (const [id, v] of groundItemVisuals) {
           if (v.mesh === itemHits[0]!.object) return { kind: "item", id };
         }
-      }
-      if (vendorRig) {
-        const vendorHits = raycaster.intersectObject(vendorRig.group, true);
-        if (vendorHits.length > 0) return { kind: "vendor" };
-      }
-      if (healerRig) {
-        const healerHits = raycaster.intersectObject(healerRig.group, true);
-        if (healerHits.length > 0) return { kind: "healer" };
       }
       const breakableGroups: THREE.Object3D[] = [];
       for (const g of breakableVisuals.values()) breakableGroups.push(g);
@@ -1310,6 +1368,11 @@ export function createScene(
         for (const [id] of monsterRigs) {
           const monster = zone.monsters.get(id);
           if (monster) consider({ kind: "monster", id }, monster.pos, 0.55, 30);
+        }
+        // Small standing figures are easy to miss with a precise raycast.
+        for (const [id] of npcRigs) {
+          const npc = zone.npcs.get(id);
+          if (npc) consider({ kind: "npc", id }, npc.pos, 0.9, 30);
         }
         for (const portal of zone.portals.values()) {
           consider({ kind: "portal", id: portal.id }, portal.pos, 0.3, 26);
@@ -1346,7 +1409,7 @@ export function createScene(
 
     updateHover(state, clientX, clientY) {
       const picked = this.pick(state, clientX, clientY);
-      const HIGHLIGHT = ["monster", "breakable", "portal", "corpse"];
+      const HIGHLIGHT = ["monster", "breakable", "portal", "corpse", "npc"];
       const key =
         picked && HIGHLIGHT.includes(picked.kind) && "id" in picked
           ? `${picked.kind}:${picked.id}`
@@ -1358,6 +1421,7 @@ export function createScene(
         if (kind === "monster") return monsterRigs.get(id)?.group;
         if (kind === "breakable") return breakableVisuals.get(id);
         if (kind === "portal") return portalVisuals.get(id);
+        if (kind === "npc") return npcRigs.get(id)?.group;
         return playerCorpseVisuals.get(id)?.group;
       };
       if (key !== hoveredKey) {
@@ -1372,8 +1436,10 @@ export function createScene(
       const px = clientX - rect.left;
       const py = clientY - rect.top;
       let tip: { name: string; role: string } | null = null;
-      if (picked?.kind === "vendor" || picked?.kind === "healer") {
-        tip = NPC_INFO[picked.kind];
+      if (picked?.kind === "npc") {
+        const npc = zoneOf(state, localPlayer(state)).npcs.get(picked.id);
+        const def = npc && NPCS[npc.npcId];
+        if (def) tip = { name: def.name, role: def.title };
       } else if (picked?.kind === "monster") {
         const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
         const type = m && MONSTER_TYPES[m.typeId];

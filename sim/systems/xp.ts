@@ -1,6 +1,6 @@
 import { xpForLevel } from "../character";
 import type { Vec } from "../map";
-import { playerIds, type GameState, type PlayerId, type ZoneId } from "../state";
+import { playerIds, type GameState, type Player, type PlayerId, type ZoneId } from "../state";
 import { recomputePlayerStats } from "./inventory";
 
 /** Players within this many cells of a kill (besides the killer) share in its xp. */
@@ -48,6 +48,21 @@ export function xpPenalty(playerLevel: number, mlvl: number): number {
   return Math.max(0.05, 1 - (gap - 5) * 0.15);
 }
 
+/** Add xp and process level-ups; a new level refills life and mana. */
+export function grantXp(state: GameState, p: Player, gained: number): void {
+  if (gained <= 0) return;
+  p.xp += gained;
+  let leveled = false;
+  while (p.xp >= xpForLevel(p.level + 1)) {
+    p.level++;
+    p.skillPoints++;
+    leveled = true;
+    state.events.push({ type: "level_up", playerId: p.id, level: p.level });
+  }
+  recomputePlayerStats(state, p);
+  if (leveled) { p.life = p.maxLife; p.mana = p.maxMana; }
+}
+
 /**
  * Collect xp from this tick's kills and process level-ups. Runs after deathSystem.
  * Each kill's xp splits among the killer and nearby party members via xpShares,
@@ -66,22 +81,7 @@ export function xpSystem(state: GameState): void {
   }
   if (gains.size === 0) return;
   for (const [id, gained] of gains) {
-    if (gained === 0) continue;
     const p = state.players.get(id);
-    if (!p) continue;
-    p.xp += gained;
-    let leveled = false;
-    while (p.xp >= xpForLevel(p.level + 1)) {
-      p.level++;
-      p.skillPoints++;
-      leveled = true;
-      state.events.push({ type: "level_up", playerId: p.id, level: p.level });
-    }
-    recomputePlayerStats(state, p);
-    // A new level is a fresh wind: life and mana come back in full.
-    if (leveled) {
-      p.life = p.maxLife;
-      p.mana = p.maxMana;
-    }
+    if (p) grantXp(state, p, gained);
   }
 }

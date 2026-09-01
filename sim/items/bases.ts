@@ -1,4 +1,4 @@
-export type Slot = "weapon" | "helm" | "chest" | "boots" | "ring" | "amulet" | "potion";
+export type Slot = "weapon" | "helm" | "chest" | "boots" | "ring" | "amulet" | "potion" | "quest";
 
 export interface ItemBase {
   id: string;
@@ -54,6 +54,9 @@ export const BASES: Record<string, ItemBase> = {
   // --- potions ---
   minor_potion: base({ id: "minor_potion", name: "Minor Healing Potion", slot: "potion", w: 1, h: 1, levelReq: 1, heals: 35 }),
   minor_mana_potion: base({ id: "minor_mana_potion", name: "Minor Mana Potion", slot: "potion", w: 1, h: 1, levelReq: 1, restoresMana: 25 }),
+  // --- quest items ---
+  grave_moss: base({ id: "grave_moss", name: "Grave-Moss", slot: "quest", w: 1, h: 1, levelReq: 1 }),
+  fen_heart: base({ id: "fen_heart", name: "Fen Heart", slot: "quest", w: 1, h: 1, levelReq: 1 }),
 };
 
 /** Which belt row a potion base belongs to; null for anything undrinkable. */

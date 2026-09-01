@@ -218,8 +218,7 @@ export function applyReclaimInput(state: GameState, p: Player, input: PlayerInpu
   p.attackTarget = null;
   p.smashTarget = null;
   p.portalTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.path = [];
 }
 
@@ -278,6 +277,11 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
       if (!stowPotion(p, potionKind(entry.item.baseId)!)) {
         placeItem(p.inventory, entry.id, entry.item);
       }
+      return;
+    }
+    if (base.slot === "quest") {
+      // Quest goods don't equip — back into the pack.
+      placeItem(p.inventory, entry.id, entry.item);
       return;
     }
     if (base.levelReq > p.level) {

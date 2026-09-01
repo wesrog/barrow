@@ -64,6 +64,7 @@ function encodeZone(zone: ZoneState) {
     corpses: zone.corpses,
     portals: [...zone.portals.entries()],
     playerCorpses: [...zone.playerCorpses.entries()],
+    npcs: [...zone.npcs.entries()],
   };
 }
 
@@ -83,5 +84,6 @@ function decodeZone(zone: any): ZoneState {
     playerCorpses: new Map(
       (zone.playerCorpses as [number, any][]).map(([id, p]) => [Number(id), p]),
     ),
+    npcs: new Map((zone.npcs as [number, any][]).map(([id, n]) => [Number(id), n])),
   };
 }

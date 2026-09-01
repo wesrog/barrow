@@ -72,6 +72,13 @@ export function MiniMap({ game }: { game: GameState }) {
           ctx.fillRect(px - 2, py - 2, 4, 4);
         }
       }
+      for (const npc of zoneOf(game, localPlayer(game)).npcs.values()) {
+        const px = sx(npc.pos.x, npc.pos.y);
+        const py = sy(npc.pos.x, npc.pos.y);
+        if (px < -4 || px > WINDOW_W + 4 || py < -4 || py > WINDOW_H + 4) continue;
+        ctx.fillStyle = "#f0c96a";
+        ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+      }
       for (const gi of zoneOf(game, localPlayer(game)).groundItems.values()) {
         const px = sx(gi.pos.x, gi.pos.y);
         const py = sy(gi.pos.x, gi.pos.y);

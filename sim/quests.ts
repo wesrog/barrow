@@ -174,7 +174,7 @@ export function collectCount(p: Player, baseId: string): number {
  * Used only to trigger the one-time progress bump; completion itself (below)
  * remembers that bump rather than requiring the player to still be standing
  * there when they walk back to report in. */
-export function reachedNow(p: Player, o: { area?: AreaId; floor?: number }): boolean {
+export function reachedNow(p: Player, o: Extract<QuestObjective, { kind: "reach" }>): boolean {
   if (o.floor !== undefined) return p.zoneId !== "surface" && zoneDepth(p.zoneId) >= o.floor;
   return p.zoneId === "surface" && p.region === o.area;
 }

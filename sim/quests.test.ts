@@ -104,6 +104,15 @@ describe("accept and turn in", () => {
     expect(getZone(state, "surface").groundItems.size).toBe(groundBefore + 1);
     expect(state.events.some((e) => e.type === "item_dropped")).toBe(true);
   });
+
+  test("a promised unique reward is guaranteed even at level 1", () => {
+    const state = createGame(2);
+    const p = joinPlayer(state, { id: 0 });
+    expect(p.level).toBe(1);
+    deliverQuestReward(state, p, QUESTS.barrow_lord.reward);
+    const item = p.inventory.entries.find((e) => e.item.baseId === "grave_scythe");
+    expect(item?.item.rarity).toBe("unique");
+  });
 });
 
 describe("objective progress off the event stream", () => {

@@ -7,8 +7,20 @@ import {
 } from "../quests";
 import { grantXp } from "./xp";
 import { rollItem } from "../items/generate";
+import { UNIQUES } from "../items/uniques";
 import { placeItem, removeEntry } from "../character";
 import { dropSpot } from "./combat";
+
+/** The lowest ilvl at which `baseId` has any unique to roll, or undefined if it has
+ * none. A quest's promised rarity must not be at the mercy of the player's level. */
+function minUniqueLvl(baseId: string): number | undefined {
+  let min: number | undefined;
+  for (const u of Object.values(UNIQUES)) {
+    if (u.baseId !== baseId) continue;
+    if (min === undefined || u.lvl < min) min = u.lvl;
+  }
+  return min;
+}
 
 /** How close you must stand before an NPC will talk. */
 export const NPC_TALK_RANGE = 1.4;
@@ -47,7 +59,11 @@ export function deliverQuestReward(
   // Xp lands first: a reward that levels the hero should roll at the level it just bought.
   if (reward.xp) grantXp(state, p, reward.xp);
   if (reward.item) {
-    const item = rollItem(state.rng, reward.item.baseId, Math.max(1, p.level), reward.item.rarity);
+    // A quest's promised rarity is guaranteed, not merely likely: floor the ilvl at
+    // whatever the base's cheapest unique requires so the roll can't fall back.
+    const floor = reward.item.rarity === "unique" ? minUniqueLvl(reward.item.baseId) : undefined;
+    const ilvl = Math.max(1, p.level, floor ?? 1);
+    const item = rollItem(state.rng, reward.item.baseId, ilvl, reward.item.rarity);
     if (!placeItem(p.inventory, state.nextId++, item)) {
       const pos = dropSpot(state.rng, state.zones.get(p.zoneId)!.map, p.pos);
       const gid = state.nextId++;

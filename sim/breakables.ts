@@ -120,10 +120,12 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
     zone: zone.id,
   });
 
-  const depthBonus = (areaLevelAt(zone.id, target.pos) - 1) * 3;
+  // Tracks the region's monster mlvl band (typeMlvl + areaLevel - 1): chests
+  // roll just under the local elites, barrels well under.
+  const depthBonus = areaLevelAt(zone.id, target.pos) - 1;
   const item =
     target.kind === "chest"
-      ? rollDrop(state.rng, "standard", 5 + depthBonus, { guaranteed: true, minRarity: "magic" })
+      ? rollDrop(state.rng, "standard", 7 + depthBonus, { guaranteed: true, minRarity: "magic" })
       : rollDrop(state.rng, "trash", 2 + depthBonus);
   if (item) {
     const pos = dropSpot(state.rng, zone.map, target.pos, 1.2);

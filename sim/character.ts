@@ -129,10 +129,21 @@ export const CLASS_STATS: Record<
   witch: { maxLife: 75, maxMana: 60, lifePerLevel: 5, manaPerLevel: 4 },
 };
 
+/** Each level's price grows this much over the last — the slope that makes
+ * early levels quick and the late game a genuine climb. */
+const XP_LEVEL_BASE = 40;
+const XP_LEVEL_GROWTH = 1.22;
+
+/** Cumulative thresholds, extended on demand; grantXp probes this in a loop. */
+const xpTable: number[] = [0, 0];
+
 /** Total xp at which the player becomes `level`. */
 export function xpForLevel(level: number): number {
-  const n = level - 1;
-  return 20 * n + 15 * n * n;
+  while (xpTable.length <= level) {
+    const l = xpTable.length;
+    xpTable.push(xpTable[l - 1]! + Math.round(XP_LEVEL_BASE * Math.pow(XP_LEVEL_GROWTH, l - 2)));
+  }
+  return xpTable[level]!;
 }
 
 /** Broken gear (durability 0) contributes nothing until repaired. */

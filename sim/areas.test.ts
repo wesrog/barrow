@@ -77,7 +77,7 @@ describe("region difficulty", () => {
     expect(near.length).toBeGreaterThan(0);
     for (const m of near) {
       const base = MONSTER_TYPES[m.typeId]!;
-      expect(m.mlvl).toBe(base.mlvl + 3 * (AREAS.redfen.areaLevel - 1));
+      expect(m.mlvl).toBe(base.mlvl + (AREAS.redfen.areaLevel - 1));
     }
   });
 });

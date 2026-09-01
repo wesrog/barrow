@@ -4,7 +4,7 @@ import { recomputePlayerStats } from "./systems/inventory";
 import { rollDurability } from "./items/generate";
 import { SKILL_IDS, type Klass, type SkillId } from "./skills";
 import { type GameState, type PlayerId } from "./state";
-import { worldWaypointPos } from "./surface";
+import { campCorpseSpot, worldWaypointPos } from "./surface";
 import { ensureSurface } from "./world";
 import { isQuestId, QUESTS, type QuestLog } from "./quests";
 
@@ -33,11 +33,22 @@ export interface CharacterSave {
   waypoints?: string[];
   /** Quest progress: accepted quest ids and their stage/count. Missing on older saves. */
   quests?: Record<string, { stage: string; count: number }>;
+  /** Gear on this player's unreclaimed corpse, if they left one behind. The
+   * world it stood in dies with the session, so the save carries the loot and
+   * a restore lays the corpse back down at camp. */
+  corpse?: Equipment;
 }
 
 export function serializeCharacter(state: GameState, playerId: PlayerId): string {
   const p = state.players.get(playerId);
   if (!p) return "";
+  let corpse: Equipment | undefined;
+  for (const zone of state.zones.values()) {
+    for (const c of zone.playerCorpses.values()) {
+      if (c.playerId === playerId) corpse = c.equipment;
+    }
+    if (corpse) break;
+  }
   const save: CharacterSave = {
     v: VERSION,
     name: p.name,
@@ -55,6 +66,7 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     checkpoint: p.checkpoint,
     waypoints: p.waypoints,
     quests: p.quests,
+    corpse,
   };
   return JSON.stringify(save);
 }
@@ -193,5 +205,30 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   const surface = ensureSurface(state);
   p.zoneId = "surface";
   p.pos = { ...worldWaypointPos(surface.map, p.checkpoint) };
+  // A corpse the save carries comes back down at camp — unless this world still
+  // holds the player's corpse (a live rejoin), which would duplicate the gear.
+  if (save.corpse && typeof save.corpse === "object") {
+    let alreadyLaid = false;
+    for (const zone of state.zones.values()) {
+      for (const c of zone.playerCorpses.values()) {
+        if (c.playerId === playerId) alreadyLaid = true;
+      }
+    }
+    const equipment = { ...createEquipment(), ...save.corpse };
+    const hasGear = Object.values(equipment).some((it) => it !== null);
+    if (!alreadyLaid && hasGear) {
+      const claimed = new Set<string>();
+      for (const c of surface.playerCorpses.values()) {
+        claimed.add(`${Math.floor(c.pos.x)},${Math.floor(c.pos.y)}`);
+      }
+      const id = state.nextId++;
+      surface.playerCorpses.set(id, {
+        id,
+        playerId,
+        pos: campCorpseSpot(surface.map, claimed),
+        equipment,
+      });
+    }
+  }
   return true;
 }

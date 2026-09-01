@@ -2,7 +2,7 @@
 // world positions back to region labels. Pure functions of the AREAS registry.
 
 import { AREAS, type AreaId } from "./areas";
-import type { MapMarker, Vec, ZoneMap } from "./map";
+import { inCamp, isWalkable, type MapMarker, type Vec, type ZoneMap } from "./map";
 import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
 import { zoneDepth, type ZoneId } from "./state";
@@ -115,6 +115,32 @@ export function worldWaypointPos(map: ZoneMap, id: AreaId): Vec {
     if (m.ch === "W" && areaAt({ x: m.x, y: m.y }) === id) return { x: m.x, y: m.y };
   }
   return worldAreaSpawn(id); // no pad rolled — shouldn't happen on real maps
+}
+
+/**
+ * A free walkable camp-ground cell for a relocated corpse: rings outward from
+ * the spawn, west-to-east then north-to-south within each ring, skipping cells
+ * already claimed. Pure scan of the map — no rng, so every client picks the same
+ * cells in the same order.
+ */
+export function campCorpseSpot(map: ZoneMap, claimed: Set<string>): Vec {
+  const cx = Math.floor(map.spawn.x);
+  const cy = Math.floor(map.spawn.y);
+  for (let r = 0; r <= 8; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring edge only
+        const x = cx + dx;
+        const y = cy + dy;
+        const key = `${x},${y}`;
+        if (claimed.has(key) || !isWalkable(map, x, y)) continue;
+        if (!inCamp(map, { x: x + 0.5, y: y + 0.5 })) continue;
+        claimed.add(key);
+        return { x: x + 0.5, y: y + 0.5 };
+      }
+    }
+  }
+  return { x: cx + 0.5, y: cy + 0.5 }; // shouldn't happen on real maps
 }
 
 /** An area's safe-ground rect in world coordinates; only the town has one. */

@@ -38,18 +38,29 @@ export function xpShares(
 }
 
 /**
- * Kills far below a player's level fade out as a source of xp: full value
- * within 5 levels, then -15% per level of gap, floored at 5%. Per recipient —
- * party members above and below the monster's level are penalized separately.
+ * Kills far from a player's level fade out as a source of xp: full value
+ * within 5 levels, then -15% per level of gap, floored at 5%. Symmetric —
+ * out-leveled trash stops paying, and rushing an end zone under-leveled pays
+ * almost nothing. Per recipient: party members are penalized separately.
  */
 export function xpPenalty(playerLevel: number, mlvl: number): number {
-  const gap = playerLevel - mlvl;
+  const gap = Math.abs(playerLevel - mlvl);
   if (gap <= 5) return 1;
   return Math.max(0.05, 1 - (gap - 5) * 0.15);
 }
 
+/** Levels past this one are the long tail: xp income tapers off. */
+export const TAPER_START = 30;
+
+/** -5% per level past TAPER_START, floored at 5% — applied to all xp income. */
+export function highLevelTaper(level: number): number {
+  if (level <= TAPER_START) return 1;
+  return Math.max(0.05, 1 - (level - TAPER_START) * 0.05);
+}
+
 /** Add xp and process level-ups; a new level refills life and mana. */
 export function grantXp(state: GameState, p: Player, gained: number): void {
+  gained = Math.floor(gained * highLevelTaper(p.level));
   if (gained <= 0) return;
   p.xp += gained;
   let leveled = false;

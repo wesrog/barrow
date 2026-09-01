@@ -22,7 +22,8 @@ import { DialoguePanel } from "./ui/DialoguePanel";
 import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { QuestTracker } from "./ui/QuestTracker";
-import { QUESTS } from "../sim/quests";
+import { QuestLogPanel } from "./ui/QuestLogPanel";
+import { QUESTS, type QuestId } from "../sim/quests";
 import { SkillPanel } from "./ui/SkillPanel";
 import { SystemMenu } from "./ui/SystemMenu";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
@@ -60,6 +61,9 @@ function Game({
   const [shopOpen, setShopOpen] = useState(false);
   const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [questsOpen, setQuestsOpen] = useState(false);
+  // Which quest the journal opens on — set by clicking a tracker entry.
+  const [questFocus, setQuestFocus] = useState<QuestId | null>(null);
   const [dialogueNpc, setDialogueNpc] = useState<NpcId | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // The keydown handler is registered once, so it reads open/closed through
@@ -68,7 +72,8 @@ function Game({
   menuOpenRef.current = menuOpen;
   const panelsOpenRef = useRef(false);
   panelsOpenRef.current =
-    invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || dialogueNpc !== null;
+    invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || questsOpen ||
+    dialogueNpc !== null;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -266,6 +271,7 @@ function Game({
           setShopOpen(false);
           setHealerOpen(false);
           setWaypointsOpen(false);
+          setQuestsOpen(false);
           setDialogueNpc(null);
         } else setMenuOpen(true);
       }
@@ -280,6 +286,12 @@ function Game({
         // Bury this character and start fresh.
         wipeStorage();
         window.location.reload();
+      }
+      // Lowercase q casts hotbar slot 0; the quest journal lives on shift+Q,
+      // same capital-letter convention as N.
+      else if (e.key === "Q") {
+        setQuestFocus(null);
+        setQuestsOpen((open) => !open);
       }
       else if (e.key === "q") castSlot(0);
       else if (e.key === "w") castSlot(1);
@@ -338,6 +350,9 @@ function Game({
                     ? `P${e.playerId + 1} fell on floor ${depth}`
                     : `P${e.playerId + 1} died`,
               );
+              // A death moves gear onto a corpse; persist it now so a crash
+              // before the next autosave tick can't lose the body.
+              if (e.playerId === localId()) save();
               break;
             }
             case "portal_cast":
@@ -704,7 +719,15 @@ function Game({
         onExpire={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))}
       />
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
-      {gameRef.current && <QuestTracker game={gameRef.current} />}
+      {gameRef.current && (
+        <QuestTracker
+          game={gameRef.current}
+          onOpen={(id) => {
+            setQuestFocus(id);
+            setQuestsOpen(true);
+          }}
+        />
+      )}
       {gameRef.current && <ZoneIntro intro={intro} />}
       {gameRef.current && <PartyStrip game={gameRef.current} />}
       {gameRef.current && (
@@ -760,6 +783,18 @@ function Game({
             onTrade={() => { setDialogueNpc(null); setShopOpen(true); }}
             onWares={() => { setDialogueNpc(null); setHealerOpen(true); }}
             onClose={() => setDialogueNpc(null)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={questsOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <QuestLogPanel
+            // Remount on focus change so a tracker click always lands on
+            // the clicked quest, even if the journal is already open.
+            key={questFocus ?? "log"}
+            game={gameRef.current}
+            focus={questFocus}
+            onClose={() => setQuestsOpen(false)}
           />
         )}
       </Reveal>
@@ -846,6 +881,7 @@ function App() {
   if (!driver) {
     return (
       <Lobby
+        assets={assets}
         onReady={(d, code) => {
           setDriver(d);
           setRoomCode(code);

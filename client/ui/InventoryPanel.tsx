@@ -1,10 +1,10 @@
 import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { INV_H, INV_W, computeStats, slotForItem, type EquipSlot } from "../../sim/character";
+import { INV_H, INV_W, computeStats, type EquipSlot } from "../../sim/character";
 import { BASES, potionKind } from "../../sim/items/bases";
-import type { Item, ItemMod } from "../../sim/items/generate";
-import { equipDelta, type StatDelta } from "./itemCompare";
+import type { Item } from "../../sim/items/generate";
+import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
 import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
@@ -13,12 +13,7 @@ import { PanelChrome } from "./PanelChrome";
 
 const CELL = 32;
 
-export const RARITY_CSS: Record<string, string> = {
-  normal: "#d6d6d6",
-  magic: "#8ba3f5",
-  rare: "#f0e68c",
-  unique: "#d9a05c",
-};
+export { RARITY_CSS } from "./ItemHoverDetail";
 
 // Potion icons tint by what they restore, not rarity.
 const POTION_CSS: Record<"health" | "mana", string> = {
@@ -31,19 +26,6 @@ function iconColor(item: Item): string {
   const kind = potionKind(item.baseId);
   return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
 }
-
-const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
-  dmgMin: (v) => `+${v} to minimum damage`,
-  dmgMax: (v) => `+${v} to maximum damage`,
-  dmgPct: (v) => `+${v}% enhanced damage`,
-  attackRating: (v) => `+${v} to attack rating`,
-  defense: (v) => `+${v} defense`,
-  life: (v) => `+${v} to life`,
-  mana: (v) => `+${v} to mana`,
-  attackSpeedPct: (v) => `+${v}% attack speed`,
-  moveSpeedPct: (v) => `+${v}% run speed`,
-  magicFind: (v) => `+${v}% better chance of magic items`,
-};
 
 const EQUIP_SLOTS: { slot: EquipSlot; label: string }[] = [
   { slot: "weapon", label: "weapon" },
@@ -73,58 +55,6 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 30px rgba(0,0,0,.6)",
 };
 
-function itemDetail(item: Item, playerLevel: number): {
-  lines: { text: string; color?: string }[];
-  color: string;
-} {
-  const base = BASES[item.baseId]!;
-  const lines: { text: string; color?: string }[] = [];
-  if (base.dmgMin !== undefined) lines.push({ text: `damage ${base.dmgMin}–${base.dmgMax}` });
-  if (base.defense !== undefined) lines.push({ text: `defense ${base.defense}` });
-  if (base.levelReq > 1) {
-    const unmet = base.levelReq > playerLevel;
-    lines.push({
-      text: `requires level ${base.levelReq}${unmet ? " — cannot equip yet" : ""}`,
-      color: unmet ? "#d6675c" : undefined,
-    });
-  }
-  for (const mod of item.mods) lines.push({ text: MOD_LABELS[mod.stat](mod.value) });
-  if (item.durability) {
-    lines.push({
-      text:
-        item.durability.cur === 0
-          ? "BROKEN — repair at the vendor"
-          : `durability ${item.durability.cur}/${item.durability.max}`,
-    });
-  }
-  return { lines, color: RARITY_CSS[item.rarity]! };
-}
-
-const DELTA_LABELS: [keyof StatDelta, string][] = [
-  ["defense", "defense"],
-  ["attackRating", "attack rating"],
-  ["maxLife", "life"],
-  ["maxMana", "mana"],
-  ["magicFind", "% magic find"],
-];
-
-/** Nonzero character-stat changes if `item` were equipped, as signed colored lines. */
-function deltaLines(delta: StatDelta): { text: string; color: string }[] {
-  const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
-  const color = (v: number) => (v > 0 ? "#7fc978" : "#d6675c");
-  const out: { text: string; color: string }[] = [];
-  if (delta.dmgMin !== 0 || delta.dmgMax !== 0) {
-    out.push({
-      text: `${signed(delta.dmgMin)} min / ${signed(delta.dmgMax)} max damage`,
-      color: color(delta.dmgMax !== 0 ? delta.dmgMax : delta.dmgMin),
-    });
-  }
-  for (const [stat, label] of DELTA_LABELS) {
-    if (delta[stat] !== 0) out.push({ text: `${signed(delta[stat])} ${label}`, color: color(delta[stat]) });
-  }
-  return out;
-}
-
 export function InventoryPanel({
   game,
   assets,
@@ -151,6 +81,22 @@ export function InventoryPanel({
       {assets && (
         <CharacterView assets={assets} equipment={p.equipment} width={INV_W * CELL} />
       )}
+
+      {/* Identity */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ color: "#e8dcc0", fontSize: 13 }}>{p.name}</span>
+        <span style={{ color: "#6b6455" }}>
+          {p.klass} · lvl {p.level}
+        </span>
+      </div>
 
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 10 }}>
@@ -271,46 +217,13 @@ export function InventoryPanel({
       {/* Hover detail */}
       <div style={{ minHeight: 64, marginTop: 8, lineHeight: 1.45 }}>
         {hovered ? (
-          (() => {
-            const detail = itemDetail(hovered.item, p.level);
-            const base = BASES[hovered.item.baseId]!;
-            const comparable = hovered.fromGrid && base.slot !== "potion";
-            const replaces = comparable
-              ? p.equipment[slotForItem(hovered.item, p.equipment)]
-              : null;
-            const deltas = comparable
-              ? deltaLines(equipDelta(p.equipment, hovered.item, p.level, p.klass))
-              : [];
-            return (
-              <>
-                <div style={{ color: detail.color }}>{hovered.item.name}</div>
-                {detail.lines.map((line, i) => (
-                  <div key={i} style={{ color: line.color ?? "#948c7d" }}>
-                    {line.text}
-                  </div>
-                ))}
-                {comparable && (
-                  <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid #2c2833" }}>
-                    <span style={{ color: "#6b6455" }}>
-                      {replaces ? "replaces " : "fills empty slot"}
-                    </span>
-                    {replaces && (
-                      <span style={{ color: RARITY_CSS[replaces.rarity] }}>{replaces.name}</span>
-                    )}
-                    {deltas.length === 0 ? (
-                      <div style={{ color: "#6b6455" }}>no stat change</div>
-                    ) : (
-                      deltas.map((line, i) => (
-                        <div key={i} style={{ color: line.color }}>
-                          {line.text}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </>
-            );
-          })()
+          <ItemHoverDetail
+            item={hovered.item}
+            equipment={p.equipment}
+            level={p.level}
+            klass={p.klass}
+            compare={hovered.fromGrid}
+          />
         ) : (
           <div style={{ color: "#55503f" }}>
             click to equip / unequip · right-click to drop · i or esc to close

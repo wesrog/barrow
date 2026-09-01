@@ -136,6 +136,10 @@ const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = 
   twin_fang: { model: "dagger", twoHanded: false },
   war_maul: { model: "axe_2handed", twoHanded: true },
   grave_scythe: { model: "sword_2handed", twoHanded: true },
+  gnarled_staff: { model: "skeleton_staff", twoHanded: false },
+  dire_flail: { model: "axe_1handed", twoHanded: false },
+  moon_glaive: { model: "axe_2handed", twoHanded: true },
+  kingsbane: { model: "sword_1handed", twoHanded: false },
 };
 
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {

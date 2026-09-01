@@ -190,8 +190,12 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
     dmgMax: Math.round(t.dmgMax * pow(1.22)),
     attackRating: Math.round(t.attackRating * pow(1.15)),
     defense: Math.round(t.defense * pow(1.15)),
-    xp: Math.round(t.xp * pow(1.4)),
-    mlvl: t.mlvl + d * 3,
+    // Threat compounds; reward doesn't. Linear xp against a geometric level
+    // curve is what makes deeper zones slow leveling down instead of speeding
+    // it up. mlvl tracks the area ladder 1:1 so the xpPenalty gap and item
+    // gating stay in step with where the player is meant to be.
+    xp: Math.round(t.xp * (1 + 0.25 * d)),
+    mlvl: t.mlvl + d,
     explode: t.explode
       ? {
           radius: t.explode.radius,

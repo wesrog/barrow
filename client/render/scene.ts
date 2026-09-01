@@ -133,8 +133,10 @@ export function createScene(
   scene.add(moon);
   scene.add(moon.target);
 
-  const heroLight = new THREE.PointLight(0xffb35c, 8, 9, 1.6);
-  heroLight.position.set(0, 1.6, 0);
+  // Torso height, not overhead: right above the scalp the falloff term blows
+  // up and a bare head reads as a lamp. From the chest the crown faces away.
+  const heroLight = new THREE.PointLight(0xffb35c, 6, 9, 1.6);
+  heroLight.position.set(0, 1.05, 0);
   scene.add(heroLight);
 
   // --- Atmosphere: the surface is one scene, so sky, fog and ambient follow
@@ -734,7 +736,7 @@ export function createScene(
     equipSignature: string;
     targetYaw: number;
     wasDead: boolean;
-    /** "P2" over the head — remote party members only. */
+    /** Character name over the head — remote party members only. */
     nameplate: HTMLDivElement | null;
   }
   const heroes = new Map<PlayerId, HeroEntry>();
@@ -1001,7 +1003,7 @@ export function createScene(
 
         // Rebuild visible gear when equipment changes.
         const eq = p.equipment;
-        const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
+        const signature = [eq.weapon, eq.helm, eq.chest, eq.boots, eq.shield]
           .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
           .join("|");
         if (signature !== entry.equipSignature) {
@@ -1018,6 +1020,8 @@ export function createScene(
         entry.lastPos = { x, y };
 
         if (entry.nameplate) {
+          const plateText = p.name || `P${p.id + 1}`;
+          if (entry.nameplate.textContent !== plateText) entry.nameplate.textContent = plateText;
           const at = worldToScreen({ x, y }, 1.9);
           entry.nameplate.style.left = `${at.x}px`;
           entry.nameplate.style.top = `${at.y}px`;
@@ -1027,7 +1031,7 @@ export function createScene(
           py = y;
         }
       }
-      heroLight.position.set(px, 1.6, py);
+      heroLight.position.set(px, 1.05, py);
       if (outdoor) applyAtmosphere(px);
 
       // Sync monster rigs with sim state. Only the hero's neighborhood keeps a

@@ -37,7 +37,7 @@ import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
 import { isAreaId } from "./areas";
 import { ensureFloor, ensureSurface } from "./world";
-import { areaAt, worldWaypointPos } from "./surface";
+import { areaAt, campCorpseSpot, worldWaypointPos } from "./surface";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 import { SKILL_IDS, type SkillId } from "./skills";
 import { rollDurability } from "./items/generate";
@@ -185,33 +185,6 @@ export function applyWaypointInput(state: GameState, p: Player, input: PlayerInp
   p.pos = { ...worldWaypointPos(getZone(state, "surface").map, dest) };
 }
 
-/**
- * A free walkable camp-ground cell for a relocated corpse: rings outward from
- * the spawn, west-to-east then north-to-south within each ring, skipping cells
- * already claimed. Pure scan of the map — no rng, so every client picks the same
- * cells in the same order.
- */
-function campCorpseSpot(surface: ZoneState, claimed: Set<string>): { x: number; y: number } {
-  const map = surface.map;
-  const cx = Math.floor(map.spawn.x);
-  const cy = Math.floor(map.spawn.y);
-  for (let r = 0; r <= 8; r++) {
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring edge only
-        const x = cx + dx;
-        const y = cy + dy;
-        const key = `${x},${y}`;
-        if (claimed.has(key) || !isWalkable(map, x, y)) continue;
-        if (!inCamp(map, { x: x + 0.5, y: y + 0.5 })) continue;
-        claimed.add(key);
-        return { x: x + 0.5, y: y + 0.5 };
-      }
-    }
-  }
-  return { x: cx + 0.5, y: cy + 0.5 }; // shouldn't happen on real maps
-}
-
 /** Fresh run: regenerate the world, revive everyone, back to camp ground. */
 export function resetRun(state: GameState): void {
   // Gear is never destroyed. Corpses standing in zones about to be forgotten
@@ -225,7 +198,7 @@ export function resetRun(state: GameState): void {
   ensureFloor(state, 1);
   const claimed = new Set<string>();
   for (const corpse of strays) {
-    corpse.pos = campCorpseSpot(surface, claimed);
+    corpse.pos = campCorpseSpot(surface.map, claimed);
     surface.playerCorpses.set(corpse.id, corpse);
   }
   for (const p of allPlayers(state)) {

@@ -6,6 +6,7 @@ import { SKILL_IDS, type Klass, type SkillId } from "./skills";
 import { type GameState, type PlayerId } from "./state";
 import { worldWaypointPos } from "./surface";
 import { ensureSurface } from "./world";
+import { isQuestId, type QuestLog } from "./quests";
 
 const VERSION = 1;
 
@@ -30,6 +31,8 @@ export interface CharacterSave {
   checkpoint?: string;
   /** Discovered waypoint area ids; filtered to areas this build knows. */
   waypoints?: string[];
+  /** Quest progress: accepted quest ids and their stage/count. Missing on older saves. */
+  quests?: Record<string, { stage: string; count: number }>;
 }
 
 export function serializeCharacter(state: GameState, playerId: PlayerId): string {
@@ -51,6 +54,7 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     worldSeed: state.seed,
     checkpoint: p.checkpoint,
     waypoints: p.waypoints,
+    quests: p.quests,
   };
   return JSON.stringify(save);
 }
@@ -149,6 +153,17 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
     : [];
   if (!waypoints.includes("overworld")) waypoints.push("overworld");
   p.waypoints = waypoints.sort();
+  // Quests are lenient like checkpoints: a garbled log sheds its junk instead
+  // of bricking the hero. Pure function of the payload — identical on every peer.
+  const quests: QuestLog = {};
+  if (save.quests && typeof save.quests === "object") {
+    for (const [id, prog] of Object.entries(save.quests)) {
+      if (!isQuestId(id)) continue;
+      if (prog?.stage !== "active" && prog?.stage !== "done") continue;
+      quests[id] = { stage: prog.stage, count: Number.isFinite(prog.count) ? prog.count : 0 };
+    }
+  }
+  p.quests = quests;
   // Any registry area is a valid checkpoint — outposts stamp it on arrival,
   // before their waypoint is ever touched — and every area's safe spot is
   // fixed, so restoring there is layout-safe in any world.

@@ -4,6 +4,7 @@ import {
   QUESTS, isQuestId, questOffered, questReadyToTurnIn, objectiveMet, npcIndicator,
 } from "./quests";
 import { NPCS } from "./npcs";
+import { serializeCharacter, applyCharacter } from "./save";
 import { deliverQuestReward } from "./systems/quests";
 import { itemValue } from "./systems/town";
 import { rollItem } from "./items/generate";
@@ -196,5 +197,31 @@ describe("objective progress off the event stream", () => {
     expect(p.inventory.entries.length).toBe(before); // still in the pack
     stepSolo(state, { equip: entryId });
     expect(p.inventory.entries.length).toBe(before); // not equipped either
+  });
+});
+
+describe("save round-trip", () => {
+  test("quest progress survives a save round-trip; junk is shed", () => {
+    const state = createGame(6);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.moor_wights = { stage: "done", count: 8 };
+    p.quests.grave_moss = { stage: "active", count: 0 };
+    const raw = serializeCharacter(state, 0);
+    // splice junk into the payload the way an old build might
+    const tampered = JSON.stringify({
+      ...JSON.parse(raw),
+      quests: {
+        ...JSON.parse(raw).quests,
+        not_a_quest: { stage: "active", count: 1 },
+        moor_wights: { stage: "done", count: 8 },
+        grave_moss: { stage: "weird", count: NaN },
+      },
+    });
+    const state2 = createGame(6);
+    const p2 = joinPlayer(state2, { id: 0 });
+    expect(applyCharacter(state2, 0, tampered)).toBe(true);
+    expect(p2.quests.moor_wights).toEqual({ stage: "done", count: 8 });
+    expect(p2.quests.grave_moss).toBeUndefined(); // bad stage: dropped, restartable
+    expect((p2.quests as Record<string, unknown>).not_a_quest).toBeUndefined();
   });
 });

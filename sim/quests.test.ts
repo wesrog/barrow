@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { createGame, joinPlayer, stepSolo } from "./tick";
+import { createGame, joinPlayer, stepSolo, travel, ensureFloor } from "./tick";
 import {
-  QUESTS, isQuestId, questOffered, questReadyToTurnIn, objectiveMet, npcIndicator,
+  QUESTS, isQuestId, questOffered, questReadyToTurnIn, objectiveMet, npcIndicator, collectCount,
 } from "./quests";
 import { NPCS } from "./npcs";
 import { serializeCharacter, applyCharacter } from "./save";
@@ -11,6 +11,7 @@ import { rollItem } from "./items/generate";
 import { placeItem } from "./character";
 import { getZone } from "./state";
 import { spawnMonster } from "./monsters";
+import { areaRect } from "./surface";
 import type { NpcId } from "./npcs";
 import type { GameState, Player } from "./state";
 
@@ -197,6 +198,134 @@ describe("objective progress off the event stream", () => {
     expect(p.inventory.entries.length).toBe(before); // still in the pack
     stepSolo(state, { equip: entryId });
     expect(p.inventory.entries.length).toBe(before); // not equipped either
+  });
+});
+
+describe("campaign", () => {
+  test("the campaign runs start to finish through inputs alone", () => {
+    const state = createGame(9);
+    const p = joinPlayer(state, { id: 0 });
+    const surface = getZone(state, "surface");
+    const entity = (npcId: string) => [...surface.npcs.values()].find((n) => n.npcId === npcId)!;
+    const talkAt = (npcId: string) => {
+      const n = entity(npcId);
+      p.pos = { x: n.pos.x + 0.5, y: n.pos.y };
+      stepSolo(state, { talkNpc: n.id });
+      stepSolo(state, {});
+    };
+    const killFor = (typeId: string, n: number) => {
+      for (let i = 0; i < n; i++) {
+        const m = spawnMonster(state, getZone(state, p.zoneId), typeId, { x: p.pos.x + 1.5, y: p.pos.y });
+        m.life = 0;
+        m.lastHitBy = 0;
+        stepSolo(state, {});
+      }
+    };
+    const collectAll = (baseId: string, dropFrom: string, need: number) => {
+      // kill the source until a quest item drops, walk over, pick it up; repeat.
+      for (let guard = 0; guard < 400 && collectCount(p, baseId) < need; guard++) {
+        const zone = getZone(state, p.zoneId);
+        const g = [...zone.groundItems.values()].find((x) => x.item.baseId === baseId);
+        if (g) {
+          p.pos = { ...g.pos };
+          stepSolo(state, { pickup: g.id });
+          stepSolo(state, {});
+        } else {
+          killFor(dropFrom, 1);
+        }
+      }
+      expect(collectCount(p, baseId)).toBe(need); // guard exhausted = real failure
+    };
+
+    // moor_wights: maren, kill 8 shambler
+    talkAt("maren");
+    stepSolo(state, { acceptQuest: "moor_wights" });
+    expect(p.quests.moor_wights?.stage).toBe("active");
+    killFor("shambler", 8);
+    talkAt("maren");
+    stepSolo(state, { turnInQuest: "moor_wights" });
+    expect(p.quests.moor_wights?.stage).toBe("done");
+
+    // grave_moss: sera, collect 5 grave_moss dropped by shambler @0.5
+    talkAt("sera");
+    stepSolo(state, { acceptQuest: "grave_moss" });
+    expect(p.quests.grave_moss?.stage).toBe("active");
+    collectAll("grave_moss", "shambler", 5);
+    talkAt("sera");
+    stepSolo(state, { turnInQuest: "grave_moss" });
+    expect(p.quests.grave_moss?.stage).toBe("done");
+
+    // find_redfen: maren, reach the redfen region
+    talkAt("maren");
+    stepSolo(state, { acceptQuest: "find_redfen" });
+    expect(p.quests.find_redfen?.stage).toBe("active");
+    const redfen = areaRect("redfen");
+    p.pos = { x: (redfen.x0 + redfen.x1) / 2, y: (redfen.y0 + redfen.y1) / 2 };
+    stepSolo(state, {});
+    expect(objectiveMet(p, "find_redfen")).toBe(true);
+    talkAt("maren");
+    stepSolo(state, { turnInQuest: "find_redfen" });
+    expect(p.quests.find_redfen?.stage).toBe("done");
+
+    // meet_betha: betha, talk — accepting IS the meeting
+    talkAt("betha");
+    stepSolo(state, { acceptQuest: "meet_betha" });
+    expect(p.quests.meet_betha?.count).toBe(1);
+    stepSolo(state, { turnInQuest: "meet_betha" });
+    expect(p.quests.meet_betha?.stage).toBe("done");
+
+    // howler_cull: betha, kill 10 fen_howler
+    talkAt("betha");
+    stepSolo(state, { acceptQuest: "howler_cull" });
+    killFor("fen_howler", 10);
+    talkAt("betha");
+    stepSolo(state, { turnInQuest: "howler_cull" });
+    expect(p.quests.howler_cull?.stage).toBe("done");
+    expect(p.inventory.entries.some((e) => e.item.baseId === "hatchet" && e.item.rarity === "magic")).toBe(true);
+
+    // fen_hearts: betha, collect 4 fen_heart dropped by bog_maw @0.6
+    talkAt("betha");
+    stepSolo(state, { acceptQuest: "fen_hearts" });
+    collectAll("fen_heart", "bog_maw", 4);
+    talkAt("betha");
+    stepSolo(state, { turnInQuest: "fen_hearts" });
+    expect(p.quests.fen_hearts?.stage).toBe("done");
+
+    // soldiers_due: corvin, kill 8 cairn_wight
+    talkAt("corvin");
+    stepSolo(state, { acceptQuest: "soldiers_due" });
+    killFor("cairn_wight", 8);
+    talkAt("corvin");
+    stepSolo(state, { turnInQuest: "soldiers_due" });
+    expect(p.quests.soldiers_due?.stage).toBe("done");
+    expect(p.inventory.entries.some((e) => e.item.baseId === "studded_jerkin" && e.item.rarity === "rare")).toBe(true);
+
+    // descend_barrow: aldous, reach floor 3
+    talkAt("aldous");
+    stepSolo(state, { acceptQuest: "descend_barrow" });
+    travel(state, p, "floor:3");
+    stepSolo(state, {});
+    expect(objectiveMet(p, "descend_barrow")).toBe(true);
+    travel(state, p, "surface");
+    talkAt("aldous");
+    stepSolo(state, { turnInQuest: "descend_barrow" });
+    expect(p.quests.descend_barrow?.stage).toBe("done");
+
+    // barrow_lord: aldous, kill 1 barrow_lord on floor:5
+    talkAt("aldous");
+    stepSolo(state, { acceptQuest: "barrow_lord" });
+    travel(state, p, "floor:5");
+    const floor5 = ensureFloor(state, 5);
+    const boss = spawnMonster(state, floor5, "barrow_lord", { x: p.pos.x + 1.5, y: p.pos.y }, 5);
+    boss.life = 0;
+    boss.lastHitBy = 0;
+    stepSolo(state, {});
+    expect(p.quests.barrow_lord?.count).toBe(1);
+    travel(state, p, "surface");
+    talkAt("aldous");
+    stepSolo(state, { turnInQuest: "barrow_lord" });
+    expect(p.quests.barrow_lord?.stage).toBe("done");
+    expect(p.inventory.entries.some((e) => e.item.rarity === "unique")).toBe(true);
   });
 });
 

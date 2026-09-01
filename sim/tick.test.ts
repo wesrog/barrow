@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { createGame, joinPlayer, step, stepSolo, travel, TICK_RATE } from "./tick";
 import { createGameOn, player } from "./test-helpers";
+import { getZone } from "./state";
+import { spawnMonster } from "./monsters";
 import type { Frame, GameState } from "./state";
 
 /** JSON.stringify replacer: Maps and typed arrays become plain arrays. */
@@ -101,8 +103,21 @@ describe("determinism", () => {
 
   test("two-player determinism: same seed + same frames ⇒ identical state", () => {
     const script = (g: GameState) => {
-      joinPlayer(g, { id: 0 });
+      const p0 = joinPlayer(g, { id: 0 });
       joinPlayer(g, { id: 1 });
+      // A quest round trip — accept, kill, turn in — folded into the script:
+      // two replicas must still land on identical state afterward.
+      const surface = getZone(g, "surface");
+      const maren = [...surface.npcs.values()].find((n) => n.npcId === "maren")!;
+      p0.pos = { x: maren.pos.x + 0.5, y: maren.pos.y };
+      step(g, { tick: g.tick, inputs: { 0: { acceptQuest: "moor_wights" } } });
+      for (let i = 0; i < 8; i++) {
+        const m = spawnMonster(g, surface, "shambler", { x: p0.pos.x + 1, y: p0.pos.y });
+        m.life = 0;
+        m.lastHitBy = 0;
+        step(g, { tick: g.tick, inputs: {} });
+      }
+      step(g, { tick: g.tick, inputs: { 0: { turnInQuest: "moor_wights" } } });
       travel(g, g.players.get(0)!, "floor:1");
       travel(g, g.players.get(1)!, "floor:1");
       for (let t = 0; t < 500; t++) {

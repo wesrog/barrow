@@ -3,7 +3,7 @@ import type { GameState, Player, PlayerInput, ZoneState } from "../state";
 import { allPlayers, getZone } from "../state";
 import type { Npc, NpcId } from "../npcs";
 import {
-  QUESTS, QUEST_IDS, collectCount, objectiveMet, questOffered, questReadyToTurnIn, type QuestDef, type QuestId,
+  QUESTS, QUEST_IDS, collectCount, questOffered, questReadyToTurnIn, reachedNow, type QuestDef, type QuestId,
 } from "../quests";
 import { grantXp } from "./xp";
 import { rollItem } from "../items/generate";
@@ -44,6 +44,8 @@ export function deliverQuestReward(
   reward: QuestDef["reward"],
 ): void {
   if (reward.gold) p.gold += reward.gold;
+  // Xp lands first: a reward that levels the hero should roll at the level it just bought.
+  if (reward.xp) grantXp(state, p, reward.xp);
   if (reward.item) {
     const item = rollItem(state.rng, reward.item.baseId, Math.max(1, p.level), reward.item.rarity);
     if (!placeItem(p.inventory, state.nextId++, item)) {
@@ -53,7 +55,6 @@ export function deliverQuestReward(
       state.events.push({ type: "item_dropped", id: gid, name: item.name, rarity: item.rarity, pos, zone: p.zoneId });
     }
   }
-  if (reward.xp) grantXp(state, p, reward.xp);
 }
 
 /** Turn in a completed quest at its turn-in npc: hand over collect goods, pay the reward. */
@@ -187,7 +188,7 @@ export function questProgressSystem(state: GameState): void {
       const o = QUESTS[id].objective;
       const prog = p.quests[id];
       if (!prog || prog.stage !== "active" || o.kind !== "reach" || prog.count >= 1) continue;
-      if (objectiveMet(p, id)) bump(p, id, 1, 1);
+      if (reachedNow(p, o)) bump(p, id, 1, 1);
     }
   }
 }

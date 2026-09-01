@@ -6,7 +6,7 @@ import { SKILL_IDS, type Klass, type SkillId } from "./skills";
 import { type GameState, type PlayerId } from "./state";
 import { worldWaypointPos } from "./surface";
 import { ensureSurface } from "./world";
-import { isQuestId, type QuestLog } from "./quests";
+import { isQuestId, QUESTS, type QuestLog } from "./quests";
 
 const VERSION = 1;
 
@@ -160,7 +160,13 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
     for (const [id, prog] of Object.entries(save.quests)) {
       if (!isQuestId(id)) continue;
       if (prog?.stage !== "active" && prog?.stage !== "done") continue;
-      quests[id] = { stage: prog.stage, count: Number.isFinite(prog.count) ? prog.count : 0 };
+      const n = Number.isFinite(prog.count) ? prog.count : 0;
+      // Never trust a saved count past what the objective can reach — a
+      // tampered or stale save shouldn't be able to hand out a pre-completed
+      // kill/collect quest with an absurd count.
+      const o = QUESTS[id].objective;
+      const cap = o.kind === "kill" || o.kind === "collect" ? o.count : Infinity;
+      quests[id] = { stage: prog.stage, count: Math.min(Math.max(0, Math.floor(n)), cap) };
     }
   }
   p.quests = quests;

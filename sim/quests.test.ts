@@ -353,6 +353,8 @@ describe("save round-trip", () => {
         not_a_quest: { stage: "active", count: 1 },
         moor_wights: { stage: "done", count: 8 },
         grave_moss: { stage: "weird", count: NaN },
+        howler_cull: { stage: "active", count: 999999 }, // huge: clamp to the kill objective's count (10)
+        fen_hearts: { stage: "active", count: -5 }, // negative: clamp to 0
       },
     });
     const state2 = createGame(6);
@@ -361,5 +363,7 @@ describe("save round-trip", () => {
     expect(p2.quests.moor_wights).toEqual({ stage: "done", count: 8 });
     expect(p2.quests.grave_moss).toBeUndefined(); // bad stage: dropped, restartable
     expect((p2.quests as Record<string, unknown>).not_a_quest).toBeUndefined();
+    expect(p2.quests.howler_cull).toEqual({ stage: "active", count: 10 });
+    expect(p2.quests.fen_hearts).toEqual({ stage: "active", count: 0 });
   });
 });

@@ -194,7 +194,6 @@ export function objectiveMet(p: Player, id: QuestId): boolean {
 
 export function questOffered(p: Player, npcId: NpcId): QuestId | null {
   for (const id of NPCS[npcId].quests) {
-    if (!(id in QUESTS)) continue; // not yet implemented
     if (p.quests[id]) continue; // started or done
     const req = QUESTS[id].requires;
     if (req && p.quests[req]?.stage !== "done") return null; // chain waits here

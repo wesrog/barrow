@@ -76,7 +76,11 @@ export function dropSpot(rng: Rng, map: ZoneMap, pos: Vec): Vec {
     x: pos.x + (rng.next() - 0.5) * 1.4,
     y: pos.y + (rng.next() - 0.5) * 1.4,
   };
-  return nearestWalkable(map, scattered) ?? scattered;
+  // Only snap when the scatter actually lands somewhere unwalkable — snapping
+  // every drop to its cell center piles loot up in tidy rows instead of the
+  // scatter the roll intended.
+  if (isWalkable(map, Math.floor(scattered.x), Math.floor(scattered.y))) return scattered;
+  return nearestWalkable(map, scattered) ?? pos;
 }
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);

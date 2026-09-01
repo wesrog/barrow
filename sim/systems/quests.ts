@@ -153,7 +153,12 @@ export function questProgressSystem(state: GameState): void {
     state.events.push({ type: "quest_progress", playerId: p.id, quest: id, count: to, needed });
   };
   // Kill credit: every in-zone player with the quest active shares each kill.
-  for (const e of state.events) {
+  // Snapshot the length up front — this loop pushes its own events (item drops,
+  // progress bumps), and those must never be re-scanned as if they were new
+  // combat/talk events from this tick.
+  const eventCount = state.events.length;
+  for (let i = 0; i < eventCount; i++) {
+    const e = state.events[i]!;
     if (e.type === "monster_died") {
       // Collect quests: the sought thing has a chance to be on the corpse
       // whenever anyone in the zone still needs it.

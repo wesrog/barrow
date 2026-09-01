@@ -14,6 +14,7 @@ import {
   LEAP_RANGE,
   LEAP_TICKS,
   LEAP_STUN_RADIUS,
+  MAX_RANK,
   SKILLS,
   chainboltDamage,
   cleaveMultiplier,
@@ -46,6 +47,7 @@ export function applySpendSkillInput(state: GameState, p: Player, input: PlayerI
   const def = SKILLS[id];
   if (!def || def.klass !== p.klass || p.skillPoints <= 0 || p.level < def.levelReq) return;
   if (def.prereq && p.skills[def.prereq] <= 0) return;
+  if (p.skills[id] >= MAX_RANK) return;
   p.skills[id]++;
   p.skillPoints--;
 }
@@ -264,8 +266,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       );
       if (targets.length === 0) return;
       if (!spendMana(state, p, "stomp")) return;
-      const mult = stompMultiplier(p.skills.stomp);
-      const stunFor = stompStunTicks(p.skills.stomp);
+      const mult = stompMultiplier(p.skills.stomp, p.skills.leap);
+      const stunFor = stompStunTicks(p.skills.stomp, p.skills.leap);
       for (const m of targets) {
         // A ground slam: no dodging it, like the leap's landing.
         const amount = rollSkillDamage(state, p, mult);
@@ -294,7 +296,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       }
       if (!m) return;
       if (!spendMana(state, p, "deathblow")) return;
-      const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow));
+      const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow, p.skills.crush));
       hitMonster(state, zone, m, p, amount);
       state.events.push({
         type: "skill_cast",
@@ -350,7 +352,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         .slice(0, CHAINBOLT_TARGETS);
       if (targets.length === 0) return;
       if (!spendMana(state, p, "chainbolt")) return;
-      const { min, max } = chainboltDamage(p.skills.chainbolt);
+      const { min, max } = chainboltDamage(p.skills.chainbolt, p.skills.fireball);
       targets.forEach((m, i) => {
         const falloff = i === 0 ? 1 : CHAINBOLT_FALLOFF;
         const amount = Math.max(

@@ -1,6 +1,6 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
-import { CLASS_SKILLS, SKILLS, type SkillId } from "../../sim/skills";
+import { CLASS_SKILLS, MAX_RANK, SKILLS, type SkillId } from "../../sim/skills";
 import type { GameState } from "../../sim/state";
 import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
 import { PanelChrome } from "./PanelChrome";
@@ -10,14 +10,14 @@ const DESCRIPTIONS: Record<SkillId, string> = {
   crush: "guaranteed heavy blow · 200% +50%/rank",
   warcry: "battle shout, +damage for 20s · also empowers cleave",
   leap: "jump to a spot, crushing and stunning enemies where you land",
-  stomp: "slam the ground: damage and stun everything around you",
-  deathblow: "one executioner's strike · 300% +75%/rank · never misses",
+  stomp: "slam the ground: damage and stun everything around you · +5% dmg and longer stun per leap rank",
+  deathblow: "one executioner's strike · 300% +75%/rank · +15% per crush rank · never misses",
   firebolt: "hurl fire at a distant enemy · never misses · +10% per focus rank",
   frostnova: "icy burst around you, chilling everything it touches",
   focus: "gather your will, +spell damage for 20s · also empowers firebolt",
   blink: "step through shadow to a spot you can see",
   fireball: "a blast at the aimed spot, burning all it engulfs · +8% per firebolt rank",
-  chainbolt: "lightning leaps through the three nearest enemies in sight",
+  chainbolt: "lightning leaps through the three nearest enemies in sight · +8% per fireball rank",
 };
 
 const panelStyle: CSSProperties = {
@@ -73,7 +73,7 @@ export function SkillPanel({
               const rank = p.skills[def.id];
               const levelLocked = p.level < def.levelReq;
               const prereqLocked = def.prereq !== undefined && p.skills[def.prereq] <= 0;
-              const canSpend = !levelLocked && !prereqLocked && p.skillPoints > 0;
+              const canSpend = !levelLocked && !prereqLocked && p.skillPoints > 0 && rank < MAX_RANK;
               const slot = hotbar.indexOf(def.id);
               return (
                 <div
@@ -101,7 +101,7 @@ export function SkillPanel({
                     </span>
                     <span style={{ display: "flex", gap: 3, alignItems: "center" }}>
                       <span style={{ color: "#8f8778", marginRight: 4 }}>
-                        {levelLocked ? `lvl ${def.levelReq}` : `rank ${rank}`} · {def.manaCost} mana
+                        {levelLocked ? `lvl ${def.levelReq}` : `rank ${rank}/${MAX_RANK}`} · {def.manaCost} mana
                       </span>
                       {/* Cast-key assignment: click a key to bind this skill there */}
                       {HOTBAR_KEYS.map((key, i) => (

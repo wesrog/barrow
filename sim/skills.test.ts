@@ -2,7 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
-import { LEAP_TICKS, SKILLS, damageMultiplier, cleaveMultiplier } from "./skills";
+import {
+  LEAP_TICKS,
+  MAX_RANK,
+  SKILLS,
+  damageMultiplier,
+  cleaveMultiplier,
+  deathblowMultiplier,
+  stompMultiplier,
+  stompStunTicks,
+} from "./skills";
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
 import type { GameState } from "./state";
 
@@ -43,6 +52,32 @@ describe("skill points", () => {
     readyPlayer(state, 10, 0);
     stepSolo(state, { spendSkill: "cleave" });
     expect(player(state).skills.cleave).toBe(0);
+  });
+
+  test("ranks cap at MAX_RANK; the point is kept", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 40, MAX_RANK + 3);
+    for (let i = 0; i < MAX_RANK + 2; i++) stepSolo(state, { spendSkill: "cleave" });
+    expect(player(state).skills.cleave).toBe(MAX_RANK);
+    expect(player(state).skillPoints).toBe(3);
+  });
+});
+
+describe("capstone synergies", () => {
+  test("deathblow scales with crush investment", () => {
+    expect(deathblowMultiplier(1, 0)).toBeCloseTo(3.0);
+    expect(deathblowMultiplier(2, 0)).toBeCloseTo(3.75);
+    // +15% per crush rank, multiplicative: rank 1 with crush maxed = 3 × 2.5
+    expect(deathblowMultiplier(1, 10)).toBeCloseTo(7.5);
+  });
+
+  test("stomp damage and stun scale with leap investment", () => {
+    expect(stompMultiplier(1, 0)).toBeCloseTo(1.2);
+    // +5% per leap rank, multiplicative: rank 1 with leap maxed = 1.2 × 1.5
+    expect(stompMultiplier(1, 10)).toBeCloseTo(1.8);
+    expect(stompStunTicks(1, 0)).toBe(20);
+    // +2 stun ticks per leap rank
+    expect(stompStunTicks(1, 10)).toBe(40);
   });
 });
 

@@ -6,6 +6,8 @@ import {
   BLINK_RANGE,
   CLASS_SKILLS,
   FIREBOLT_RANGE,
+  chainboltDamage,
+  fireballDamage,
   fireboltDamage,
   focusMultiplier,
   frostnovaChillTicks,
@@ -126,10 +128,25 @@ describe("firebolt", () => {
 
   test("damage grows with rank and focus synergy", () => {
     expect(fireboltDamage(1, 0)).toEqual({ min: 5, max: 9 });
-    expect(fireboltDamage(3, 0)).toEqual({ min: 11, max: 17 });
+    // Steeper per-rank growth: +4/+5 — ranks are the witch's whole damage curve.
+    expect(fireboltDamage(3, 0)).toEqual({ min: 13, max: 19 });
     const withSynergy = fireboltDamage(1, 2);
     expect(withSynergy.min).toBeGreaterThan(5);
     expect(withSynergy.max).toBeGreaterThan(9);
+  });
+});
+
+describe("witch damage curves", () => {
+  test("fireball grows +5/+8 per rank", () => {
+    expect(fireballDamage(1, 0)).toEqual({ min: 8, max: 14 });
+    expect(fireballDamage(3, 0)).toEqual({ min: 18, max: 30 });
+  });
+
+  test("chain bolt grows +4/+5 per rank and scales with fireball investment", () => {
+    expect(chainboltDamage(1, 0)).toEqual({ min: 6, max: 11 });
+    expect(chainboltDamage(3, 0)).toEqual({ min: 14, max: 21 });
+    // +8% per fireball rank: rank 1 with fireball maxed = base × 1.8, floored
+    expect(chainboltDamage(1, 10)).toEqual({ min: 10, max: 19 });
   });
 });
 

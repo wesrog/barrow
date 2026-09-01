@@ -50,6 +50,13 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   chainbolt: { id: "chainbolt", name: "Chain Bolt", klass: "witch", targeting: "none", levelReq: 12, manaCost: 10, buffTicks: 0, castTicks: 15, prereq: "fireball" },
 };
 
+/**
+ * Ranks per skill cap here. With ~1 point per level and xp tapering past 30,
+ * a career earns roughly 38 points against 60 of capacity — you can max two
+ * or three skills, not the tree. Scarcity is what makes spending a choice.
+ */
+export const MAX_RANK = 10;
+
 /** Every skill id, in definition (and therefore save/init) order. */
 export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
 
@@ -100,40 +107,45 @@ export function leapMultiplier(rank: number): number {
   return 1.5 + 0.4 * (rank - 1);
 }
 
-/** Stomp: 120% weapon damage around you, +30% per extra rank. Always hits. */
-export function stompMultiplier(rank: number): number {
-  return 1.2 + 0.3 * (rank - 1);
+/** Stomp: 120% weapon damage around you, +30% per extra rank, ×(1 + 5% per Leap rank). Always hits. */
+export function stompMultiplier(rank: number, leapRank: number): number {
+  return (1.2 + 0.3 * (rank - 1)) * (1 + 0.05 * leapRank);
 }
 
-export function stompStunTicks(rank: number): number {
-  return 20 + 5 * (rank - 1);
+/** Stomp stun: +2 ticks per Leap rank (synergy). */
+export function stompStunTicks(rank: number, leapRank: number): number {
+  return 20 + 5 * (rank - 1) + 2 * leapRank;
 }
 
-/** Deathblow: 300% weapon damage, +75% per extra rank. Always hits. */
-export function deathblowMultiplier(rank: number): number {
-  return 3 + 0.75 * (rank - 1);
+/** Deathblow: 300% weapon damage, +75% per extra rank, ×(1 + 15% per Crush rank). Always hits. */
+export function deathblowMultiplier(rank: number, crushRank: number): number {
+  return (3 + 0.75 * (rank - 1)) * (1 + 0.15 * crushRank);
 }
 
 /** Fireball: spell blast by rank, +8% per Firebolt rank (synergy). */
 export function fireballDamage(rank: number, fireboltRank: number): { min: number; max: number } {
   const synergy = 1 + 0.08 * fireboltRank;
   return {
-    min: Math.floor((8 + 4 * (rank - 1)) * synergy),
-    max: Math.floor((14 + 6 * (rank - 1)) * synergy),
+    min: Math.floor((8 + 5 * (rank - 1)) * synergy),
+    max: Math.floor((14 + 8 * (rank - 1)) * synergy),
   };
 }
 
-/** Chain Bolt: per-strike spell damage by rank. */
-export function chainboltDamage(rank: number): { min: number; max: number } {
-  return { min: 6 + 3 * (rank - 1), max: 11 + 4 * (rank - 1) };
+/** Chain Bolt: per-strike spell damage by rank, +8% per Fireball rank (synergy). */
+export function chainboltDamage(rank: number, fireballRank: number): { min: number; max: number } {
+  const synergy = 1 + 0.08 * fireballRank;
+  return {
+    min: Math.floor((6 + 4 * (rank - 1)) * synergy),
+    max: Math.floor((11 + 5 * (rank - 1)) * synergy),
+  };
 }
 
 /** Firebolt: spell damage by rank, +10% per Focus rank (synergy). Spells never miss. */
 export function fireboltDamage(rank: number, focusRank: number): { min: number; max: number } {
   const synergy = 1 + 0.1 * focusRank;
   return {
-    min: Math.floor((5 + 3 * (rank - 1)) * synergy),
-    max: Math.floor((9 + 4 * (rank - 1)) * synergy),
+    min: Math.floor((5 + 4 * (rank - 1)) * synergy),
+    max: Math.floor((9 + 5 * (rank - 1)) * synergy),
   };
 }
 

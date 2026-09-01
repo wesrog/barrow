@@ -20,6 +20,9 @@ export function MiniMap({ game }: { game: GameState }) {
   const offX = map.height * ISO_X;
   const projX = (x: number, y: number) => (x - y) * ISO_X + offX;
   const projY = (x: number, y: number) => (x + y) * ISO_Y;
+  const WINDOW_W = 280;
+  const WINDOW_H = 160;
+  const windowed = canvasW > WINDOW_W || canvasH > WINDOW_H;
 
   useEffect(() => {
     const map = zoneOf(game, localPlayer(game)).map;
@@ -47,43 +50,61 @@ export function MiniMap({ game }: { game: GameState }) {
       const base = wallsRef.current;
       if (!canvas || !base) return;
       const ctx = canvas.getContext("2d")!;
+      const me = localPlayer(game);
+      const vx = windowed ? projX(me.pos.x, me.pos.y) - WINDOW_W / 2 : 0;
+      const vy = windowed ? projY(me.pos.x, me.pos.y) - WINDOW_H / 2 : 0;
+      const sx = (x: number, y: number) => projX(x, y) - vx;
+      const sy = (x: number, y: number) => projY(x, y) - vy;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(base, 0, 0);
+      ctx.drawImage(base, -vx, -vy);
       for (const marker of zoneOf(game, localPlayer(game)).map.markers) {
+        const px = sx(marker.x, marker.y);
+        const py = sy(marker.x, marker.y);
+        if (px < -4 || px > WINDOW_W + 4 || py < -4 || py > WINDOW_H + 4) continue;
         if (marker.ch === ">") {
           ctx.fillStyle = "#7fb8c9";
-          ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);
+          ctx.fillRect(px - 2, py - 2, 4, 4);
         } else if (marker.ch === "<") {
           ctx.fillStyle = "#f5c877";
-          ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);
+          ctx.fillRect(px - 2, py - 2, 4, 4);
         } else if (marker.ch === "W") {
           ctx.fillStyle = "#c9a84c";
-          ctx.fillRect(projX(marker.x, marker.y) - 2, projY(marker.x, marker.y) - 2, 4, 4);
+          ctx.fillRect(px - 2, py - 2, 4, 4);
         }
       }
       for (const gi of zoneOf(game, localPlayer(game)).groundItems.values()) {
+        const px = sx(gi.pos.x, gi.pos.y);
+        const py = sy(gi.pos.x, gi.pos.y);
+        if (px < -4 || px > WINDOW_W + 4 || py < -4 || py > WINDOW_H + 4) continue;
         ctx.fillStyle = RARITY_CSS[gi.item.rarity] ?? "#d6d6d6";
-        ctx.fillRect(projX(gi.pos.x, gi.pos.y) - 1, projY(gi.pos.x, gi.pos.y) - 1, 2, 2);
+        ctx.fillRect(px - 1, py - 1, 2, 2);
       }
       for (const m of zoneOf(game, localPlayer(game)).monsters.values()) {
+        const px = sx(m.pos.x, m.pos.y);
+        const py = sy(m.pos.x, m.pos.y);
+        if (px < -4 || px > WINDOW_W + 4 || py < -4 || py > WINDOW_H + 4) continue;
         const boss = m.typeId === "barrow_lord";
         ctx.fillStyle = boss ? "#c9a84c" : "#a03030";
         const r = boss ? 3 : 2;
-        ctx.fillRect(projX(m.pos.x, m.pos.y) - r / 2, projY(m.pos.x, m.pos.y) - r / 2, r, r);
+        ctx.fillRect(px - r / 2, py - r / 2, r, r);
       }
       // Party members sharing this zone, each in their seat colour…
-      const me = localPlayer(game);
       for (const p of allPlayers(game)) {
         if (p.id === me.id || p.zoneId !== me.zoneId) continue;
+        const px = sx(p.pos.x, p.pos.y);
+        const py = sy(p.pos.x, p.pos.y);
+        if (px < -4 || px > WINDOW_W + 4 || py < -4 || py > WINDOW_H + 4) continue;
         ctx.fillStyle = playerCss(p.id);
         ctx.beginPath();
-        ctx.arc(projX(p.pos.x, p.pos.y), projY(p.pos.x, p.pos.y), 2, 0, Math.PI * 2);
+        ctx.arc(px, py, 2, 0, Math.PI * 2);
         ctx.fill();
       }
       // …and us, always the bright one.
+      const px = sx(me.pos.x, me.pos.y);
+      const py = sy(me.pos.x, me.pos.y);
       ctx.fillStyle = "#f0e9dc";
       ctx.beginPath();
-      ctx.arc(projX(me.pos.x, me.pos.y), projY(me.pos.x, me.pos.y), 2.2, 0, Math.PI * 2);
+      ctx.arc(px, py, 2.2, 0, Math.PI * 2);
       ctx.fill();
     };
     draw();
@@ -94,8 +115,8 @@ export function MiniMap({ game }: { game: GameState }) {
   return (
     <canvas
       ref={canvasRef}
-      width={canvasW}
-      height={canvasH}
+      width={windowed ? WINDOW_W : canvasW}
+      height={windowed ? WINDOW_H : canvasH}
       style={{
         position: "absolute",
         top: 12,

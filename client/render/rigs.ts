@@ -101,6 +101,56 @@ function makeWeaponModel(baseId: string): THREE.Group {
       tip.rotation.z = -0.5;
       break;
     }
+    case "gnarled_staff": {
+      haft(1.05, 0x5a4326);
+      const knot = add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), flatMat(0x6e5432, 0.7)));
+      knot.position.y = -0.02;
+      knot.rotation.z = 0.6;
+      const bend = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.2, 0.06), flatMat(0x5a4326, 0.8)));
+      bend.position.set(0.06, 0.08, 0);
+      bend.rotation.z = -0.5;
+      break;
+    }
+    case "dire_flail": {
+      haft(0.7);
+      // Chain links from the haft tip to the ball.
+      for (let i = 0; i < 3; i++) {
+        const link = add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.09, 0.05), flatMat(0x7a828c, 0.5)));
+        link.position.set(0.05 + i * 0.05, -0.76 - i * 0.09, 0);
+        link.rotation.z = 0.35;
+      }
+      const ball = add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), flatMat(0x565e66, 0.55)));
+      ball.position.set(0.22, -1.06, 0);
+      ball.rotation.y = 0.5;
+      for (const [sx, sy, sz] of [[1, 0, 0], [-1, 0, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]] as const) {
+        const spike = add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.06), flatMat(0x9aa0ac, 0.4)));
+        spike.position.set(0.22 + sx * 0.13, -1.06 + sy * 0.13, sz * 0.13);
+        spike.rotation.z = 0.6;
+      }
+      break;
+    }
+    case "moon_glaive": {
+      haft(1.2, 0x3a3226);
+      const blade = add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.1), flatMat(0xcdd6e0, 0.3)));
+      blade.position.set(0.1, -1.28, 0);
+      blade.rotation.z = 0.35;
+      const crescent = add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.3, 0.09), flatMat(0xe0e8f0, 0.25)));
+      crescent.position.set(0.24, -1.5, 0);
+      crescent.rotation.z = 0.8;
+      break;
+    }
+    case "kingsbane": {
+      const blade = add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.95, 0.18), flatMat(0xdfe3ea, 0.3)));
+      blade.position.y = -0.68;
+      const fuller = add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.7, 0.19), flatMat(0x8a2f3a, 0.5)));
+      fuller.position.y = -0.6;
+      const guard = add(new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.22), flatMat(0xc9a13b, 0.4)));
+      guard.position.y = -0.2;
+      const pommel = add(new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), flatMat(0xc9a13b, 0.4)));
+      pommel.position.y = 0.08;
+      pommel.rotation.z = 0.785;
+      break;
+    }
     default: {
       // rusted_blade and anything unknown: a straight sword
       const steel = baseId === "rusted_blade" ? 0x9a8a72 : 0xb9bec9;

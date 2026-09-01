@@ -162,7 +162,7 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
   for (const p of players) {
     // Gold is scooped just by walking near it.
     for (const pile of [...zone.goldPiles.values()]) {
-      if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
+      if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= PICKUP_RANGE) {
         zone.goldPiles.delete(pile.id);
         p.gold += pile.amount;
         state.events.push({ type: "gold_picked", playerId: p.id, amount: pile.amount });

@@ -31,6 +31,7 @@ export function onCampGround(p: Player): boolean {
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
   const base = BASES[item.baseId]!;
+  if (base.slot === "quest") return 0;
   if (base.slot === "potion") return 25;
   const rarityMult: Record<Rarity, number> = { normal: 1, magic: 2.5, rare: 5, unique: 8 };
   return Math.floor((12 + base.levelReq * 8 + item.mods.length * 22) * rarityMult[item.rarity]);
@@ -128,8 +129,9 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
   }
 
   if (input.sell !== undefined) {
-    const entry = removeEntry(p.inventory, input.sell);
-    if (entry) {
+    const entry = p.inventory.entries.find((e) => e.id === input.sell);
+    if (entry && BASES[entry.item.baseId]!.slot !== "quest") {
+      removeEntry(p.inventory, entry.id);
       const price = Math.max(1, Math.floor(itemValue(entry.item) / 4));
       p.gold += price;
       state.events.push({ type: "sold", playerId: p.id, name: entry.item.name, price });

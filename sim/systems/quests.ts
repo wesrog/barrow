@@ -1,9 +1,9 @@
 import { findPath, smoothPath } from "../path";
 import type { GameState, Player, PlayerInput, ZoneState } from "../state";
-import { allPlayers } from "../state";
+import { allPlayers, getZone } from "../state";
 import type { Npc, NpcId } from "../npcs";
 import {
-  QUESTS, QUEST_IDS, objectiveMet, questOffered, questReadyToTurnIn, type QuestDef, type QuestId,
+  QUESTS, QUEST_IDS, collectCount, objectiveMet, questOffered, questReadyToTurnIn, type QuestDef, type QuestId,
 } from "../quests";
 import { grantXp } from "./xp";
 import { rollItem } from "../items/generate";
@@ -138,6 +138,25 @@ export function questProgressSystem(state: GameState): void {
   // Kill credit: every in-zone player with the quest active shares each kill.
   for (const e of state.events) {
     if (e.type === "monster_died") {
+      // Collect quests: the sought thing has a chance to be on the corpse
+      // whenever anyone in the zone still needs it.
+      for (const id of QUEST_IDS) {
+        const o = QUESTS[id].objective;
+        if (o.kind !== "collect" || o.dropFrom !== e.typeId) continue;
+        const wanted = allPlayers(state).some(
+          (p) =>
+            !p.dead && p.zoneId === e.zone &&
+            p.quests[id]?.stage === "active" &&
+            collectCount(p, o.itemBaseId) < o.count,
+        );
+        if (!wanted || state.rng.next() >= o.chance) continue;
+        const zone = getZone(state, e.zone);
+        const pos = dropSpot(state.rng, zone.map, e.pos);
+        const gid = state.nextId++;
+        const item = rollItem(state.rng, o.itemBaseId, 1, "normal");
+        zone.groundItems.set(gid, { id: gid, item, pos });
+        state.events.push({ type: "item_dropped", id: gid, name: item.name, rarity: item.rarity, pos, zone: e.zone });
+      }
       for (const p of allPlayers(state)) {
         if (p.dead || p.zoneId !== e.zone) continue;
         for (const id of QUEST_IDS) {

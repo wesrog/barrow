@@ -286,6 +286,11 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
       }
       return;
     }
+    if (base.slot === "quest") {
+      // Quest goods don't equip — back into the pack.
+      placeItem(p.inventory, entry.id, entry.item);
+      return;
+    }
     if (base.levelReq > p.level) {
       placeItem(p.inventory, entry.id, entry.item);
       return;

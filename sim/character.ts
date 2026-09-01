@@ -85,6 +85,7 @@ export function removeEntry(inv: Inventory, id: number): InvEntry | null {
 export function slotForItem(item: Item, eq: Equipment): EquipSlot {
   const slot = BASES[item.baseId]!.slot;
   if (slot === "potion") throw new Error("potions go to the belt, not equipment");
+  if (slot === "quest") throw new Error("quest items don't equip");
   if (slot === "ring") {
     if (!eq.ring1) return "ring1";
     if (!eq.ring2) return "ring2";

@@ -5,6 +5,7 @@ import {
 } from "./quests";
 import { NPCS } from "./npcs";
 import { deliverQuestReward } from "./systems/quests";
+import { itemValue } from "./systems/town";
 import { rollItem } from "./items/generate";
 import { placeItem } from "./character";
 import { getZone } from "./state";
@@ -151,5 +152,49 @@ describe("objective progress off the event stream", () => {
     stepSolo(state, { talkNpc: betha.id });
     stepSolo(state, {});
     expect(p.quests.meet_betha!.count).toBe(1);
+  });
+
+  test("active collect quests make matching kills drop the quest item", () => {
+    const state = createGame(4);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.grave_moss = { stage: "active", count: 0 };
+    const surface = getZone(state, "surface");
+    // chance is 0.5 — kill until one drops; bounded so a broken roll fails loudly
+    let dropped = false;
+    for (let i = 0; i < 40 && !dropped; i++) {
+      const m = spawnMonster(state, surface, "shambler", { x: p.pos.x + 2, y: p.pos.y });
+      m.life = 0;
+      stepSolo(state, {});
+      dropped = [...surface.groundItems.values()].some((g) => g.item.baseId === "grave_moss");
+    }
+    expect(dropped).toBe(true);
+  });
+
+  test("no quest, no moss — and a full collection stops dropping more", () => {
+    const state = createGame(4);
+    const p = joinPlayer(state, { id: 0 });
+    const surface = getZone(state, "surface");
+    for (let i = 0; i < 40; i++) {
+      const m = spawnMonster(state, surface, "shambler", { x: p.pos.x + 2, y: p.pos.y });
+      m.life = 0;
+      stepSolo(state, {});
+    }
+    expect([...surface.groundItems.values()].some((g) => g.item.baseId === "grave_moss")).toBe(false);
+  });
+
+  test("quest items cannot be sold or equipped and are worth nothing", () => {
+    const state = createGame(4);
+    const p = joinPlayer(state, { id: 0 });
+    const item = rollItem(state.rng, "grave_moss", 1, "normal");
+    expect(itemValue(item)).toBe(0);
+    placeItem(p.inventory, state.nextId++, item);
+    const entryId = p.inventory.entries[p.inventory.entries.length - 1]!.id;
+    p.pos = { ...getZone(state, "surface").map.spawn }; // on camp ground
+    p.wasInCamp = true;
+    const before = p.inventory.entries.length;
+    stepSolo(state, { sell: entryId });
+    expect(p.inventory.entries.length).toBe(before); // still in the pack
+    stepSolo(state, { equip: entryId });
+    expect(p.inventory.entries.length).toBe(before); // not equipped either
   });
 });

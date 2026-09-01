@@ -108,6 +108,7 @@ function Game({
         mount,
         zoneOf(game, localPlayer(game)).map,
         assets,
+        [...zoneOf(game, localPlayer(game)).npcs.values()],
         onItemClick,
         localPlayer(game).zoneId === "surface",
       );
@@ -169,6 +170,9 @@ function Game({
         delete pending.moveTo;
       } else if (picked.kind === "corpse" && allowAttack) {
         pending.reclaim = picked.id;
+        delete pending.moveTo;
+      } else if (picked.kind === "npc") {
+        pending.talkNpc = picked.id;
         delete pending.moveTo;
       } else if (picked.kind === "waypoint" && allowAttack) {
         // Near the ring the panel opens; from afar the click walks you to it.
@@ -512,6 +516,7 @@ function Game({
           mount,
           currentMap,
           assets,
+          [...zoneOf(game, localPlayer(game)).npcs.values()],
           onItemClick,
           localPlayer(game).zoneId === "surface",
         );

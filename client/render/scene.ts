@@ -923,6 +923,59 @@ export function createScene(
     );
   };
 
+  // --- Flying spell projectiles: a flame streaks caster -> target, then pops ---
+  const boltFlight = (from: Vec, to: Vec, coreColor: number, glowColor: number) => {
+    const g = new THREE.Group();
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 10, 8),
+      new THREE.MeshBasicMaterial({ color: coreColor }),
+    );
+    g.add(core);
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 10, 8),
+      new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.55 }),
+    );
+    g.add(shell);
+    const light = new THREE.PointLight(glowColor, 3.0, 6, 1.6);
+    g.add(light);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    const nx = dist > 1e-6 ? dx / dist : 0;
+    const ny = dist > 1e-6 ? dy / dist : 1;
+    // Leave from the hand, a step ahead of the caster, not from inside the chest.
+    const sx = from.x + nx * 0.45;
+    const sz = from.y + ny * 0.45;
+    g.position.set(sx, 1.05, sz);
+    scene.add(g);
+    fx.burst(sx, 1.05, sz, glowColor, 5, 1.2); // muzzle flare on launch
+    const flightDist = Math.max(0.3, dist - 0.45);
+    const dur = Math.max(130, Math.min(420, (flightDist / 16) * 1000));
+    let lastEmber = 0;
+    fx.tween(
+      dur,
+      (t) => {
+        const x = sx + (to.x - sx) * t;
+        const z = sz + (to.y - sz) * t;
+        const y = 1.05 - 0.5 * t + Math.sin(t * Math.PI) * 0.2;
+        g.position.set(x, y, z);
+        const wob = 1 + Math.sin(t * 40) * 0.18;
+        shell.scale.set(wob, wob, wob);
+        const now = performance.now();
+        if (now - lastEmber > 40) {
+          lastEmber = now;
+          fx.burst(x, y, z, glowColor, 1, 0.5); // trailing ember
+        }
+      },
+      () => {
+        scene.remove(g);
+        core.material.dispose();
+        shell.material.dispose();
+        fx.burst(to.x, 0.55, to.y, glowColor, 12, 2.4); // impact pop
+      },
+    );
+  };
+
   // --- Picking ---
   const raycaster = new THREE.Raycaster();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1696,7 +1749,7 @@ export function createScene(
             shake(0.08);
           } else if (event.skill === "firebolt") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
-            if (event.at) fx.burst(event.at.x, 0.4, event.at.y, 0xe08a3c, 12, 2.4);
+            if (event.at) boltFlight(event.pos, event.at, 0xffd27a, 0xe8722c);
             shake(0.06);
           } else if (event.skill === "frostnova") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });

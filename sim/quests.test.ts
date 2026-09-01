@@ -8,6 +8,7 @@ import { deliverQuestReward } from "./systems/quests";
 import { rollItem } from "./items/generate";
 import { placeItem } from "./character";
 import { getZone } from "./state";
+import { spawnMonster } from "./monsters";
 import type { NpcId } from "./npcs";
 import type { GameState, Player } from "./state";
 
@@ -99,5 +100,56 @@ describe("accept and turn in", () => {
     deliverQuestReward(state, p, { item: { baseId: "hatchet", rarity: "magic" } });
     expect(getZone(state, "surface").groundItems.size).toBe(groundBefore + 1);
     expect(state.events.some((e) => e.type === "item_dropped")).toBe(true);
+  });
+});
+
+describe("objective progress off the event stream", () => {
+  test("kill quests count party kills in your zone, not elsewhere", () => {
+    const state = createGame(3);
+    const p0 = joinPlayer(state, { id: 0 });
+    const p1 = joinPlayer(state, { id: 1 });
+    p0.quests.moor_wights = { stage: "active", count: 0 };
+    p1.quests.moor_wights = { stage: "active", count: 0 };
+    const surface = getZone(state, "surface");
+    const m = spawnMonster(state, surface, "shambler", { x: p0.pos.x + 1, y: p0.pos.y });
+    m.life = 0;
+    m.lastHitBy = 1; // the OTHER player lands the kill
+    p1.zoneId = "floor:1"; // ...but p1 has left the zone: no credit for them
+    stepSolo(state, {});
+    expect(p0.quests.moor_wights!.count).toBe(1); // in-zone: shared credit
+    expect(p1.quests.moor_wights!.count).toBe(0); // out of zone: none
+    expect(state.events.some((e) => e.type === "quest_progress" && e.playerId === 0)).toBe(true);
+  });
+
+  test("kill counts cap at the objective and only tick while active", () => {
+    const state = createGame(3);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.moor_wights = { stage: "active", count: 8 };
+    const surface = getZone(state, "surface");
+    const m = spawnMonster(state, surface, "shambler", { x: p.pos.x + 1, y: p.pos.y });
+    m.life = 0;
+    stepSolo(state, {});
+    expect(p.quests.moor_wights!.count).toBe(8); // capped, no event
+  });
+
+  test("reach objectives complete from where the player stands", () => {
+    const state = createGame(3);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.find_redfen = { stage: "active", count: 0 };
+    p.pos = { x: 64.5, y: 45.5 }; // inside the redfen boundary
+    p.region = "redfen"; // as regionSystem would stamp on crossing
+    stepSolo(state, {});
+    expect(p.quests.find_redfen!.count).toBe(1);
+  });
+
+  test("talk objectives complete on npc_talk", () => {
+    const state = createGame(3);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.meet_betha = { stage: "active", count: 0 };
+    nearNpc(state, p, "betha");
+    const betha = [...getZone(state, "surface").npcs.values()].find((n) => n.npcId === "betha")!;
+    stepSolo(state, { talkNpc: betha.id });
+    stepSolo(state, {});
+    expect(p.quests.meet_betha!.count).toBe(1);
   });
 });

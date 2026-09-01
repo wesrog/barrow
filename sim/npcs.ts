@@ -32,7 +32,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
   betha: {
     id: "betha", name: "Odd Betha", title: "Hermit of the Redfen", area: "redfen",
     pos: { x: 42.5, y: 22.5 },
-    quests: [], idle: ["The fen keeps what it takes."],
+    quests: ["meet_betha"], idle: ["The fen keeps what it takes."],
   },
   corvin: {
     id: "corvin", name: "Corvin", title: "Last of the Ninth", area: "gallowmire",

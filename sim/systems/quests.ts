@@ -1,7 +1,10 @@
 import { findPath, smoothPath } from "../path";
 import type { GameState, Player, PlayerInput, ZoneState } from "../state";
+import { allPlayers } from "../state";
 import type { Npc, NpcId } from "../npcs";
-import { QUESTS, questOffered, questReadyToTurnIn, type QuestDef, type QuestId } from "../quests";
+import {
+  QUESTS, QUEST_IDS, objectiveMet, questOffered, questReadyToTurnIn, type QuestDef, type QuestId,
+} from "../quests";
 import { grantXp } from "./xp";
 import { rollItem } from "../items/generate";
 import { placeItem, removeEntry } from "../character";
@@ -119,6 +122,53 @@ export function npcSystem(state: GameState, zone: ZoneState, players: Player[]):
       }
       p.path = smoothPath(zone.map, p.pos, cells);
       p.path.push({ x: npc.pos.x, y: npc.pos.y });
+    }
+  }
+}
+
+/** Advance every player's active objectives off this tick's events and
+ * standing state. Runs after the zone systems, before xpSystem. */
+export function questProgressSystem(state: GameState): void {
+  const bump = (p: Player, id: QuestId, to: number, needed: number) => {
+    const prog = p.quests[id]!;
+    if (to === prog.count) return;
+    prog.count = to;
+    state.events.push({ type: "quest_progress", playerId: p.id, quest: id, count: to, needed });
+  };
+  // Kill credit: every in-zone player with the quest active shares each kill.
+  for (const e of state.events) {
+    if (e.type === "monster_died") {
+      for (const p of allPlayers(state)) {
+        if (p.dead || p.zoneId !== e.zone) continue;
+        for (const id of QUEST_IDS) {
+          const o = QUESTS[id].objective;
+          const prog = p.quests[id];
+          if (!prog || prog.stage !== "active" || o.kind !== "kill") continue;
+          if (o.typeId !== e.typeId) continue;
+          if (o.zone !== undefined && o.zone !== e.zone) continue;
+          bump(p, id, Math.min(o.count, prog.count + 1), o.count);
+        }
+      }
+    } else if (e.type === "npc_talk") {
+      const p = state.players.get(e.playerId);
+      if (!p) continue;
+      for (const id of QUEST_IDS) {
+        const o = QUESTS[id].objective;
+        const prog = p.quests[id];
+        if (!prog || prog.stage !== "active" || o.kind !== "talk") continue;
+        if (o.npc !== e.npcId) continue;
+        bump(p, id, 1, 1);
+      }
+    }
+  }
+  // Reach: a standing check — no event archaeology, just where they are now.
+  for (const p of allPlayers(state)) {
+    if (p.dead) continue;
+    for (const id of QUEST_IDS) {
+      const o = QUESTS[id].objective;
+      const prog = p.quests[id];
+      if (!prog || prog.stage !== "active" || o.kind !== "reach" || prog.count >= 1) continue;
+      if (objectiveMet(p, id)) bump(p, id, 1, 1);
     }
   }
 }

@@ -197,6 +197,7 @@ export type SimEvent =
   | { type: "npc_talk"; playerId: PlayerId; npcId: NpcId }
   | { type: "quest_accepted"; playerId: PlayerId; quest: QuestId }
   | { type: "quest_completed"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_progress"; playerId: PlayerId; quest: QuestId; count: number; needed: number }
   | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }

@@ -51,7 +51,9 @@ import {
   removePortalsOwnedBy,
   restock,
 } from "./systems/town";
-import { applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem } from "./systems/quests";
+import {
+  applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem, questProgressSystem,
+} from "./systems/quests";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -403,6 +405,7 @@ export function step(state: GameState, frame: Frame): void {
     collisionSystem(state, zone, here());
     deathSystem(state, zone, here(), travel);
   }
+  questProgressSystem(state);
   xpSystem(state);
   durabilitySystem(state);
   state.tick++;

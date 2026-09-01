@@ -49,7 +49,29 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     },
     reward: { gold: 120, xp: 100 },
   },
-  // ...remaining seven rows land with the campaign task...
+  find_redfen: {
+    id: "find_redfen", giver: "maren", turnIn: "maren", name: "Into the Redfen",
+    requires: "grave_moss",
+    objective: { kind: "reach", area: "redfen" },
+    dialogue: {
+      offer: ["East of the moors, past the crooked willow, the ground turns to fen. Find it."],
+      progress: ["You'll know the redfen by the smell."],
+      done: ["So you made it back. Good."],
+    },
+    reward: { gold: 80, xp: 90 },
+  },
+  meet_betha: {
+    id: "meet_betha", giver: "betha", turnIn: "betha", name: "Odd Betha",
+    requires: "find_redfen",
+    objective: { kind: "talk", npc: "betha" },
+    dialogue: {
+      offer: ["So. Maren finally sent someone."],
+      progress: ["Well? Speak up."],
+      done: ["Hm. You'll do."],
+    },
+    reward: { gold: 60, xp: 120 },
+  },
+  // ...remaining five rows land with the campaign task...
 } as Record<QuestId, QuestDef>;
 
 export const QUEST_IDS = Object.keys(QUESTS) as QuestId[];

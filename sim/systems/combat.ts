@@ -76,10 +76,14 @@ export function rollDamage(rng: Rng, min: number, max: number): number {
   return rng.int(min, max);
 }
 
+/** Idle monsters this close to a struck ally join the fight (if they can see it). */
+const ALERT_RADIUS = 5;
+
 /**
  * Land player-dealt damage on a monster. Pain provokes: even a hit from beyond
  * the monster's aggro radius (a firebolt from across the room) wakes it up and
- * sends it after its attacker.
+ * sends it after its attacker. Nearby idle monsters that can see the victim
+ * join in; returning ones stay leashed to their walk home.
  */
 export function hitMonster(
   state: GameState,
@@ -93,6 +97,13 @@ export function hitMonster(
   if (m.ai !== "chasing") {
     m.ai = "chasing";
     m.path = [];
+  }
+  for (const other of zone.monsters.values()) {
+    if (other === m || other.ai !== "idle") continue;
+    if (dist(other.pos, m.pos) > ALERT_RADIUS) continue;
+    if (!hasLineOfSight(zone.map, other.pos, m.pos)) continue;
+    other.ai = "chasing";
+    other.path = [];
   }
   state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
 }

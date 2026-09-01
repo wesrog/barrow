@@ -216,14 +216,24 @@ export async function hostDriver(
   return { driver, code: room.code };
 }
 
-/** Joiner: ws.joinGame; sends hello, awaits welcome. */
+/** Joiner: ws.joinGame; sends hello, awaits welcome. `cancelled` is polled
+ * after every await so an effect cleanup (React StrictMode's double-mount, a
+ * component unmounting mid-join) can abandon the attempt: cancelled during the
+ * lazy import, no socket ever opens; cancelled later, the link closes so the
+ * host frees whatever the attempt claimed. A cancelled join resolves null. */
 export async function joinDriver(
   signalUrl: string,
   code: string,
   character?: string,
-): Promise<NetDriver> {
+  cancelled: () => boolean = () => false,
+): Promise<NetDriver | null> {
   const { joinGame } = await import("./ws");
+  if (cancelled()) return null;
   const link = await joinGame(signalUrl, code);
+  if (cancelled()) {
+    link.close();
+    return null;
+  }
   const session = new Session((msg: ClientMsg) => link.send(msg));
 
   const closeCbs: (() => void)[] = [];
@@ -243,6 +253,10 @@ export async function joinDriver(
     });
     link.send({ type: "hello", character } satisfies ClientMsg);
   });
+  if (cancelled()) {
+    link.close();
+    return null;
+  }
 
   return {
     session,

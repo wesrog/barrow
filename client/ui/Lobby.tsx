@@ -103,13 +103,14 @@ export function Lobby({
     }
   };
 
-  const startJoin = async (joinCode: string, as?: CharacterSummary) => {
+  const startJoin = async (joinCode: string, as?: CharacterSummary, cancelled?: () => boolean) => {
     const trimmed = joinCode.trim();
     if (!trimmed) return;
     setError(null);
     setBusy("join");
     try {
-      const driver = await joinDriver(SIGNAL_URL, trimmed, characterRaw(as));
+      const driver = await joinDriver(SIGNAL_URL, trimmed, characterRaw(as), cancelled);
+      if (!driver) return; // cancelled — a fresher attempt owns the lobby now
       onReady(driver, null);
     } catch (e) {
       setBusy(null);
@@ -131,22 +132,31 @@ export function Lobby({
   // Never from a prerendered page: Chrome speculatively loads (and runs!) URLs
   // typed in the omnibox, and a hidden prerender that joins seats a zombie
   // player. Join only once this copy of the page is the one the user is
-  // looking at.
+  // looking at. The cleanup cancels the attempt because StrictMode runs every
+  // effect twice (mount, cleanup, mount): without it the doomed first run
+  // joins too, seating a second copy of the character that nothing drives.
   useEffect(() => {
     const initial = joinCodeFromUrl();
     if (!initial) return;
     const current = listCharacters().find((c) => c.id === currentCharacterId());
     if (!current) return;
+    let cancelled = false;
     const autoJoin = () => {
       setChosen(current);
-      void startJoin(initial, current);
+      void startJoin(initial, current, () => cancelled);
     };
     const doc = document as Document & { prerendering?: boolean };
     if (doc.prerendering) {
       doc.addEventListener("prerenderingchange", autoJoin, { once: true });
-      return () => doc.removeEventListener("prerenderingchange", autoJoin);
+      return () => {
+        cancelled = true;
+        doc.removeEventListener("prerenderingchange", autoJoin);
+      };
     }
     autoJoin();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

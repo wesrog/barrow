@@ -84,8 +84,6 @@ export function createScene(
   mount.appendChild(overlay);
 
   const scene = new THREE.Scene();
-  const dbg = window as unknown as { __scenes: THREE.Scene[] };
-  (dbg.__scenes ??= []).push(scene); // TEMP debug
   // Regions sit under their biome's night sky; the crypt under dead black.
   // Outdoors the sky starts on the spawn region's palette and the per-frame
   // blend (below) corrects to wherever the hero actually stands.

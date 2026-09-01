@@ -1,7 +1,7 @@
 import { createRng } from "../sim/rng";
 import type { GameState, ZoneState } from "../sim/state";
 
-const SNAPSHOT_VERSION = 2;
+const SNAPSHOT_VERSION = 3;
 
 /**
  * JSON string of the entire GameState: Maps as entry arrays, Uint8Array

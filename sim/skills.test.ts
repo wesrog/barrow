@@ -393,6 +393,24 @@ describe("deathblow", () => {
   });
 });
 
+describe("casting stops the approach", () => {
+  test("a ranged cast plants your feet instead of walking into melee", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "firebolt" });
+    const m = spawnAt(state, "skitter", { x: 8.5, y: 1.5 }); // in spell range, far from melee
+    stepSolo(state, { attack: m.id }); // click the enemy: the walk-in begins
+    expect(player(state).attackTarget).toBe(m.id);
+    const posBefore = { ...player(state).pos };
+    stepSolo(state, { cast: { skill: "firebolt", target: m.id } });
+    expect(state.events.some((e) => e.type === "monster_hit")).toBe(true);
+    expect(player(state).attackTarget).toBeNull();
+    expect(player(state).path).toHaveLength(0);
+    expect(player(state).pos).toEqual(posBefore);
+  });
+});
+
 describe("fireball", () => {
   test("explodes at the aimed point, burning everything in the blast", () => {
     const state = createGameOn(1, arena());

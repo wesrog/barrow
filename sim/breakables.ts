@@ -2,6 +2,7 @@ import { isWalkable, type Vec } from "./map";
 import { areaLevelAt, type Rect } from "./surface";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
+import { dropSpot } from "./systems/combat";
 import {
   zoneOf,
   type GameState,
@@ -125,10 +126,7 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
       ? rollDrop(state.rng, "standard", 5 + depthBonus, { guaranteed: true, minRarity: "magic" })
       : rollDrop(state.rng, "trash", 2 + depthBonus);
   if (item) {
-    const pos = {
-      x: target.pos.x + (state.rng.next() - 0.5) * 1.2,
-      y: target.pos.y + (state.rng.next() - 0.5) * 1.2,
-    };
+    const pos = dropSpot(state.rng, zone.map, target.pos, 1.2);
     const id = state.nextId++;
     zone.groundItems.set(id, { id, item, pos });
     state.events.push({
@@ -143,10 +141,7 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
   // Chests always cough up coin; barrels and crates sometimes do.
   if (target.kind === "chest" || state.rng.next() < 0.3) {
     const amount = state.rng.int(3, 8) + Math.floor(depthBonus * state.rng.next() * 2);
-    const pos = {
-      x: target.pos.x + (state.rng.next() - 0.5) * 1.2,
-      y: target.pos.y + (state.rng.next() - 0.5) * 1.2,
-    };
+    const pos = dropSpot(state.rng, zone.map, target.pos, 1.2);
     const id = state.nextId++;
     zone.goldPiles.set(id, { id, amount, pos });
     state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });

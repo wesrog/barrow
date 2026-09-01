@@ -10,9 +10,11 @@ import {
   type EquipSlot,
 } from "../character";
 import { BASES, potionKind } from "../items/bases";
-import { findPath, smoothPath } from "../path";
+import { approachPath } from "./movement";
 
-const PICKUP_RANGE = 1.0;
+// Generous enough to grab loot lying in blocked ground (a tree cell) from the
+// nearest open cell, even when that cell is only diagonally adjacent (~1.42).
+const PICKUP_RANGE = 1.5;
 
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
 export function recomputePlayerStats(state: GameState, p: Player): void {
@@ -196,17 +198,13 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
         state.events.push({ type: "inventory_full", playerId: p.id });
       }
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, target.pos);
+      // No route, or already as close as open ground gets: give up the chase.
+      if (path === null || path.length === 0) {
         p.pickupTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...target.pos });
+      p.path = path;
     }
   }
 }
@@ -261,17 +259,12 @@ export function reclaimSystem(state: GameState, zone: ZoneState, players: Player
       recomputePlayerStats(state, p);
       state.events.push({ type: "corpse_reclaimed", playerId: p.id });
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(corpse.pos.x), y: Math.floor(corpse.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, corpse.pos);
+      if (path === null || path.length === 0) {
         p.reclaimTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...corpse.pos });
+      p.path = path;
     }
   }
 }

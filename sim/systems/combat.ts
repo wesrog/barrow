@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, inCamp, isWalkable, type Vec, type ZoneMap } from "../map";
+import { hasLineOfSight, inCamp, isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
 import {
   zoneOf,
@@ -17,6 +17,20 @@ import { moveAlongPath } from "./movement";
 import { createEquipment, type EquipSlot } from "../character";
 import { recomputePlayerStats } from "./inventory";
 import { worldWaypointPos } from "../surface";
+
+/**
+ * Scatter a drop around `origin`, clamped to walkable ground so loot never
+ * lands inside a tree or wall where it can't be reached (or even clicked).
+ */
+export function dropSpot(rng: Rng, map: ZoneMap, origin: Vec, spread = 1.4): Vec {
+  const pos = {
+    x: origin.x + (rng.next() - 0.5) * spread,
+    y: origin.y + (rng.next() - 0.5) * spread,
+  };
+  if (isWalkable(map, Math.floor(pos.x), Math.floor(pos.y))) return pos;
+  const cell = nearestWalkable(map, pos);
+  return cell ? { x: cell.x + 0.5, y: cell.y + 0.5 } : { ...origin };
+}
 
 export function computeHitChance(attackRating: number, defense: number): number {
   const raw = attackRating / (attackRating + defense);
@@ -359,10 +373,7 @@ export function deathSystem(
       m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" } : {},
     );
     if (item) {
-      const pos = {
-        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
-        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
-      };
+      const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;
       zone.groundItems.set(id, { id, item, pos });
       state.events.push({
@@ -377,10 +388,7 @@ export function deathSystem(
     // Gold: a separate 35% roll, scaling with the monster's level
     if (state.rng.next() < 0.35) {
       const amount = state.rng.int(2, 5) + Math.floor(m.mlvl * state.rng.next() * 2);
-      const pos = {
-        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
-        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
-      };
+      const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;
       zone.goldPiles.set(id, { id, amount, pos });
       state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });

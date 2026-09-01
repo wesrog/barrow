@@ -55,6 +55,10 @@ function spendMana(p: Player, id: SkillId): boolean {
   if (p.mana < cost) return false;
   p.mana -= cost;
   p.swingCooldown = SKILLS[id].castTicks;
+  // Casting plants your feet: without this, a queued approach (click-to-attack)
+  // keeps dragging a caster into melee after the spell already fired from afar.
+  p.path = [];
+  p.attackTarget = null;
   return true;
 }
 

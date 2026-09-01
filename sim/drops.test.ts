@@ -76,6 +76,23 @@ describe("monster drops", () => {
   });
 });
 
+describe("potion drops", () => {
+  test("trash and standard classes drop mana potions, less often than healing", () => {
+    for (const tc of ["trash", "standard"]) {
+      const rng = createRng(7);
+      let heal = 0;
+      let mana = 0;
+      for (let i = 0; i < 2000; i++) {
+        const item = rollDrop(rng, tc, 5, { guaranteed: true });
+        if (item?.baseId === "minor_potion") heal++;
+        if (item?.baseId === "minor_mana_potion") mana++;
+      }
+      expect(mana).toBeGreaterThan(0);
+      expect(heal).toBeGreaterThan(mana);
+    }
+  });
+});
+
 describe("high-level content", () => {
   test("low monster levels never drop bases above their level", () => {
     const rng = createRng(1);

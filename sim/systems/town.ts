@@ -13,6 +13,7 @@ import {
 import { placeItem, removeEntry } from "../character";
 import { repairAll, stowPotion } from "./inventory";
 import { findPath, smoothPath } from "../path";
+import { approachPath } from "./movement";
 import { isWalkable } from "../map";
 import { inRect, worldCampRect } from "../surface";
 
@@ -343,17 +344,12 @@ export function portalSystem(
       travel(state, p, link.zone);
       p.pos = { ...link.pos };
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, target.pos);
+      if (path === null || path.length === 0) {
         p.portalTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...target.pos });
+      p.path = path;
     }
   }
 }

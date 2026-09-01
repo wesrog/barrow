@@ -1,5 +1,43 @@
 import { describe, expect, test } from "bun:test";
-import { mapFromStrings, isWalkable, hasLineOfSight, inCamp } from "./map";
+import { mapFromStrings, isWalkable, hasLineOfSight, inCamp, nearestWalkable } from "./map";
+
+describe("nearestWalkable", () => {
+  test("returns the cell itself when it is already walkable", () => {
+    const map = mapFromStrings(["@..", "...", "..."]);
+    expect(nearestWalkable(map, { x: 1, y: 1 })).toEqual({ x: 1, y: 1 });
+  });
+
+  test("returns the closest open cell when the target is a wall", () => {
+    const map = mapFromStrings([
+      "@..",
+      ".##",
+      ".##",
+    ]);
+    // Cell (2,2) is walled; nearest open cells are along column 0 / row 0.
+    const cell = nearestWalkable(map, { x: 2, y: 2 })!;
+    expect(isWalkable(map, cell.x, cell.y)).toBe(true);
+  });
+
+  test("prefers a strictly nearer open cell", () => {
+    const map = mapFromStrings([
+      "###",
+      "#.#",
+      "###",
+      "###",
+    ]);
+    expect(nearestWalkable(map, { x: 1, y: 2 })).toEqual({ x: 1, y: 1 });
+  });
+
+  test("returns null when nothing opens within the search radius", () => {
+    const map = mapFromStrings(["###", "###", "###"]);
+    expect(nearestWalkable(map, { x: 1, y: 1 })).toBeNull();
+  });
+
+  test("clamps out-of-bounds targets into the map", () => {
+    const map = mapFromStrings(["@..", "...", "..."]);
+    expect(nearestWalkable(map, { x: 9, y: 1 })).toEqual({ x: 2, y: 1 });
+  });
+});
 
 describe("mapFromStrings", () => {
   test("parses walkable floor, walls, and spawn point", () => {

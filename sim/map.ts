@@ -67,3 +67,33 @@ export function isWalkable(map: ZoneMap, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
   return map.cells[y * map.width + x] === 1;
 }
+
+/**
+ * The closest walkable cell to `at` (cell coordinates; fractions are floored,
+ * out-of-bounds points clamped in), or null when nothing opens within `maxR`
+ * rings. Deterministic: rings scan in a fixed order, nearest by euclidean
+ * distance wins.
+ */
+export function nearestWalkable(map: ZoneMap, at: Vec, maxR = 8): Vec | null {
+  const cx = Math.min(map.width - 1, Math.max(0, Math.floor(at.x)));
+  const cy = Math.min(map.height - 1, Math.max(0, Math.floor(at.y)));
+  for (let r = 0; r <= maxR; r++) {
+    let best: Vec | null = null;
+    let bestD = Infinity;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring edge only
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!isWalkable(map, x, y)) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) {
+          bestD = d;
+          best = { x, y };
+        }
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}

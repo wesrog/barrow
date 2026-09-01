@@ -5,9 +5,12 @@
 import { AREAS } from "./areas";
 import { spawnBreakables } from "./breakables";
 import type { ZoneMap } from "./map";
+import { nearestWalkable } from "./map";
 import { spawnMonster } from "./monsters";
 import { floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
 import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
+import { surfaceLayout } from "./surface";
+import { NPCS, NPC_IDS } from "./npcs";
 import { cryptZone, MARKER_TYPES } from "./zone";
 
 export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
@@ -21,6 +24,7 @@ export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState 
     corpses: [],
     portals: new Map(),
     playerCorpses: new Map(),
+    npcs: new Map(),
   };
   state.zones.set(id, zone);
   return zone;
@@ -52,6 +56,16 @@ export function ensureSurface(state: GameState): ZoneState {
       bounds: areaRect(id),
       avoid: worldAreaSpawn(id),
     });
+  }
+  // NPCs: fixed spots from the registry, nudged onto this seed's walkable ground.
+  const offsets = surfaceLayout().offsets;
+  for (const npcId of NPC_IDS) {
+    const def = NPCS[npcId];
+    const o = offsets[def.area];
+    const want = { x: def.pos.x + o.x, y: def.pos.y + o.y };
+    const spot = nearestWalkable(zone.map, want) ?? want;
+    const id = state.nextId++;
+    zone.npcs.set(id, { id, npcId, pos: spot });
   }
   return zone;
 }

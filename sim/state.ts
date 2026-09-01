@@ -6,6 +6,7 @@ import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
+import type { Npc } from "./npcs";
 
 /** The whole open-air world is one zone; the barrow's floors are the rest. */
 export type ZoneId = "surface" | `floor:${number}`;
@@ -28,6 +29,7 @@ export interface ZoneState {
   corpses: Corpse[];
   portals: Map<number, Portal>;
   playerCorpses: Map<number, PlayerCorpse>;
+  npcs: Map<number, Npc>;
 }
 
 /** A dead player's stripped gear, waiting to be walked back to and reclaimed. */

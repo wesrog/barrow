@@ -67,3 +67,26 @@ export function isWalkable(map: ZoneMap, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
   return map.cells[y * map.width + x] === 1;
 }
+
+/** Find the nearest walkable cell to the target position, or null if none exists nearby. */
+export function nearestWalkable(map: ZoneMap, target: Vec): Vec | null {
+  const cx = Math.floor(target.x);
+  const cy = Math.floor(target.y);
+
+  // Check center first
+  if (isWalkable(map, cx, cy)) return { x: cx + 0.5, y: cy + 0.5 };
+
+  // Expanding square search up to distance 3
+  for (let dist = 1; dist <= 3; dist++) {
+    for (let dx = -dist; dx <= dist; dx++) {
+      for (let dy = -dist; dy <= dist; dy++) {
+        // Only check cells on the perimeter of this square
+        if (Math.abs(dx) !== dist && Math.abs(dy) !== dist) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (isWalkable(map, x, y)) return { x: x + 0.5, y: y + 0.5 };
+      }
+    }
+  }
+  return null;
+}

@@ -142,6 +142,18 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
+/** Object3D.clone shares materials; give each held weapon its own so
+ * per-instance hit flashes and tints don't leak across enemies. */
+function cloneWeapon(model: THREE.Object3D): THREE.Object3D {
+  const clone = model.clone(true);
+  clone.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) {
+      obj.material = obj.material.clone();
+    }
+  });
+  return clone;
+}
+
 /**
  * Armor meshes sized for the KayKit skeleton, attached straight to bones.
  * The chibi head is huge — ~1.08 wide, top at y+0.95 above the head bone —
@@ -260,12 +272,11 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const model = assets.weapons[look.model].clone(true);
+      const model = cloneWeapon(assets.weapons[look.model]);
       const glow = RARITY_GLOW[eq.weapon.rarity];
       if (glow !== undefined) {
         model.traverse((obj) => {
           if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-            obj.material = obj.material.clone();
             obj.material.emissive.setHex(glow);
             obj.material.emissiveIntensity = 0.5;
           }
@@ -370,7 +381,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   const inst = instantiate(assets.characters[look.model]);
   const rig = new AnimRig(inst, look.idle, look.walk, 3);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", assets.weapons[look.weapon].clone(true));
+  if (look.weapon) rig.attach("r", cloneWeapon(assets.weapons[look.weapon]));
   if (look.tint !== undefined) {
     rig.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {

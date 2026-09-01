@@ -8,6 +8,7 @@ import {
   type SimEvent,
 } from "../../sim/state";
 import { MONSTER_TYPES } from "../../sim/monsters";
+import { potionKind } from "../../sim/items/bases";
 import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
@@ -34,7 +35,7 @@ export type PickResult =
   | { kind: "corpse"; id: number }
   | { kind: "vendor" }
   | { kind: "healer" }
-  | { kind: "waypoint" }
+  | { kind: "waypoint"; pos: Vec }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -1072,15 +1073,19 @@ export function createScene(
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
-          const isPotion = gi.item.baseId === "minor_potion";
+          const potion = potionKind(gi.item.baseId);
+          const POTION_TINT = {
+            health: { color: 0xc93a3a, emissive: 0xa02828 },
+            mana: { color: 0x3a55c9, emissive: 0x2838a0 },
+          } as const;
           const mesh = new THREE.Mesh(
-            isPotion
+            potion
               ? new THREE.IcosahedronGeometry(0.11, 0)
               : new THREE.OctahedronGeometry(0.14, 0),
             new THREE.MeshStandardMaterial({
-              color: isPotion ? 0xc93a3a : colors.hex,
-              emissive: isPotion ? 0xa02828 : colors.hex,
-              emissiveIntensity: isPotion ? 0.8 : 0.55,
+              color: potion ? POTION_TINT[potion].color : colors.hex,
+              emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
+              emissiveIntensity: potion ? 0.8 : 0.55,
               roughness: 0.4,
               flatShading: true,
             }),
@@ -1259,56 +1264,6 @@ export function createScene(
           if (v.group === obj) return { kind: "corpse", id };
         }
       }
-      const rect = renderer.domElement.getBoundingClientRect();
-      const cx = clientX - rect.left;
-      const cy = clientY - rect.top;
-      // Forgiving fallback: nearest monster within a generous screen radius.
-      {
-        let bestId: number | null = null;
-        let bestD = 30; // px
-        for (const [id] of monsterRigs) {
-          const monster = zone.monsters.get(id);
-          if (!monster) continue;
-          const at = worldToScreen(monster.pos, 0.55);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            bestId = id;
-          }
-        }
-        if (bestId !== null) return { kind: "monster", id: bestId };
-      }
-      // Portals, bodies, and dropped loot lie flat, so their silhouettes are
-      // thin — allow the same near-miss slack the monsters get.
-      {
-        let best: PickResult = null;
-        let bestD = 22; // px
-        for (const portal of zone.portals.values()) {
-          const at = worldToScreen(portal.pos, 0.3);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            best = { kind: "portal", id: portal.id };
-          }
-        }
-        for (const pc of zone.playerCorpses.values()) {
-          const at = worldToScreen(pc.pos, 0.2);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            best = { kind: "corpse", id: pc.id };
-          }
-        }
-        for (const gi of zone.groundItems.values()) {
-          const at = worldToScreen(gi.pos, 0.2);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            best = { kind: "item", id: gi.id };
-          }
-        }
-        if (best) return best;
-      }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
       const itemHits = raycaster.intersectObjects(itemMeshes, false);
@@ -1335,11 +1290,50 @@ export function createScene(
           if (g === obj) return { kind: "breakable", id };
         }
       }
+      // Nothing hit dead-on. Forgiving fallback: one shared pool of nearby
+      // interactables, nearest normalized screen distance wins — so a monster
+      // never steals a click that lands closer to loot, a portal, or a pad.
+      {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const cx = clientX - rect.left;
+        const cy = clientY - rect.top;
+        let best: PickResult = null;
+        let bestScore = 1;
+        const consider = (result: PickResult, pos: Vec, height: number, radius: number) => {
+          const at = worldToScreen(pos, height);
+          const score = Math.hypot(at.x - cx, at.y - cy) / radius;
+          if (score < bestScore) {
+            bestScore = score;
+            best = result;
+          }
+        };
+        for (const [id] of monsterRigs) {
+          const monster = zone.monsters.get(id);
+          if (monster) consider({ kind: "monster", id }, monster.pos, 0.55, 30);
+        }
+        for (const portal of zone.portals.values()) {
+          consider({ kind: "portal", id: portal.id }, portal.pos, 0.3, 26);
+        }
+        for (const pc of zone.playerCorpses.values()) {
+          consider({ kind: "corpse", id: pc.id }, pc.pos, 0.2, 24);
+        }
+        for (const gi of zone.groundItems.values()) {
+          consider({ kind: "item", id: gi.id }, gi.pos, 0.2, 24);
+        }
+        for (const marker of zone.map.markers) {
+          if (marker.ch !== "W") continue;
+          const pos = { x: marker.x, y: marker.y };
+          consider({ kind: "waypoint", pos }, pos, 0.1, 26);
+        }
+        if (best) return best;
+      }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
       // The waypoint ring lies flat on the ground — claim clicks landing on it.
-      for (const marker of map.markers) {
+      for (const marker of zone.map.markers) {
         if (marker.ch !== "W") continue;
-        if (Math.hypot(hit.x - marker.x, hit.z - marker.y) < 0.9) return { kind: "waypoint" };
+        if (Math.hypot(hit.x - marker.x, hit.z - marker.y) < 1.2) {
+          return { kind: "waypoint", pos: { x: marker.x, y: marker.y } };
+        }
       }
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
     },
@@ -1396,6 +1390,14 @@ export function createScene(
           if (d < bestD) {
             bestD = d;
             tip = ind;
+          }
+        }
+        for (const pile of zoneOf(state, localPlayer(state)).goldPiles.values()) {
+          const at = worldToScreen(pile.pos, 0.25);
+          const d = Math.hypot(at.x - px, at.y - py);
+          if (d < bestD) {
+            bestD = d;
+            tip = { name: `${pile.amount} gold`, role: "walk over to pick up" };
           }
         }
       }

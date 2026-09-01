@@ -1,8 +1,8 @@
 import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { INV_H, INV_W, slotForItem, type EquipSlot } from "../../sim/character";
-import { BASES } from "../../sim/items/bases";
+import { INV_H, INV_W, computeStats, slotForItem, type EquipSlot } from "../../sim/character";
+import { BASES, potionKind } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import { equipDelta, type StatDelta } from "./itemCompare";
 import type { GameState } from "../../sim/state";
@@ -19,6 +19,18 @@ export const RARITY_CSS: Record<string, string> = {
   rare: "#f0e68c",
   unique: "#d9a05c",
 };
+
+// Potion icons tint by what they restore, not rarity.
+const POTION_CSS: Record<"health" | "mana", string> = {
+  health: "#d05c5c",
+  mana: "#6b8fe8",
+};
+
+/** Icon tint: potions by kind, everything else by rarity. */
+function iconColor(item: Item): string {
+  const kind = potionKind(item.baseId);
+  return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
+}
 
 const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
   dmgMin: (v) => `+${v} to minimum damage`,
@@ -147,6 +159,7 @@ export function InventoryPanel({
             ["attack rating", `${p.attackRating}`],
             ["defense", `${p.defense}`],
             ["magic find", `${p.magicFind}%`],
+            ["run speed", `+${computeStats(p.equipment, p.level, p.klass).moveSpeedPct}%`],
             ["life", `${Math.ceil(p.life)}/${p.maxLife}`],
             ["mana", `${Math.floor(p.mana)}/${p.maxMana}`],
           ] as const
@@ -180,7 +193,7 @@ export function InventoryPanel({
               title={item ? "click to unequip" : undefined}
             >
               <span style={{ color: "#6b6455" }}>{label} </span>
-              {item && <ItemIcon baseId={item.baseId} color={RARITY_CSS[item.rarity]!} size={14} />}
+              {item && <ItemIcon baseId={item.baseId} color={iconColor(item)} size={14} />}
               <span
                 style={{
                   color: item ? RARITY_CSS[item.rarity] : "#494339",
@@ -246,7 +259,7 @@ export function InventoryPanel({
             >
               <ItemIcon
                 baseId={e.item.baseId}
-                color={color}
+                color={iconColor(e.item)}
                 size={Math.min(base.w, base.h) * CELL - 8}
               />
             </div>

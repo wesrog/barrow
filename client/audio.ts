@@ -28,12 +28,37 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 const lastPlayed = new Map<SoundName, number>();
 
+const MASTER_GAIN = 0.4;
+const MUTE_KEY = "barrow-muted";
+
+let muted = false;
+try {
+  muted = localStorage.getItem(MUTE_KEY) === "1";
+} catch {
+  // no storage (tests) — sound stays on
+}
+
+export function isMuted(): boolean {
+  return muted;
+}
+
+export function setMuted(m: boolean): void {
+  muted = m;
+  try {
+    if (m) localStorage.setItem(MUTE_KEY, "1");
+    else localStorage.removeItem(MUTE_KEY);
+  } catch {
+    // no storage — the choice just doesn't persist
+  }
+  if (master) master.gain.value = m ? 0 : MASTER_GAIN;
+}
+
 function ensure(): AudioContext | null {
   if (typeof AudioContext === "undefined") return null;
   if (!ctx) {
     ctx = new AudioContext();
     master = ctx.createGain();
-    master.gain.value = 0.4;
+    master.gain.value = muted ? 0 : MASTER_GAIN;
     master.connect(ctx.destination);
   }
   return ctx;
@@ -153,8 +178,13 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     noise(c, { dur: 0.45, gain: 0.4, filterFrom: 1400, filterTo: 80, filterType: "lowpass" });
   },
   warcry: (c) => {
-    tone(c, { type: "sawtooth", from: 90, to: 180, dur: 0.35, gain: 0.3 });
-    tone(c, { type: "sawtooth", from: 92, to: 178, dur: 0.35, gain: 0.2 });
+    // breath transient — the "H" of the shout
+    noise(c, { dur: 0.07, gain: 0.16, filterFrom: 1400, filterTo: 2800 });
+    // rising call an octave up from the old version, with a fifth stacked on top
+    tone(c, { type: "square", from: 165, to: 290, dur: 0.3, gain: 0.2 });
+    tone(c, { type: "square", from: 248, to: 435, dur: 0.3, gain: 0.1, at: 0.02 });
+    // low sine thump for chest weight (a saw down here reads as flatulence)
+    tone(c, { type: "sine", from: 170, to: 85, dur: 0.16, gain: 0.32 });
   },
   leap: (c) => {
     noise(c, { dur: 0.3, gain: 0.2, filterFrom: 500, filterTo: 2400 });

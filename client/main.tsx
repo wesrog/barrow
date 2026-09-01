@@ -20,6 +20,7 @@ import { ShopPanel } from "./ui/ShopPanel";
 import { HealerPanel } from "./ui/HealerPanel";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { SkillPanel } from "./ui/SkillPanel";
+import { SystemMenu } from "./ui/SystemMenu";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
 import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
@@ -55,6 +56,13 @@ function Game({
   const [shopOpen, setShopOpen] = useState(false);
   const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The keydown handler is registered once, so it reads open/closed through
+  // refs that re-sync on every render.
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = menuOpen;
+  const panelsOpenRef = useRef(false);
+  panelsOpenRef.current = invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -137,10 +145,22 @@ function Game({
     let lastPointer: { x: number; y: number } | null = null;
 
     let shiftDown = false;
-    const aimFromPointer = (allowAttack: boolean) => {
+    // What the press started as. A held button re-aims every tick, and without
+    // this a click on a portal/waypoint/item got downgraded to a plain walk one
+    // tick later (the camera moves, the re-pick lands on ground) — cancelling
+    // the target the sim had just started walking toward.
+    let holdMode: "move" | "engage" = "move";
+    const aimFromPointer = (initial: boolean) => {
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
       if (!picked) return;
+      if (initial) holdMode = picked.kind === "ground" ? "move" : "engage";
+      // While held, each re-aim stays in its lane: a walk-drag doesn't snag on
+      // passing targets, and an engaged target isn't downgraded to a walk.
+      if (!initial && !shiftDown) {
+        if (holdMode === "move" && picked.kind !== "ground") return;
+        if (holdMode === "engage" && picked.kind === "ground") return;
+      }
       if (shiftDown) {
         // Stand ground and swing toward the cursor, D2-style.
         const at =
@@ -155,33 +175,36 @@ function Game({
         }
         return;
       }
-      if (picked.kind === "monster" && allowAttack) {
+      if (picked.kind === "monster") {
         pending.attack = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "item" && allowAttack) {
+      } else if (picked.kind === "item") {
         pending.pickup = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "breakable" && allowAttack) {
+      } else if (picked.kind === "breakable") {
         pending.smash = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "vendor" && allowAttack) {
+      } else if (picked.kind === "vendor") {
         pending.talkVendor = true;
         delete pending.moveTo;
-      } else if (picked.kind === "healer" && allowAttack) {
+      } else if (picked.kind === "healer") {
         pending.talkHealer = true;
         delete pending.moveTo;
-      } else if (picked.kind === "portal" && allowAttack) {
+      } else if (picked.kind === "portal") {
         pending.usePortal = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "corpse" && allowAttack) {
+      } else if (picked.kind === "corpse") {
         pending.reclaim = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "waypoint" && allowAttack) {
-        // Near the ring the panel opens; from afar the click walks you to it.
+      } else if (picked.kind === "waypoint") {
+        // Near the clicked ring the panel opens; from afar the click walks you
+        // to it — that ring, not whichever waypoint happens to be listed first.
         const me = localPlayer(game);
-        const w = zoneOf(game, me).map.markers.find((m) => m.ch === "W");
-        if (w && Math.hypot(me.pos.x - w.x, me.pos.y - w.y) <= 2) setWaypointsOpen(true);
-        else if (w) pending.moveTo = { x: w.x, y: w.y };
+        if (Math.hypot(me.pos.x - picked.pos.x, me.pos.y - picked.pos.y) <= 2) {
+          setWaypointsOpen(true);
+        } else {
+          pending.moveTo = { ...picked.pos };
+        }
         delete pending.attack;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
@@ -231,10 +254,15 @@ function Game({
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setInvOpen(false);
-        setSkillsOpen(false);
-        setShopOpen(false);
-        setHealerOpen(false);
+        // Layered like D2: close the menu, else close panels, else open the menu.
+        if (menuOpenRef.current) setMenuOpen(false);
+        else if (panelsOpenRef.current) {
+          setInvOpen(false);
+          setSkillsOpen(false);
+          setShopOpen(false);
+          setHealerOpen(false);
+          setWaypointsOpen(false);
+        } else setMenuOpen(true);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
@@ -475,7 +503,7 @@ function Game({
       if (gatherInput) {
         // Holding the button re-aims every tick; the sim clears its target
         // after each swing, so this re-send is what makes hold = auto-attack.
-        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(true);
+        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(false);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
       }
@@ -741,6 +769,15 @@ function Game({
             onClose={() => setInvOpen(false)}
           />
         )}
+      </Reveal>
+      <Reveal open={menuOpen}>
+        <SystemMenu
+          onResume={() => setMenuOpen(false)}
+          onLeave={() => {
+            // beforeunload autosaves; the reload lands back in the lobby.
+            window.location.reload();
+          }}
+        />
       </Reveal>
     </div>
   );

@@ -21,6 +21,8 @@ import { HealerPanel } from "./ui/HealerPanel";
 import { DialoguePanel } from "./ui/DialoguePanel";
 import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
+import { QuestTracker } from "./ui/QuestTracker";
+import { QUESTS } from "../sim/quests";
 import { SkillPanel } from "./ui/SkillPanel";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
 import { WaypointPanel } from "./ui/WaypointPanel";
@@ -427,6 +429,16 @@ function Game({
               setDialogueNpc(e.npcId);
               play("potion"); // any soft cue; a dedicated "talk" sound is optional
               break;
+            case "quest_accepted":
+              pushToast(`quest taken: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              break;
+            case "quest_completed":
+              scene.addDamageNumber(localPlayer(game).pos, "quest complete!", "#f0c96a");
+              pushToast(`quest complete: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              save(); // a finished quest survives even an immediate crash
+              break;
             case "inventory_full":
               scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
               play("drop");
@@ -651,6 +663,7 @@ function Game({
         onExpire={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))}
       />
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
+      {gameRef.current && <QuestTracker game={gameRef.current} />}
       {gameRef.current && <ZoneIntro intro={intro} />}
       {gameRef.current && <PartyStrip game={gameRef.current} />}
       {gameRef.current && (

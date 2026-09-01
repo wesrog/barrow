@@ -382,6 +382,13 @@ function Game({
               setHealerOpen(false);
               if (e.playerId === localId()) {
                 setWaypointsOpen(false);
+                // Every `traveled` is a teleport — stairs, portals, waypoints,
+                // a death respawn — so veil the jump here rather than leaning on
+                // the scene rebuild below: one stitched surface means a waypoint
+                // hop keeps the same map and would otherwise cut with no fade.
+                // A stairs descent hits both, in the same frame, so it still
+                // reads as a single fade.
+                fadeThrough();
                 // The big "entering a new land" card, D2-style.
                 const title = locationTitle(e.to, localPlayer(game).pos);
                 const sub = e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`;

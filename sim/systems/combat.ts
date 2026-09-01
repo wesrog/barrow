@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, inCamp, isWalkable, type Vec, type ZoneMap } from "../map";
+import { hasLineOfSight, inCamp, isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
 import {
   zoneOf,
@@ -68,6 +68,15 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
 
 export function rollDamage(rng: Rng, min: number, max: number): number {
   return rng.int(min, max);
+}
+
+/** A scattered ground position near `pos`, nudged onto walkable floor. */
+export function dropSpot(rng: Rng, map: ZoneMap, pos: Vec): Vec {
+  const scattered = {
+    x: pos.x + (rng.next() - 0.5) * 1.4,
+    y: pos.y + (rng.next() - 0.5) * 1.4,
+  };
+  return nearestWalkable(map, scattered) ?? scattered;
 }
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -359,10 +368,7 @@ export function deathSystem(
       m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" } : {},
     );
     if (item) {
-      const pos = {
-        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
-        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
-      };
+      const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;
       zone.groundItems.set(id, { id, item, pos });
       state.events.push({

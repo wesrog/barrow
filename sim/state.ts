@@ -7,7 +7,7 @@ import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
 import type { Npc, NpcId } from "./npcs";
-import type { QuestLog } from "./quests";
+import type { QuestId, QuestLog } from "./quests";
 
 /** The whole open-air world is one zone; the barrow's floors are the rest. */
 export type ZoneId = "surface" | `floor:${number}`;
@@ -195,6 +195,8 @@ export type SimEvent =
   | { type: "item_broke"; playerId: PlayerId; name: string }
   | { type: "repaired"; playerId: PlayerId; cost: number }
   | { type: "npc_talk"; playerId: PlayerId; npcId: NpcId }
+  | { type: "quest_accepted"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_completed"; playerId: PlayerId; quest: QuestId }
   | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }
@@ -268,6 +270,10 @@ export interface PlayerInput {
   reclaim?: number;
   /** NPC entity id to walk to and talk with. */
   talkNpc?: number;
+  /** Accept this quest from its giver (must be in range and offered). */
+  acceptQuest?: QuestId;
+  /** Turn in this quest at its turn-in npc (must be in range and objective met). */
+  turnInQuest?: QuestId;
   /** Buy the shop entry at this index (town only). */
   buy?: number;
   /** Sell this inventory entry to the vendor (town only). */

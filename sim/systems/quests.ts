@@ -1,8 +1,77 @@
 import { findPath, smoothPath } from "../path";
 import type { GameState, Player, PlayerInput, ZoneState } from "../state";
+import type { Npc, NpcId } from "../npcs";
+import { QUESTS, questOffered, questReadyToTurnIn, type QuestDef, type QuestId } from "../quests";
+import { grantXp } from "./xp";
+import { rollItem } from "../items/generate";
+import { placeItem, removeEntry } from "../character";
+import { dropSpot } from "./combat";
 
 /** How close you must stand before an NPC will talk. */
 export const NPC_TALK_RANGE = 1.4;
+
+/** The npc entity for `npcId` within talk range of p, in p's zone — or null. */
+function npcInRange(state: GameState, p: Player, npcId: NpcId): Npc | null {
+  const zone = state.zones.get(p.zoneId);
+  if (!zone) return null;
+  for (const npc of zone.npcs.values()) {
+    if (npc.npcId !== npcId) continue;
+    if (Math.hypot(p.pos.x - npc.pos.x, p.pos.y - npc.pos.y) <= NPC_TALK_RANGE) return npc;
+  }
+  return null;
+}
+
+/** Accept the offered quest from its giver, if in range and the chain allows it. */
+export function applyAcceptQuestInput(state: GameState, p: Player, input: PlayerInput): void {
+  const id = input.acceptQuest;
+  if (!id || !(id in QUESTS)) return;
+  const q = QUESTS[id];
+  if (questOffered(p, q.giver) !== id) return;
+  if (!npcInRange(state, p, q.giver)) return;
+  // Introducing yourself to the giver IS the errand — met on the spot.
+  const count = q.objective.kind === "talk" && q.objective.npc === q.giver ? 1 : 0;
+  p.quests[id] = { stage: "active", count };
+  state.events.push({ type: "quest_accepted", playerId: p.id, quest: id });
+}
+
+/** Pay out a quest's (or shop's) reward: gold, an item (pack, or the ground if full), and xp. */
+export function deliverQuestReward(
+  state: GameState,
+  p: Player,
+  reward: QuestDef["reward"],
+): void {
+  if (reward.gold) p.gold += reward.gold;
+  if (reward.item) {
+    const item = rollItem(state.rng, reward.item.baseId, Math.max(1, p.level), reward.item.rarity);
+    if (!placeItem(p.inventory, state.nextId++, item)) {
+      const pos = dropSpot(state.rng, state.zones.get(p.zoneId)!.map, p.pos);
+      const gid = state.nextId++;
+      state.zones.get(p.zoneId)!.groundItems.set(gid, { id: gid, item, pos });
+      state.events.push({ type: "item_dropped", id: gid, name: item.name, rarity: item.rarity, pos, zone: p.zoneId });
+    }
+  }
+  if (reward.xp) grantXp(state, p, reward.xp);
+}
+
+/** Turn in a completed quest at its turn-in npc: hand over collect goods, pay the reward. */
+export function applyTurnInQuestInput(state: GameState, p: Player, input: PlayerInput): void {
+  const id = input.turnInQuest;
+  if (!id || !(id in QUESTS)) return;
+  const q = QUESTS[id];
+  if (questReadyToTurnIn(p, q.turnIn) !== id) return;
+  if (!npcInRange(state, p, q.turnIn)) return;
+  if (q.objective.kind === "collect") {
+    // Hand the goods over: remove exactly `count` matching entries.
+    let left = q.objective.count;
+    for (const e of [...p.inventory.entries]) {
+      if (left === 0) break;
+      if (e.item.baseId === q.objective.itemBaseId) { removeEntry(p.inventory, e.id); left--; }
+    }
+  }
+  p.quests[id] = { stage: "done", count: p.quests[id]!.count };
+  deliverQuestReward(state, p, q.reward);
+  state.events.push({ type: "quest_completed", playerId: p.id, quest: id });
+}
 
 /** Click an NPC: start walking over for a word. */
 export function applyTalkNpcInput(state: GameState, p: Player, input: PlayerInput): void {

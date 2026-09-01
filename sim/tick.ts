@@ -51,7 +51,7 @@ import {
   removePortalsOwnedBy,
   restock,
 } from "./systems/town";
-import { applyTalkNpcInput, npcSystem } from "./systems/quests";
+import { applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem } from "./systems/quests";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -368,6 +368,8 @@ export function step(state: GameState, frame: Frame): void {
     applyDrinkInput(state, p, input);
     applySpendSkillInput(state, p, input);
     applyTalkNpcInput(state, p, input);
+    applyAcceptQuestInput(state, p, input);
+    applyTurnInQuestInput(state, p, input);
     applyShopInput(state, p, input);
     applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);

@@ -28,4 +28,23 @@ describe("npcs", () => {
     const b = getZone(createGame(7), "surface");
     expect([...a.npcs.values()]).toEqual([...b.npcs.values()]);
   });
+
+  test("npc cells are carved walkable across a seed sweep (softlock guard)", () => {
+    for (let seed = 0; seed < 300; seed++) {
+      const surface = getZone(createGame(seed), "surface");
+      for (const npc of surface.npcs.values()) {
+        const walkable = isWalkable(surface.map, Math.floor(npc.pos.x), Math.floor(npc.pos.y));
+        expect(walkable).toBe(true);
+      }
+    }
+  });
+
+  test("seeds 136 and 209 (previously stranded Betha with no walkable cell) are fixed", () => {
+    for (const seed of [136, 209]) {
+      const surface = getZone(createGame(seed), "surface");
+      for (const npc of surface.npcs.values()) {
+        expect(isWalkable(surface.map, Math.floor(npc.pos.x), Math.floor(npc.pos.y))).toBe(true);
+      }
+    }
+  });
 });

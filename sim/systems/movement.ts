@@ -35,6 +35,7 @@ export function applyMoveInput(state: GameState, p: Player, input: PlayerInput):
   p.npcTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = path;
 }
 

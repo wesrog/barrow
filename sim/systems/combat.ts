@@ -120,6 +120,7 @@ export function applyAttackInput(state: GameState, p: Player, input: PlayerInput
     p.smashTarget = null;
     p.portalTarget = null;
     p.reclaimTarget = null;
+    p.castTarget = null;
     p.path = [];
   }
 }
@@ -132,6 +133,7 @@ export function applySwingInPlaceInput(state: GameState, p: Player, input: Playe
   p.pickupTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
   state.events.push({
@@ -447,6 +449,7 @@ export function deathSystem(
     p.npcTarget = null;
     p.portalTarget = null;
     p.reclaimTarget = null;
+    p.castTarget = null;
 
     // Strip gear onto a corpse here, merging in any corpse this player already
     // left behind elsewhere (a corpse run that ends in another death).

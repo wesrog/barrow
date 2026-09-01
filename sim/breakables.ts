@@ -71,6 +71,7 @@ export function applySmashInput(state: GameState, p: Player, input: PlayerInput)
   p.pickupTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 
@@ -105,13 +106,18 @@ export function breakSystem(state: GameState, zone: ZoneState, players: Player[]
 }
 
 function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable): void {
-  zone.breakables.delete(target.id);
   state.events.push({
     type: "player_swing",
     playerId: p.id,
     to: { ...target.pos },
     zone: zone.id,
   });
+  breakProp(state, zone, target);
+}
+
+/** Pop a prop and spill its loot — shared by the melee smash and ranged casts. */
+export function breakProp(state: GameState, zone: ZoneState, target: Breakable): void {
+  zone.breakables.delete(target.id);
   state.events.push({
     type: "breakable_broken",
     id: target.id,

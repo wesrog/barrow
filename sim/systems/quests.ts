@@ -104,6 +104,7 @@ export function applyTalkNpcInput(state: GameState, p: Player, input: PlayerInpu
   p.smashTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 

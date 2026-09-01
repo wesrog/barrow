@@ -154,6 +154,7 @@ export function applyPickupInput(state: GameState, p: Player, input: PlayerInput
   p.smashTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 
@@ -219,6 +220,7 @@ export function applyReclaimInput(state: GameState, p: Player, input: PlayerInpu
   p.smashTarget = null;
   p.portalTarget = null;
   p.npcTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 

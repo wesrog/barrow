@@ -32,7 +32,13 @@ import {
   pickupSystem,
   reclaimSystem,
 } from "./systems/inventory";
-import { applyCastInput, applySpendSkillInput, leapSystem, manaRegenSystem } from "./systems/skills";
+import {
+  applyCastInput,
+  applySpendSkillInput,
+  castPursuitSystem,
+  leapSystem,
+  manaRegenSystem,
+} from "./systems/skills";
 import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
 import { isAreaId } from "./areas";
@@ -78,6 +84,7 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.npcTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.pendingStrike = null;
   p.leap = null;
   state.events.push({ type: "traveled", playerId: p.id, to });
@@ -276,6 +283,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     npcTarget: null,
     portalTarget: null,
     reclaimTarget: null,
+    castTarget: null,
     level: 1,
     xp: 0,
     skillPoints: 0,
@@ -368,6 +376,7 @@ export function step(state: GameState, frame: Frame): void {
     npcWanderSystem(state, zone, here());
     portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
+    castPursuitSystem(state, zone, acting());
     leapSystem(state, zone, here());
     // Airborne players neither walk nor trip floor triggers until they land.
     const grounded = () => acting().filter((p) => !p.leap);

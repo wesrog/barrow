@@ -72,7 +72,7 @@ export const LEAP_RANGE = 8;
 export const LEAP_STUN_RADIUS = 1.6;
 /** Airborne travel time — the stun and landing hit resolve when the flight ends. */
 export const LEAP_TICKS = 10;
-export const FIREBOLT_RANGE = 8;
+export const FIREBOLT_RANGE = 12;
 export const FROSTNOVA_RADIUS = 2.5;
 export const BLINK_RANGE = 8;
 

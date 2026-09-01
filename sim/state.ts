@@ -128,6 +128,8 @@ export interface Player {
   portalTarget: number | null;
   /** Player corpse id being walked to for reclaiming, if any. */
   reclaimTarget: number | null;
+  /** A hovered cast beyond reach: walk toward the mark until in range, then fire. */
+  castTarget: { skill: SkillId; monster?: number; breakable?: number } | null;
   /** Areas whose waypoint this player has touched. Sorted; arrays serialize, Sets don't. */
   waypoints: AreaId[];
   /** Where death and a reload seat this player: last waypoint or safe ground touched. */
@@ -255,7 +257,7 @@ export interface PlayerInput {
   /** Spend a skill point on this skill. */
   spendSkill?: SkillId;
   /** Cast a skill, optionally at a ground position or monster target. */
-  cast?: { skill: SkillId; at?: Vec; target?: number };
+  cast?: { skill: SkillId; at?: Vec; target?: number; breakable?: number };
   /** Drink a potion from the belt. Legacy `true` means "health". */
   drink?: "health" | "mana";
   /** Buy a potion straight from Sera's stall (town only). */

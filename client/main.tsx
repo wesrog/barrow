@@ -251,8 +251,13 @@ function Game({
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
       if (def.targeting === "target") {
-        // The sim auto-targets whatever is in reach; the pick is only a hint.
-        input.cast = { skill: def.id, target: picked?.kind === "monster" ? picked.id : undefined };
+        // The sim auto-targets whatever is in reach; the pick is only a hint —
+        // except barrels, which are only ever hit on an explicit hover.
+        input.cast = {
+          skill: def.id,
+          target: picked?.kind === "monster" ? picked.id : undefined,
+          breakable: picked?.kind === "breakable" ? picked.id : undefined,
+        };
       } else if (picked?.kind === "monster") {
         // Point skills aimed at a monster land on the monster, not underneath it.
         const m = zoneOf(game, localPlayer(game)).monsters.get(picked.id);

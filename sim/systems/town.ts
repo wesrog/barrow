@@ -220,6 +220,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.smashTarget = null;
   p.npcTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 

@@ -424,6 +424,102 @@ describe("casting stops the approach", () => {
   });
 });
 
+describe("firebolt targeting", () => {
+  const longArena = () =>
+    mapFromStrings([
+      "######################",
+      "#@...................#",
+      "#....................#",
+      "#....................#",
+      "######################",
+    ]);
+
+  function witchWithBolt(seed = 1) {
+    const state = createGameOn(seed, longArena());
+    player(state).klass = "witch";
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "firebolt" });
+    return state;
+  }
+
+  function placeBarrel(state: GameState, pos: { x: number; y: number }): number {
+    const id = state.nextId++;
+    playerZone(state).breakables.set(id, { id, kind: "barrel", pos });
+    return id;
+  }
+
+  test("reaches a hovered monster out to 12 units", () => {
+    const state = witchWithBolt();
+    const m = spawnAt(state, "skitter", { x: 12.5, y: 1.5 }); // 11 away
+    stepSolo(state, { cast: { skill: "firebolt", target: m.id } });
+    expect(state.events.some((e) => e.type === "monster_hit" && (e as any).id === m.id)).toBe(true);
+  });
+
+  test("a hovered barrel in range pops from afar, spilling its loot chance", () => {
+    const state = witchWithBolt();
+    playerZone(state).breakables.clear();
+    const id = placeBarrel(state, { x: 6.5, y: 1.5 });
+    const manaBefore = player(state).mana;
+    stepSolo(state, { cast: { skill: "firebolt", breakable: id } });
+    expect(playerZone(state).breakables.has(id)).toBe(false);
+    expect(state.events.some((e) => e.type === "breakable_broken" && (e as any).id === id)).toBe(true);
+    expect(state.events.some((e) => e.type === "skill_cast" && (e as any).skill === "firebolt")).toBe(true);
+    expect(player(state).mana).toBeLessThan(manaBefore);
+  });
+
+  test("barrels are never auto-targeted without a hover hint", () => {
+    const state = witchWithBolt();
+    playerZone(state).breakables.clear();
+    playerZone(state).monsters.clear();
+    const id = placeBarrel(state, { x: 3.5, y: 1.5 });
+    const manaBefore = player(state).mana;
+    stepSolo(state, { cast: { skill: "firebolt" } });
+    expect(playerZone(state).breakables.has(id)).toBe(true);
+    expect(player(state).mana).toBe(manaBefore);
+  });
+
+  test("a hovered monster beyond range starts a walk-in, casting once in reach", () => {
+    const state = witchWithBolt();
+    playerZone(state).monsters.clear();
+    const m = spawnAt(state, "skitter", { x: 19.5, y: 1.5 }); // 18 away
+    stepSolo(state, { cast: { skill: "firebolt", target: m.id } });
+    expect(state.events.some((e) => e.type === "monster_hit")).toBe(false);
+    expect(player(state).castTarget).not.toBeNull();
+    let hit = false; // events reset each tick — collect as the walk-in unfolds
+    for (let i = 0; i < 300 && !hit; i++) {
+      stepSolo(state, {});
+      hit = state.events.some((e) => e.type === "monster_hit" && (e as any).id === m.id);
+    }
+    expect(hit).toBe(true);
+    expect(player(state).castTarget).toBeNull();
+  });
+
+  test("a hovered barrel beyond range starts a walk-in, breaking it once in reach", () => {
+    const state = witchWithBolt();
+    playerZone(state).breakables.clear();
+    playerZone(state).monsters.clear();
+    const id = placeBarrel(state, { x: 19.5, y: 1.5 });
+    stepSolo(state, { cast: { skill: "firebolt", breakable: id } });
+    expect(playerZone(state).breakables.has(id)).toBe(true);
+    for (let i = 0; i < 300; i++) stepSolo(state, {});
+    expect(playerZone(state).breakables.has(id)).toBe(false);
+  });
+
+  test("a new move order cancels the walk-in cast", () => {
+    const state = witchWithBolt();
+    playerZone(state).monsters.clear();
+    const m = spawnAt(state, "skitter", { x: 19.5, y: 1.5 });
+    stepSolo(state, { cast: { skill: "firebolt", target: m.id } });
+    expect(player(state).castTarget).not.toBeNull();
+    stepSolo(state, { moveTo: { x: 1.5, y: 3.5 } });
+    expect(player(state).castTarget).toBeNull();
+    for (let i = 0; i < 50; i++) {
+      stepSolo(state, {});
+      expect(state.events.some((e) => e.type === "monster_hit")).toBe(false);
+    }
+  });
+});
+
 describe("fireball", () => {
   test("explodes at the aimed point, burning everything in the blast", () => {
     const state = createGameOn(1, arena());

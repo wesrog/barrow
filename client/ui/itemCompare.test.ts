@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { createEquipment } from "../../sim/character";
 import type { Item } from "../../sim/items/generate";
-import { equipDelta } from "./itemCompare";
+import { equipDelta, isComparable } from "./itemCompare";
 
 function plain(baseId: string, mods: Item["mods"] = []): Item {
   return { baseId, rarity: "normal", name: baseId, affixIds: [], mods, ilvl: 1 };
 }
+
+describe("isComparable", () => {
+  test("gear compares, potions and quest items do not", () => {
+    expect(isComparable(plain("rusted_blade"))).toBe(true);
+    expect(isComparable(plain("bone_ring"))).toBe(true);
+    expect(isComparable(plain("minor_potion"))).toBe(false);
+    expect(isComparable(plain("grave_moss"))).toBe(false);
+    expect(isComparable(plain("fen_heart"))).toBe(false);
+  });
+});
 
 describe("equipDelta", () => {
   test("weapon swap reports damage change vs currently equipped weapon", () => {

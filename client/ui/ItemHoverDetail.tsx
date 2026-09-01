@@ -4,7 +4,7 @@ import { slotForItem, type Equipment } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import type { Klass } from "../../sim/skills";
-import { equipDelta, type StatDelta } from "./itemCompare";
+import { equipDelta, isComparable, type StatDelta } from "./itemCompare";
 
 export const RARITY_CSS: Record<string, string> = {
   normal: "#d6d6d6",
@@ -130,7 +130,7 @@ export function ItemHoverDetail({
 }) {
   const detail = itemDetail(item, level);
   const base = BASES[item.baseId]!;
-  const comparable = compare && base.slot !== "potion";
+  const comparable = compare && isComparable(item);
   const replaces = comparable ? equipment[slotForItem(item, equipment)] : null;
   const deltas = comparable ? deltaLines(equipDelta(equipment, item, level, klass)) : [];
   return (

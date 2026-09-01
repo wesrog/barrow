@@ -4,8 +4,15 @@ import {
   type DerivedStats,
   type Equipment,
 } from "../../sim/character";
+import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import type { Klass } from "../../sim/skills";
+
+/** Whether the hover tooltip can show an equip diff — potions and quest goods don't equip. */
+export function isComparable(item: Item): boolean {
+  const slot = BASES[item.baseId]!.slot;
+  return slot !== "potion" && slot !== "quest";
+}
 
 export type StatDelta = Pick<
   DerivedStats,

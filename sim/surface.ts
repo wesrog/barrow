@@ -1,7 +1,7 @@
 // Where each surface region sits in world space, and helpers that resolve
 // world positions back to region labels. Pure functions of the AREAS registry.
 
-import { AREAS, waypointPos, type AreaId } from "./areas";
+import { AREAS, type AreaId } from "./areas";
 import type { MapMarker, Vec, ZoneMap } from "./map";
 import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
@@ -105,17 +105,23 @@ export function areaAt(pos: Vec): AreaId {
   return best;
 }
 
-/** The W pad of an area, in world coordinates — where travel and restores land. */
-export function worldWaypointPos(id: AreaId): Vec {
-  const o = surfaceLayout().offsets[id];
-  const w = waypointPos(id);
-  return { x: w.x + o.x, y: w.y + o.y };
+/**
+ * The W pad of an area, in world coordinates — where travel and restores land.
+ * Wild regions hide theirs at a seed-random spot, so the answer lives in the
+ * generated surface map, not the registry.
+ */
+export function worldWaypointPos(map: ZoneMap, id: AreaId): Vec {
+  for (const m of map.markers) {
+    if (m.ch === "W" && areaAt({ x: m.x, y: m.y }) === id) return { x: m.x, y: m.y };
+  }
+  return worldAreaSpawn(id); // no pad rolled — shouldn't happen on real maps
 }
 
-/** An area's safe-ground rect in world coordinates. */
+/** An area's safe-ground rect in world coordinates; only the town has one. */
 export function worldCampRect(id: AreaId): Rect {
   const o = surfaceLayout().offsets[id];
   const s = AREAS[id].safe;
+  if (!s) throw new Error(`no safe ground in ${id}`);
   return { x0: s.x0 + o.x, y0: s.y0 + o.y, x1: s.x1 + o.x, y1: s.y1 + o.y };
 }
 

@@ -309,6 +309,8 @@ function Game({
     let sawEvents = false;
     let lastSentTick = -1;
 
+    let lastNoMana = -1000;
+
     const pushToast = (text: string) => {
       setToasts((cur) => [...cur, { id: nextToastId++, text }]);
     };
@@ -397,6 +399,16 @@ function Game({
               );
               play("potion");
               break;
+            case "cast_failed": {
+              // Held buttons retry every tick; one fizzle per half-second is plenty.
+              const now = performance.now();
+              if (now - lastNoMana >= 500) {
+                lastNoMana = now;
+                scene.addDamageNumber(localPlayer(game).pos, "no mana", "#7fa3f5");
+                play("nomana");
+              }
+              break;
+            }
             case "level_up":
               scene.addDamageNumber(localPlayer(game).pos, `level ${e.level}!`, "#f0c96a");
               play("levelup");

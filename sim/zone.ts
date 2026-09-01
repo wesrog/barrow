@@ -73,10 +73,11 @@ export function exitMouth(def: AreaDef, e: AreaExit): { x: number; y: number } {
 /**
  * A surface region grown from its AreaDef: an organic landmass — random floor
  * smoothed into an irregular blob by cellular automata, so the coast wanders in
- * bays and peninsulas instead of hugging the rect. The safe ground (palisaded,
- * gate in its east wall), fixed markers, and exit openings are stamped at their
- * seed-independent spots, worn trails keep them connected, and monster packs
- * scatter over the open ground beyond.
+ * bays and peninsulas instead of hugging the rect. Safe ground (palisaded, gate
+ * in its east wall — the town only), fixed markers, and exit openings are
+ * stamped at their seed-independent spots, worn trails keep them connected, and
+ * monster packs scatter over the open ground beyond. Regions without a fixed W
+ * marker hide their waypoint at a seed-random spot deep in the wilds instead.
  */
 export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   const { width: w, height: h } = def;
@@ -133,14 +134,16 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   // Safe ground: the palisade ring sits on the rect's edges, floor inside,
   // open to the wilds through a gap in its east wall at the spawn row.
   const safe = def.safe;
-  for (let y = safe.y0 - 1; y <= safe.y1; y++) {
-    for (let x = safe.x0 - 1; x <= safe.x1; x++) {
-      const onEdge = x === safe.x0 - 1 || x === safe.x1 || y === safe.y0 - 1 || y === safe.y1;
-      cells[idx(x, y)] = onEdge ? 0 : 1;
-    }
-  }
   const gy = Math.floor(def.spawn.y);
-  for (let y = gy - 1; y <= gy + 1; y++) cells[idx(safe.x1, y)] = 1;
+  if (safe) {
+    for (let y = safe.y0 - 1; y <= safe.y1; y++) {
+      for (let x = safe.x0 - 1; x <= safe.x1; x++) {
+        const onEdge = x === safe.x0 - 1 || x === safe.x1 || y === safe.y0 - 1 || y === safe.y1;
+        cells[idx(x, y)] = onEdge ? 0 : 1;
+      }
+    }
+    for (let y = gy - 1; y <= gy + 1; y++) cells[idx(safe.x1, y)] = 1;
+  }
 
   // Exits: 3-wide channels carved through the rim toward the neighbor.
   for (const e of def.exits) {
@@ -155,9 +158,10 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   }
 
   // Worn trails from the gate keep every far feature and exit mouth open.
-  const gate = { x: safe.x1, y: gy };
+  // Without safe ground there is no gate — the spawn anchor plays its part.
+  const gate = safe ? { x: safe.x1, y: gy } : { x: Math.floor(def.spawn.x), y: gy };
   const inSafe = (x: number, y: number) =>
-    x >= safe.x0 && x < safe.x1 && y >= safe.y0 && y < safe.y1;
+    safe !== undefined && x >= safe.x0 && x < safe.x1 && y >= safe.y0 && y < safe.y1;
   const targets = [
     ...def.markers
       .map((m) => ({ x: Math.floor(m.x), y: Math.floor(m.y) }))
@@ -205,7 +209,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
       firsts.push(i);
     }
     const spawnComp = comp[idx(sx, sy)]!;
-    const gx = safe.x1 + 1;
+    const gx = safe ? safe.x1 + 1 : gate.x;
     for (let label = 0; label < sizes.length; label++) {
       if (label === spawnComp || sizes[label]! < 25) continue;
       const tx = firsts[label]! % w;
@@ -237,6 +241,38 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   // Monster packs scattered over the open ground, never crowding safe ground.
   const markers: MapMarker[] = def.markers.map((m) => ({ ...m }));
   const taken = new Set<number>();
+
+  // The hidden waypoint: regions without a fixed W pad roll one onto a random
+  // reachable cell far from every entrance, so finding it is the region's
+  // exploration prize — nobody arrives standing on it.
+  if (!markers.some((m) => m.ch === "W")) {
+    const mouths = def.exits.map((e) => exitMouth(def, e));
+    const clearOfMouths = (x: number, y: number, min: number) =>
+      mouths.every((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y) >= min);
+    let spot: { x: number; y: number } | null = null;
+    for (let tries = 0; spot === null && tries < 4000; tries++) {
+      const x = rng.int(3, w - 4);
+      const y = rng.int(3, h - 4);
+      if (reachable.has(idx(x, y)) && clearOfMouths(x, y, 20)) spot = { x, y };
+    }
+    if (spot === null) {
+      // Cramped landmass: settle for the reachable cell farthest into the wilds.
+      let bestDist = -1;
+      for (const key of reachable) {
+        const x = key % w;
+        const y = Math.floor(key / w);
+        const d = Math.min(...mouths.map((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y)));
+        if (d > bestDist) {
+          bestDist = d;
+          spot = { x, y };
+        }
+      }
+    }
+    if (spot) {
+      taken.add(idx(spot.x, spot.y));
+      markers.push({ ch: "W", x: spot.x + 0.5, y: spot.y + 0.5 });
+    }
+  }
   let placed = 0;
   for (let tries = 0; placed < def.gen.packs && tries < 4000; tries++) {
     const x = rng.int(2, w - 3);
@@ -254,7 +290,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     placed++;
   }
 
-  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: [{ ...safe }] };
+  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: safe ? [{ ...safe }] : [] };
 }
 
 /** The moors above the barrow — the overworld row of the area registry. */

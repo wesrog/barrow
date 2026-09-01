@@ -22,7 +22,8 @@ type SoundName =
   | "spit"
   | "windup"
   | "coin"
-  | "portal";
+  | "portal"
+  | "nomana";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
@@ -212,6 +213,12 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
   coin: (c) => {
     tone(c, { type: "triangle", from: 988, dur: 0.06, gain: 0.14 });
     tone(c, { type: "triangle", from: 1319, dur: 0.14, gain: 0.14, at: 0.05 });
+  },
+  nomana: (c) => {
+    // A dry, deflating fizzle — the spell sputters out instead of firing.
+    tone(c, { type: "square", from: 220, to: 110, dur: 0.09, gain: 0.12 });
+    tone(c, { type: "sine", from: 180, to: 70, dur: 0.16, gain: 0.22, at: 0.03 });
+    noise(c, { dur: 0.08, gain: 0.06, filterFrom: 1200, filterTo: 300 });
   },
   portal: (c) => {
     tone(c, { type: "sine", from: 220, to: 880, dur: 0.5, gain: 0.25 });

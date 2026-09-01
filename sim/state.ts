@@ -185,6 +185,7 @@ export type SimEvent =
   | { type: "level_up"; playerId: PlayerId; level: number }
   | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
+  | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }

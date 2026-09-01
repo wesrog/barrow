@@ -52,9 +52,16 @@ export function isNpcId(s: string): s is NpcId {
   return s in NPCS;
 }
 
-/** An NPC standing in a zone. Static in v1: no moving, fighting, or dying. */
+/** An NPC in a zone. They stroll a little around `home` for life, but never
+ * fight, die, or leave their spot's neighborhood. */
 export interface Npc {
   id: number;
   npcId: NpcId;
   pos: Vec;
+  /** The spot they were placed at — wandering never strays far from it. */
+  home: Vec;
+  /** Cell-center they're currently strolling toward, if any. */
+  wanderTarget: Vec | null;
+  /** Ticks left standing around before the next stroll. */
+  waitTicks: number;
 }

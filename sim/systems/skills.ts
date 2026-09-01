@@ -48,11 +48,16 @@ export function applySpendSkillInput(state: GameState, p: Player, input: PlayerI
 }
 
 /** Rank, mana, and the shared action cooldown all gate a cast; success starts it. */
-function spendMana(p: Player, id: SkillId): boolean {
+function spendMana(state: GameState, p: Player, id: SkillId): boolean {
   if (p.skills[id] <= 0) return false;
   if (p.swingCooldown > 0) return false;
   const cost = SKILLS[id].manaCost;
-  if (p.mana < cost) return false;
+  if (p.mana < cost) {
+    // Ranked and off cooldown but the well is dry — the one refusal worth
+    // announcing, so the client can flash and thunk instead of eating the click.
+    state.events.push({ type: "cast_failed", playerId: p.id, reason: "mana" });
+    return false;
+  }
   p.mana -= cost;
   p.swingCooldown = SKILLS[id].castTicks;
   // Casting plants your feet: without this, a queued approach (click-to-attack)
@@ -94,7 +99,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= CLEAVE_RADIUS,
       );
       if (targets.length === 0) return;
-      if (!spendMana(p, "cleave")) return;
+      if (!spendMana(state, p, "cleave")) return;
       const mult = cleaveMultiplier(p.skills.cleave, p.skills.warcry);
       for (const m of targets) {
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
@@ -133,7 +138,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         );
       }
       if (!m) return;
-      if (!spendMana(p, "crush")) return;
+      if (!spendMana(state, p, "crush")) return;
       const amount = rollSkillDamage(state, p, crushMultiplier(p.skills.crush));
       m.life -= amount;
       m.lastHitBy = p.id;
@@ -149,7 +154,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       break;
     }
     case "warcry": {
-      if (!spendMana(p, "warcry")) return;
+      if (!spendMana(state, p, "warcry")) return;
       p.buffUntil = state.tick + SKILLS.warcry.buffTicks;
       state.events.push({
         type: "skill_cast",
@@ -165,7 +170,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       const cell = { x: Math.floor(cast.at.x), y: Math.floor(cast.at.y) };
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > LEAP_RANGE) return;
-      if (!spendMana(p, "leap")) return;
+      if (!spendMana(state, p, "leap")) return;
       // Takeoff only — leapSystem carries the flight; the stun lands with the player.
       p.leap = {
         from: { ...p.pos },
@@ -190,7 +195,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= STOMP_RADIUS,
       );
       if (targets.length === 0) return;
-      if (!spendMana(p, "stomp")) return;
+      if (!spendMana(state, p, "stomp")) return;
       const mult = stompMultiplier(p.skills.stomp);
       const stunFor = stompStunTicks(p.skills.stomp);
       for (const m of targets) {
@@ -228,7 +233,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         );
       }
       if (!m) return;
-      if (!spendMana(p, "deathblow")) return;
+      if (!spendMana(state, p, "deathblow")) return;
       const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow));
       m.life -= amount;
       m.lastHitBy = p.id;
@@ -247,7 +252,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!cast.at) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > FIREBALL_RANGE) return;
       if (!hasLineOfSight(zone.map, p.pos, cast.at)) return;
-      if (!spendMana(p, "fireball")) return;
+      if (!spendMana(state, p, "fireball")) return;
       const { min, max } = fireballDamage(p.skills.fireball, p.skills.firebolt);
       for (const m of zone.monsters.values()) {
         if (Math.hypot(m.pos.x - cast.at.x, m.pos.y - cast.at.y) > FIREBALL_RADIUS) continue;
@@ -294,7 +299,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         )
         .slice(0, CHAINBOLT_TARGETS);
       if (targets.length === 0) return;
-      if (!spendMana(p, "chainbolt")) return;
+      if (!spendMana(state, p, "chainbolt")) return;
       const { min, max } = chainboltDamage(p.skills.chainbolt);
       targets.forEach((m, i) => {
         const falloff = i === 0 ? 1 : CHAINBOLT_FALLOFF;
@@ -332,7 +337,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         m = nearestTo(p.pos, [...zone.monsters.values()].filter(inRange));
       }
       if (!m) return;
-      if (!spendMana(p, "firebolt")) return;
+      if (!spendMana(state, p, "firebolt")) return;
       const { min, max } = fireboltDamage(p.skills.firebolt, p.skills.focus);
       const amount = Math.max(
         1,
@@ -356,7 +361,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         (m) => Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= FROSTNOVA_RADIUS,
       );
       if (targets.length === 0) return;
-      if (!spendMana(p, "frostnova")) return;
+      if (!spendMana(state, p, "frostnova")) return;
       const { min, max } = frostnovaDamage(p.skills.frostnova);
       const chill = frostnovaChillTicks(p.skills.frostnova);
       for (const m of targets) {
@@ -385,7 +390,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       break;
     }
     case "focus": {
-      if (!spendMana(p, "focus")) return;
+      if (!spendMana(state, p, "focus")) return;
       p.buffUntil = state.tick + SKILLS.focus.buffTicks;
       state.events.push({
         type: "skill_cast",
@@ -401,7 +406,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       const cell = { x: Math.floor(cast.at.x), y: Math.floor(cast.at.y) };
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > BLINK_RANGE) return;
-      if (!spendMana(p, "blink")) return;
+      if (!spendMana(state, p, "blink")) return;
       p.pos = { x: cast.at.x, y: cast.at.y };
       p.path = [];
       p.attackTarget = null;

@@ -39,16 +39,21 @@ describe("area registry", () => {
     for (const def of Object.values(AREAS)) {
       // Cell budget keeps pathfinding, AI, and the renderer comfortable.
       expect(def.width * def.height).toBeLessThanOrEqual(5200);
-      // Safe ground sits clear of the rim so the landmass can breathe around it.
-      expect(def.safe.x0).toBeGreaterThanOrEqual(2);
-      expect(def.safe.y0).toBeGreaterThanOrEqual(2);
-      expect(def.safe.x1).toBeLessThanOrEqual(def.width - 3);
-      expect(def.safe.y1).toBeLessThanOrEqual(def.height - 3);
-      // The spawn is on safe ground.
-      expect(def.spawn.x).toBeGreaterThan(def.safe.x0);
-      expect(def.spawn.x).toBeLessThan(def.safe.x1);
-      expect(def.spawn.y).toBeGreaterThan(def.safe.y0);
-      expect(def.spawn.y).toBeLessThan(def.safe.y1);
+      if (def.safe) {
+        // Safe ground sits clear of the rim so the landmass can breathe around it.
+        expect(def.safe.x0).toBeGreaterThanOrEqual(2);
+        expect(def.safe.y0).toBeGreaterThanOrEqual(2);
+        expect(def.safe.x1).toBeLessThanOrEqual(def.width - 3);
+        expect(def.safe.y1).toBeLessThanOrEqual(def.height - 3);
+        // The spawn is on safe ground.
+        expect(def.spawn.x).toBeGreaterThan(def.safe.x0);
+        expect(def.spawn.x).toBeLessThan(def.safe.x1);
+        expect(def.spawn.y).toBeGreaterThan(def.safe.y0);
+        expect(def.spawn.y).toBeLessThan(def.safe.y1);
+      } else {
+        // Wild regions hide their waypoint per-seed instead of stamping one.
+        expect(def.markers.some((m) => m.ch === "W")).toBe(false);
+      }
       // Every exit leads to a real area that points back.
       for (const e of def.exits) {
         const back = AREAS[e.to];
@@ -134,16 +139,17 @@ describe("organic landmass", () => {
         });
 
         test(`seed ${seed}: safe ground interior is all floor, monster packs outside it`, () => {
+          const safe = def.safe;
+          if (!safe) return; // wild regions have no safe ground at all
           const map = areaZone(createRng(seed), def);
-          for (let y = def.safe.y0; y < def.safe.y1; y++) {
-            for (let x = def.safe.x0; x < def.safe.x1; x++) {
+          for (let y = safe.y0; y < safe.y1; y++) {
+            for (let x = safe.x0; x < safe.x1; x++) {
               expect(map.cells[y * map.width + x]).toBe(1);
             }
           }
           for (const m of map.markers) {
             if (!def.spawnTable.includes(m.ch)) continue;
-            const inSafe =
-              m.x >= def.safe.x0 && m.x < def.safe.x1 && m.y >= def.safe.y0 && m.y < def.safe.y1;
+            const inSafe = m.x >= safe.x0 && m.x < safe.x1 && m.y >= safe.y0 && m.y < safe.y1;
             expect(inSafe).toBe(false);
           }
         });

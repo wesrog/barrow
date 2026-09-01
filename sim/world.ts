@@ -67,7 +67,11 @@ export function ensureSurface(state: GameState): ZoneState {
     const cell = nearestWalkable(zone.map, want);
     const spot = cell ? { x: cell.x + 0.5, y: cell.y + 0.5 } : want;
     const id = state.nextId++;
-    zone.npcs.set(id, { id, npcId, pos: spot });
+    // Staggered first strolls so the camp doesn't move in lockstep.
+    zone.npcs.set(id, {
+      id, npcId, pos: spot, home: { ...spot },
+      wanderTarget: null, waitTicks: state.rng.int(0, 100),
+    });
   }
   return zone;
 }

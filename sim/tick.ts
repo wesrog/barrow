@@ -54,6 +54,7 @@ import {
 import {
   applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem, questProgressSystem,
 } from "./systems/quests";
+import { npcWanderSystem } from "./systems/npcs";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -181,7 +182,7 @@ export function applyWaypointInput(state: GameState, p: Player, input: PlayerInp
   );
   if (!near) return;
   travel(state, p, "surface");
-  p.pos = { ...worldWaypointPos(dest) };
+  p.pos = { ...worldWaypointPos(getZone(state, "surface").map, dest) };
 }
 
 /**
@@ -391,6 +392,7 @@ export function step(state: GameState, frame: Frame): void {
     pickupSystem(state, zone, acting());
     reclaimSystem(state, zone, acting());
     npcSystem(state, zone, acting());
+    npcWanderSystem(state, zone, here());
     portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
     leapSystem(state, zone, here());

@@ -447,7 +447,7 @@ export function deathSystem(
 
     // Immediate respawn at the checkpoint's pad — there is no persistent "you are dead" state.
     travel(state, p, "surface");
-    p.pos = { ...worldWaypointPos(p.checkpoint) };
+    p.pos = { ...worldWaypointPos(zoneOf(state, p).map, p.checkpoint) };
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;

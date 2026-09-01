@@ -68,8 +68,10 @@ describe("areaAt", () => {
 
 describe("world helpers", () => {
   test("waypoint, camp, and spawn positions carry their region offset", () => {
-    expect(worldWaypointPos("overworld")).toEqual({ x: 10.5, y: 48.5 });
-    expect(worldWaypointPos("redfen")).toEqual({ x: 70.5, y: 45.5 });
+    const { map } = stitchSurface(createRng(7));
+    // The town pad is fixed registry data; wild pads are wherever this seed hid them.
+    expect(worldWaypointPos(map, "overworld")).toEqual({ x: 10.5, y: 48.5 });
+    expect(areaAt(worldWaypointPos(map, "redfen"))).toBe("redfen");
     expect(worldCampRect("overworld")).toEqual({ x0: 2, y0: 39, x1: 13, y1: 52 });
     expect(worldAreaSpawn("overworld")).toEqual({ x: 7.5, y: 45.5 });
     expect(inRect(worldCampRect("overworld"), { x: 7.5, y: 45.5 })).toBe(true);
@@ -97,7 +99,7 @@ describe("stitchSurface", () => {
     expect(map.width).toBe(272);
     expect(map.height).toBe(88);
     expect(map.spawn).toEqual({ x: 7.5, y: 45.5 });
-    expect(map.camps.length).toBe(4);
+    expect(map.camps.length).toBe(1); // only the moors camp — the wilds are hostile
   });
 
   test("the overworld-redfen corridor is open exactly at the exit rows", () => {
@@ -110,7 +112,8 @@ describe("stitchSurface", () => {
   });
 
   test("the corridor connects: a walkable path of cells crosses the seam", () => {
-    // Flood fill from the overworld spawn must reach redfen's waypoint cell.
+    // Flood fill from the overworld spawn must reach redfen's hidden waypoint cell.
+    const wp = worldWaypointPos(map, "redfen");
     const seen = new Set<number>([Math.floor(45.5) * map.width + Math.floor(7.5)]);
     const stack = [{ x: 7, y: 45 }];
     while (stack.length > 0) {
@@ -123,7 +126,7 @@ describe("stitchSurface", () => {
         stack.push({ x: nx, y: ny });
       }
     }
-    expect(seen.has(45 * map.width + 70)).toBe(true); // redfen waypoint cell (70,45)
+    expect(seen.has(Math.floor(wp.y) * map.width + Math.floor(wp.x))).toBe(true);
   });
 
   test("feature markers land at world offsets; monster markers are stripped", () => {
@@ -174,11 +177,12 @@ describe("one surface zone", () => {
   test("waypoint travel lands on the destination pad, same zone", () => {
     const state = soloGame(3);
     const p = player(state);
+    const surfaceMap = getZone(state, "surface").map;
     p.waypoints = ["overworld", "redfen"];
-    p.pos = { ...worldWaypointPos("overworld") };
+    p.pos = { ...worldWaypointPos(surfaceMap, "overworld") };
     stepSolo(state, { waypointTo: "redfen" });
     expect(p.zoneId).toBe("surface");
-    expect(p.pos).toEqual(worldWaypointPos("redfen"));
+    expect(p.pos).toEqual(worldWaypointPos(surfaceMap, "redfen"));
   });
 
   test("stairs still swap zones: surface > floor:1 > surface", () => {
@@ -193,12 +197,13 @@ describe("one surface zone", () => {
     expect(p.zoneId).toBe("surface");
   });
 
-  test("entering an outpost's safe ground stamps that region as checkpoint", () => {
+  test("outposts have no safe ground: only touching the pad stamps the checkpoint", () => {
     const state = soloGame(3);
     const p = player(state);
-    p.pos = { ...worldWaypointPos("redfen") }; // redfen's pad is on its safe ground
+    p.pos = { ...worldWaypointPos(getZone(state, "surface").map, "redfen") };
     stepSolo(state, {});
     expect(p.checkpoint).toBe("redfen");
+    expect(p.wasInCamp).toBe(false); // the pad is hostile ground, not a camp
   });
 
   test("resetRun regenerates one surface and reseats everyone at camp", () => {

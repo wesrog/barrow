@@ -187,9 +187,9 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.mana = p.maxMana;
   // Wake at the checkpoint's waypoint — generating the surface if this world
   // hasn't grown it yet. Runs inside the join frame, so it lands identically
-  // on every peer, and the fixed outpost rects make the spot layout-safe.
-  ensureSurface(state);
+  // on every peer, wherever this world's seed hid the pad.
+  const surface = ensureSurface(state);
   p.zoneId = "surface";
-  p.pos = { ...worldWaypointPos(p.checkpoint) };
+  p.pos = { ...worldWaypointPos(surface.map, p.checkpoint) };
   return true;
 }

@@ -49,7 +49,7 @@ describe("skill points", () => {
 describe("cleave", () => {
   test("hits every monster in reach and spends mana", () => {
     // Seed chosen so both 95%-capped hit rolls land; determinism keeps it stable.
-    const state = createGameOn(1, arena());
+    const state = createGameOn(2, arena());
     readyPlayer(state);
     stepSolo(state, { spendSkill: "cleave" });
     const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
@@ -82,6 +82,19 @@ describe("cleave", () => {
     stepSolo(state, { cast: { skill: "cleave" } }); // no mana
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
     expect(playerZone(state).monsters.has(m.id)).toBe(true);
+  });
+
+  test("an empty-mana cast announces the failure; a rankless one stays silent", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    spawnAt(state, "skitter", { x: 2.2, y: 1.5 }); // cleave needs a target in reach
+    stepSolo(state, { cast: { skill: "cleave" } }); // no rank — a misclick, not a mana problem
+    expect(state.events.filter((e) => e.type === "cast_failed")).toHaveLength(0);
+    stepSolo(state, { spendSkill: "cleave" });
+    player(state).mana = 0;
+    stepSolo(state, { cast: { skill: "cleave" } });
+    const fails = state.events.filter((e) => e.type === "cast_failed");
+    expect(fails).toEqual([{ type: "cast_failed", playerId: 0, reason: "mana" }]);
   });
 });
 

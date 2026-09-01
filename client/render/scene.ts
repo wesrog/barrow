@@ -557,12 +557,21 @@ export function createScene(
     aldous: 0xc9a84c, // barrow sentinel — gilded
   };
   const npcRigs = new Map<number, Rig>();
+  // Per-npc tick interpolation, eased facing, and walk-cycle phase.
+  const npcLerp = new Map<
+    number,
+    { px: number; py: number; cx: number; cy: number; yaw: number; phase: number }
+  >();
   for (const npc of npcs) {
     const rig = makeMonsterModelRig(assets, "__vendor__") as Rig;
     scene.add(rig.group);
     rig.group.position.set(npc.pos.x, 0, npc.pos.y);
     // Stable per-entity facing rather than one fixed pose for everyone.
     rig.group.rotation.y = (npc.id * 1.7) % (Math.PI * 2);
+    npcLerp.set(npc.id, {
+      px: npc.pos.x, py: npc.pos.y, cx: npc.pos.x, cy: npc.pos.y,
+      yaw: rig.group.rotation.y, phase: npc.id * 3.7,
+    });
     const tint = new THREE.Color(NPC_TINTS[npc.npcId]);
     rig.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
@@ -1231,15 +1240,43 @@ export function createScene(
         v.rig.animate(frameNow, 0, 0);
       }
 
-      // Town dressing: the portal ring turns, the NPCs idle
+      // Town dressing: the portal ring turns, the NPCs stroll their patch
       for (const [i, ring] of padRings.entries()) ring.rotation.z = performance.now() / 1400 + i;
-      for (const rig of npcRigs.values()) rig.animate(frameNow, 0, 0);
+      for (const npc of npcs) {
+        const rig = npcRigs.get(npc.id);
+        const lerp = npcLerp.get(npc.id);
+        if (!rig || !lerp) continue;
+        if (tickAdvanced) {
+          lerp.px = lerp.cx;
+          lerp.py = lerp.cy;
+          lerp.cx = npc.pos.x;
+          lerp.cy = npc.pos.y;
+        }
+        rig.group.position.set(
+          lerp.px + (lerp.cx - lerp.px) * alpha,
+          0,
+          lerp.py + (lerp.cy - lerp.py) * alpha,
+        );
+        const vx = lerp.cx - lerp.px;
+        const vy = lerp.cy - lerp.py;
+        const tickDist = Math.hypot(vx, vy); // cells per sim tick — stable between ticks
+        if (tickDist > 0.005) {
+          lerp.yaw = Math.atan2(vx, vy);
+        } else if (Math.hypot(me.pos.x - npc.pos.x, me.pos.y - npc.pos.y) < 4) {
+          // Standing and attended: turn to face whoever walked up.
+          lerp.yaw = Math.atan2(me.pos.x - npc.pos.x, me.pos.y - npc.pos.y);
+        }
+        rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 6);
+        lerp.phase += tickDist * 8 * frameDt * 25;
+        rig.animate(frameNow, lerp.phase, tickDist * 25);
+      }
 
       // NPC quest indicators: swap the overhead icon to match this player's
       // standing with each NPC (cheap per-frame work — visibility + texture).
       for (const npc of npcs) {
         const sprite = npcIndicatorSprites.get(npc.id);
         if (!sprite) continue;
+        sprite.position.set(npc.pos.x, 1.8, npc.pos.y);
         const indicator = npcIndicator(me, npc.npcId);
         sprite.visible = indicator !== null;
         if (indicator !== null) {

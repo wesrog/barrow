@@ -138,7 +138,7 @@ describe("checkpoint persistence", () => {
     expect(b.zones.has("surface")).toBe(true);
     expect(player(b).waypoints).toEqual(["overworld", "redfen"]);
     expect(player(b).checkpoint).toBe("redfen");
-    expect(player(b).pos).toEqual(worldWaypointPos("redfen"));
+    expect(player(b).pos).toEqual(worldWaypointPos(zoneOf(b, player(b)).map, "redfen"));
     const map = zoneOf(b, player(b)).map;
     expect(isWalkable(map, Math.floor(player(b).pos.x), Math.floor(player(b).pos.y))).toBe(true);
   });
@@ -152,7 +152,7 @@ describe("checkpoint persistence", () => {
     expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
     expect(player(b).zoneId).toBe("surface");
     expect(player(b).checkpoint).toBe("overworld");
-    expect(player(b).pos).toEqual(worldWaypointPos("overworld"));
+    expect(player(b).pos).toEqual(worldWaypointPos(zoneOf(b, player(b)).map, "overworld"));
     expect(player(b).waypoints).toEqual(["overworld"]);
   });
 
@@ -167,7 +167,7 @@ describe("checkpoint persistence", () => {
     expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
     expect(player(b).zoneId).toBe("surface");
     expect(player(b).checkpoint).toBe("redfen");
-    expect(player(b).pos).toEqual(worldWaypointPos("redfen"));
+    expect(player(b).pos).toEqual(worldWaypointPos(zoneOf(b, player(b)).map, "redfen"));
     expect(player(b).waypoints).toEqual(["overworld"]);
   });
 
@@ -182,6 +182,6 @@ describe("checkpoint persistence", () => {
     expect(player(b).zoneId).toBe("surface");
     expect(player(b).waypoints).toEqual(["overworld"]);
     expect(player(b).checkpoint).toBe("overworld");
-    expect(player(b).pos).toEqual(worldWaypointPos("overworld"));
+    expect(player(b).pos).toEqual(worldWaypointPos(zoneOf(b, player(b)).map, "overworld"));
   });
 });

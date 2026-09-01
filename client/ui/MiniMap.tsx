@@ -2,6 +2,7 @@ import { localPlayer } from "../local";
 import { useEffect, useRef } from "react";
 import { isWalkable } from "../../sim/map";
 import { allPlayers, zoneOf, type GameState } from "../../sim/state";
+import { areaAt } from "../../sim/surface";
 import { playerCss } from "../render/tints";
 import { RARITY_CSS } from "./InventoryPanel";
 
@@ -68,6 +69,14 @@ export function MiniMap({ game }: { game: GameState }) {
           ctx.fillStyle = "#f5c877";
           ctx.fillRect(px - 2, py - 2, 4, 4);
         } else if (marker.ch === "W") {
+          // Undiscovered pads stay off the map — finding them is the point.
+          const me2 = localPlayer(game);
+          if (
+            me2.zoneId === "surface" &&
+            !me2.waypoints.includes(areaAt({ x: marker.x, y: marker.y }))
+          ) {
+            continue;
+          }
           ctx.fillStyle = "#c9a84c";
           ctx.fillRect(px - 2, py - 2, 4, 4);
         }

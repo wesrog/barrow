@@ -68,7 +68,10 @@ export function Lobby({
   onReady: (driver: NetDriver, roomCode: string | null) => void;
 }) {
   const [chars, setChars] = useState<CharacterSummary[]>(() => listCharacters());
-  const [chosen, setChosen] = useState<CharacterSummary | null>(null);
+  // The last-played hero (the roster's autosave slot) greets you already chosen.
+  const [chosen, setChosen] = useState<CharacterSummary | null>(
+    () => listCharacters().find((c) => c.id === currentCharacterId()) ?? null,
+  );
   const [newName, setNewName] = useState(() => generateName());
   const [newKlass, setNewKlass] = useState<Klass>("warrior");
   const [busy, setBusy] = useState<"solo" | "host" | "join" | null>(null);

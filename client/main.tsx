@@ -384,14 +384,9 @@ function Game({
                 setWaypointsOpen(false);
                 // The big "entering a new land" card, D2-style.
                 const title = locationTitle(e.to, localPlayer(game).pos);
+                const sub = e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`;
                 setIntro((prev) =>
-                  prev?.title === title
-                    ? prev
-                    : {
-                        seq: nextIntroSeq++,
-                        title,
-                        sub: e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`,
-                      },
+                  prev?.title === title && prev?.sub === sub ? prev : { seq: nextIntroSeq++, title, sub },
                 );
                 save(); // a zone crossing is a moment worth keeping
               }
@@ -399,7 +394,11 @@ function Game({
             case "region_entered":
               if (e.playerId === localId()) {
                 const title = regionTitle(e.area);
-                setIntro((prev) => (prev?.title === title ? prev : { seq: nextIntroSeq++, title }));
+                setIntro((prev) =>
+                  prev?.title === title && prev?.sub === undefined
+                    ? prev
+                    : { seq: nextIntroSeq++, title },
+                );
                 save(); // a border crossing is a moment worth keeping
               }
               break;

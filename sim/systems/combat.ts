@@ -68,20 +68,33 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
       1,
       Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
-    target.life -= amount;
-    target.lastHitBy = p.id;
-    state.events.push({
-      type: "monster_hit",
-      id: target.id,
-      amount,
-      pos: { ...target.pos },
-      zone: zone.id,
-    });
+    hitMonster(state, zone, target, p, amount);
   }
 }
 
 export function rollDamage(rng: Rng, min: number, max: number): number {
   return rng.int(min, max);
+}
+
+/**
+ * Land player-dealt damage on a monster. Pain provokes: even a hit from beyond
+ * the monster's aggro radius (a firebolt from across the room) wakes it up and
+ * sends it after its attacker.
+ */
+export function hitMonster(
+  state: GameState,
+  zone: ZoneState,
+  m: Monster,
+  p: Player,
+  amount: number,
+): void {
+  m.life -= amount;
+  m.lastHitBy = p.id;
+  if (m.ai !== "chasing") {
+    m.ai = "chasing";
+    m.path = [];
+  }
+  state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
 }
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -163,6 +176,9 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
   }
 }
 
+/** Chasers dragged farther than this from their spawn anchor give up and go home. */
+const MAX_CHASE_DIST = 12;
+
 /** Idle strolls stay within this many cells of the spawn anchor. */
 const WANDER_RADIUS = 1.5;
 const WANDER_SPEED_SCALE = 0.35;
@@ -208,6 +224,24 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
     if (m.stunnedUntil > state.tick) {
       m.windingUntil = null; // a stun breaks the windup
       m.strikeAt = null;
+      continue;
+    }
+    // Homeward bound: ignore everyone until back at the spawn anchor.
+    if (m.ai === "returning") {
+      if (m.path.length === 0) {
+        m.path = pathToward(zone.map, m.pos, m.home);
+        if (m.path.length === 0) {
+          // No way home from here — settle down and re-anchor where it stands.
+          m.ai = "idle";
+          m.home = { ...m.pos };
+          continue;
+        }
+      }
+      moveAlongPath(m.pos, m.path, m.speed);
+      if (dist(m.pos, m.home) <= 1) {
+        m.ai = "idle";
+        m.path = [];
+      }
       continue;
     }
     // Nobody left standing here: monsters drop aggro but keep ambling.
@@ -265,6 +299,13 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
         idleWander(state, zone, m);
         continue;
       }
+    }
+    // Leashed: a chase that strays too far from home is abandoned. Stops
+    // players from kiting half the zone into one giant train.
+    if (dist(m.pos, m.home) > MAX_CHASE_DIST) {
+      m.ai = "returning";
+      m.path = [];
+      continue;
     }
     const inReach =
       m.ranged !== undefined

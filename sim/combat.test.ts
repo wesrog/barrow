@@ -23,6 +23,15 @@ const arena = () =>
     "############",
   ]);
 
+const longArena = () =>
+  mapFromStrings([
+    "####################################",
+    "#@.................................#",
+    "#..................................#",
+    "#..................................#",
+    "####################################",
+  ]);
+
 describe("hit math", () => {
   test("hit chance is ar/(ar+def) clamped to [0.05, 0.95]", () => {
     expect(computeHitChance(100, 100)).toBeCloseTo(0.5);
@@ -86,6 +95,35 @@ describe("monster AI", () => {
     }
     expect(player(game).life).toBeLessThan(startLife);
     expect(sawDamageEvent).toBe(true);
+  });
+
+  test("a hit from beyond aggro range provokes the monster into chasing", () => {
+    const game = createGameOn(1, arena());
+    const p = player(game);
+    p.klass = "witch";
+    p.skills.firebolt = 1;
+    p.mana = 50;
+    // Within firebolt range (8) but outside the shambler's aggro radius (6).
+    const m = spawnAt(game, "shambler", { x: 8.5, y: 1.5 });
+    stepSolo(game, {});
+    expect(m.ai).toBe("idle");
+    stepSolo(game, { cast: { skill: "firebolt", target: m.id } });
+    expect(m.life).toBeLessThan(m.maxLife);
+    expect(m.ai).toBe("chasing");
+  });
+
+  test("a chaser dragged too far from home gives up and returns", () => {
+    const game = createGameOn(1, longArena());
+    const m = spawnAt(game, "shambler", { x: 30.5, y: 2.5 });
+    const p = player(game);
+    p.pos = { x: 26.5, y: 2.5 };
+    stepSolo(game, {});
+    expect(m.ai).toBe("chasing");
+    // The player sprints off across the zone; the monster shouldn't follow forever.
+    p.pos = { x: 2.5, y: 2.5 };
+    for (let i = 0; i < 600; i++) stepSolo(game, {});
+    expect(m.ai).toBe("idle");
+    expect(Math.hypot(m.pos.x - 30.5, m.pos.y - 2.5)).toBeLessThanOrEqual(3);
   });
 
   test("monster respects its swing cooldown", () => {

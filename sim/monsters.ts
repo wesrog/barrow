@@ -202,7 +202,7 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
   };
 }
 
-export type MonsterAi = "idle" | "chasing";
+export type MonsterAi = "idle" | "chasing" | "returning";
 
 export interface Monster {
   id: number;

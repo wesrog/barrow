@@ -33,7 +33,7 @@ import {
   type SkillId,
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
-import { computeHitChance, rollDamage } from "./combat";
+import { computeHitChance, hitMonster, rollDamage } from "./combat";
 
 export const MANA_REGEN_PER_TICK = 0.05; // 1.25/s at 25 Hz
 
@@ -104,15 +104,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       for (const m of targets) {
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
           const amount = rollSkillDamage(state, p, mult);
-          m.life -= amount;
-          m.lastHitBy = p.id;
-          state.events.push({
-            type: "monster_hit",
-            id: m.id,
-            amount,
-            pos: { ...m.pos },
-            zone: zone.id,
-          });
+          hitMonster(state, zone, m, p, amount);
         }
       }
       state.events.push({
@@ -140,9 +132,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!m) return;
       if (!spendMana(state, p, "crush")) return;
       const amount = rollSkillDamage(state, p, crushMultiplier(p.skills.crush));
-      m.life -= amount;
-      m.lastHitBy = p.id;
-      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+      hitMonster(state, zone, m, p, amount);
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -201,16 +191,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       for (const m of targets) {
         // A ground slam: no dodging it, like the leap's landing.
         const amount = rollSkillDamage(state, p, mult);
-        m.life -= amount;
-        m.lastHitBy = p.id;
         m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + stunFor);
-        state.events.push({
-          type: "monster_hit",
-          id: m.id,
-          amount,
-          pos: { ...m.pos },
-          zone: zone.id,
-        });
+        hitMonster(state, zone, m, p, amount);
       }
       state.events.push({
         type: "skill_cast",
@@ -235,9 +217,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!m) return;
       if (!spendMana(state, p, "deathblow")) return;
       const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow));
-      m.life -= amount;
-      m.lastHitBy = p.id;
-      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+      hitMonster(state, zone, m, p, amount);
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -260,15 +240,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
         );
-        m.life -= amount;
-        m.lastHitBy = p.id;
-        state.events.push({
-          type: "monster_hit",
-          id: m.id,
-          amount,
-          pos: { ...m.pos },
-          zone: zone.id,
-        });
+        hitMonster(state, zone, m, p, amount);
       }
       state.events.push({
         type: "skill_cast",
@@ -307,15 +279,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * falloff),
         );
-        m.life -= amount;
-        m.lastHitBy = p.id;
-        state.events.push({
-          type: "monster_hit",
-          id: m.id,
-          amount,
-          pos: { ...m.pos },
-          zone: zone.id,
-        });
+        hitMonster(state, zone, m, p, amount);
       });
       state.events.push({
         type: "skill_cast",
@@ -343,9 +307,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         1,
         Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
       );
-      m.life -= amount;
-      m.lastHitBy = p.id;
-      state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+      hitMonster(state, zone, m, p, amount);
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -369,16 +331,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
         );
-        m.life -= amount;
-        m.lastHitBy = p.id;
         m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + chill);
-        state.events.push({
-          type: "monster_hit",
-          id: m.id,
-          amount,
-          pos: { ...m.pos },
-          zone: zone.id,
-        });
+        hitMonster(state, zone, m, p, amount);
       }
       state.events.push({
         type: "skill_cast",
@@ -440,15 +394,7 @@ export function leapSystem(state: GameState, zone: ZoneState, players: Player[])
         if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= LEAP_STUN_RADIUS) {
           m.stunnedUntil = state.tick + stunFor;
           const amount = rollSkillDamage(state, p, mult);
-          m.life -= amount;
-          m.lastHitBy = p.id;
-          state.events.push({
-            type: "monster_hit",
-            id: m.id,
-            amount,
-            pos: { ...m.pos },
-            zone: zone.id,
-          });
+          hitMonster(state, zone, m, p, amount);
         }
       }
       state.events.push({ type: "leap_land", playerId: p.id, pos: { ...p.pos }, zone: zone.id });

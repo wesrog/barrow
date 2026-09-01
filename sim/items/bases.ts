@@ -1,4 +1,4 @@
-export type Slot = "weapon" | "helm" | "chest" | "boots" | "ring" | "amulet" | "potion" | "quest";
+export type Slot = "weapon" | "shield" | "helm" | "chest" | "boots" | "ring" | "amulet" | "potion" | "quest";
 
 export interface ItemBase {
   id: string;
@@ -30,6 +30,11 @@ export const BASES: Record<string, ItemBase> = {
   dire_flail: base({ id: "dire_flail", name: "Dire Flail", slot: "weapon", w: 2, h: 3, levelReq: 19, dmgMin: 11, dmgMax: 24 }),
   moon_glaive: base({ id: "moon_glaive", name: "Moon Glaive", slot: "weapon", w: 2, h: 3, levelReq: 23, dmgMin: 14, dmgMax: 30 }),
   kingsbane: base({ id: "kingsbane", name: "Kingsbane", slot: "weapon", w: 1, h: 3, levelReq: 28, dmgMin: 18, dmgMax: 38 }),
+  // --- shields ---
+  plank_buckler: base({ id: "plank_buckler", name: "Plank Buckler", slot: "shield", w: 2, h: 2, levelReq: 1, defense: 4 }),
+  bone_targe: base({ id: "bone_targe", name: "Bone Targe", slot: "shield", w: 2, h: 2, levelReq: 8, defense: 9 }),
+  rimed_kite: base({ id: "rimed_kite", name: "Rimed Kite Shield", slot: "shield", w: 2, h: 3, levelReq: 17, defense: 15 }),
+  barrow_bulwark: base({ id: "barrow_bulwark", name: "Barrow Bulwark", slot: "shield", w: 2, h: 3, levelReq: 25, defense: 22 }),
   // --- helms ---
   cracked_helm: base({ id: "cracked_helm", name: "Cracked Helm", slot: "helm", w: 2, h: 2, levelReq: 1, defense: 3 }),
   bone_visage: base({ id: "bone_visage", name: "Bone Visage", slot: "helm", w: 2, h: 2, levelReq: 10, defense: 8 }),

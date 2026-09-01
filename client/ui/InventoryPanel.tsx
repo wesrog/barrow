@@ -47,6 +47,7 @@ const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
 
 const EQUIP_SLOTS: { slot: EquipSlot; label: string }[] = [
   { slot: "weapon", label: "weapon" },
+  { slot: "shield", label: "shield" },
   { slot: "helm", label: "helm" },
   { slot: "chest", label: "chest" },
   { slot: "boots", label: "boots" },

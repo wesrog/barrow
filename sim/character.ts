@@ -19,7 +19,7 @@ export interface Inventory {
   entries: InvEntry[];
 }
 
-export type EquipSlot = "weapon" | "helm" | "chest" | "boots" | "amulet" | "ring1" | "ring2";
+export type EquipSlot = "weapon" | "shield" | "helm" | "chest" | "boots" | "amulet" | "ring1" | "ring2";
 
 export type Equipment = Record<EquipSlot, Item | null>;
 
@@ -28,7 +28,7 @@ export function createInventory(): Inventory {
 }
 
 export function createEquipment(): Equipment {
-  return { weapon: null, helm: null, chest: null, boots: null, amulet: null, ring1: null, ring2: null };
+  return { weapon: null, shield: null, helm: null, chest: null, boots: null, amulet: null, ring1: null, ring2: null };
 }
 
 export function itemSize(item: Item): { w: number; h: number } {

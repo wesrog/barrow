@@ -31,7 +31,7 @@ export interface Affix {
 }
 
 const WEAPON: Slot[] = ["weapon"];
-const ARMOR: Slot[] = ["helm", "chest", "boots"];
+const ARMOR: Slot[] = ["shield", "helm", "chest", "boots"];
 const JEWELRY: Slot[] = ["ring", "amulet"];
 
 const a = (x: Affix) => x;

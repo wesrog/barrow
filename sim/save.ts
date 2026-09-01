@@ -144,7 +144,9 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.manaBelt = Number.isFinite(save.manaBelt) ? save.manaBelt! : 0;
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;
   p.inventory = save.inventory;
-  p.equipment = save.equipment;
+  // Merge over the empty layout so slots added since the save (e.g. shield)
+  // come back null instead of undefined.
+  p.equipment = { ...createEquipment(), ...save.equipment };
   // Checkpoint fields are lenient where the rest is strict: a garbled area name
   // shouldn't brick the hero. Normalization is a pure function of the payload,
   // so every peer replaying this join computes the identical result.

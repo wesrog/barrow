@@ -220,6 +220,16 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     const node = rig.group.getObjectByName(prop);
     if (node) node.visible = false;
   }
+  // The round shield stays part of the skinned model (so it tracks the left
+  // arm); equipping any shield base un-hides it. Clone its material so rarity
+  // glow doesn't bleed onto the shared character atlas.
+  const shieldProp = rig.group.getObjectByName("Barbarian_Round_Shield");
+  shieldProp?.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+      child.material = child.material.clone();
+    }
+  });
+
   const boneOf = (name: string) => findNode(rig.group, name);
   const gear: THREE.Object3D[] = [];
   const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
@@ -269,6 +279,17 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
         addGear(`lowerleg.${side}`, greave, eq.boots);
       }
     }
+    if (shieldProp) {
+      shieldProp.visible = !!eq.shield;
+      const glow = eq.shield ? RARITY_GLOW[eq.shield.rarity] : undefined;
+      shieldProp.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.emissive.setHex(glow ?? 0x000000);
+          child.material.emissiveIntensity = glow !== undefined ? 0.35 : 0;
+        }
+      });
+    }
+
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;

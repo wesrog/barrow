@@ -366,4 +366,15 @@ describe("save round-trip", () => {
     expect(p2.quests.howler_cull).toEqual({ stage: "active", count: 10 });
     expect(p2.quests.fen_hearts).toEqual({ stage: "active", count: 0 });
   });
+
+  test("a save from before shields loads with an empty shield slot", () => {
+    const state = createGame(6);
+    joinPlayer(state, { id: 0 });
+    const raw = JSON.parse(serializeCharacter(state, 0));
+    delete raw.equipment.shield; // pre-shield builds never wrote the key
+    const state2 = createGame(6);
+    const p2 = joinPlayer(state2, { id: 0 });
+    expect(applyCharacter(state2, 0, JSON.stringify(raw))).toBe(true);
+    expect(p2.equipment.shield).toBeNull();
+  });
 });

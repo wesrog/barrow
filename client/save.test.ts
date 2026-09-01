@@ -4,6 +4,7 @@ import { inCamp, isWalkable } from "../sim/map";
 import { player, soloGame } from "../sim/test-helpers";
 import { joinPlayer } from "../sim/tick";
 import { BASE_STATS, LIFE_PER_LEVEL, placeItem } from "../sim/character";
+import { worldWaypointPos } from "../sim/surface";
 import { serializeCharacter, applyCharacter } from "./save";
 
 describe("character save", () => {
@@ -133,10 +134,11 @@ describe("checkpoint persistence", () => {
     const raw = serializeCharacter(a, 0);
     const b = soloGame(2);
     expect(applyCharacter(b, 0, raw)).toBe(true);
-    expect(player(b).zoneId).toBe("redfen");
-    expect(b.zones.has("redfen")).toBe(true);
+    expect(player(b).zoneId).toBe("surface");
+    expect(b.zones.has("surface")).toBe(true);
     expect(player(b).waypoints).toEqual(["overworld", "redfen"]);
     expect(player(b).checkpoint).toBe("redfen");
+    expect(player(b).pos).toEqual(worldWaypointPos("redfen"));
     const map = zoneOf(b, player(b)).map;
     expect(isWalkable(map, Math.floor(player(b).pos.x), Math.floor(player(b).pos.y))).toBe(true);
   });
@@ -148,8 +150,9 @@ describe("checkpoint persistence", () => {
     save.waypoints = ["overworld", "atlantis", 7];
     const b = soloGame(2);
     expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
-    expect(player(b).zoneId).toBe("overworld");
+    expect(player(b).zoneId).toBe("surface");
     expect(player(b).checkpoint).toBe("overworld");
+    expect(player(b).pos).toEqual(worldWaypointPos("overworld"));
     expect(player(b).waypoints).toEqual(["overworld"]);
   });
 
@@ -162,8 +165,9 @@ describe("checkpoint persistence", () => {
     save.waypoints = ["overworld"];
     const b = soloGame(2);
     expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
-    expect(player(b).zoneId).toBe("redfen");
+    expect(player(b).zoneId).toBe("surface");
     expect(player(b).checkpoint).toBe("redfen");
+    expect(player(b).pos).toEqual(worldWaypointPos("redfen"));
     expect(player(b).waypoints).toEqual(["overworld"]);
   });
 
@@ -175,8 +179,9 @@ describe("checkpoint persistence", () => {
     delete save.waypoints;
     const b = soloGame(2);
     expect(applyCharacter(b, 0, JSON.stringify(save))).toBe(true);
-    expect(player(b).zoneId).toBe("overworld");
+    expect(player(b).zoneId).toBe("surface");
     expect(player(b).waypoints).toEqual(["overworld"]);
     expect(player(b).checkpoint).toBe("overworld");
+    expect(player(b).pos).toEqual(worldWaypointPos("overworld"));
   });
 });

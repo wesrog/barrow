@@ -2,10 +2,8 @@ import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
-import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
-import { isAreaId } from "../../sim/areas";
-import { zoneTitle } from "../../sim/zone";
-import { inCamp } from "../../sim/map";
+import { zoneDepth, type GameState } from "../../sim/state";
+import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
 import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
 
 const mono = "ui-monospace, monospace";
@@ -238,8 +236,8 @@ export function BottomBar({
             {ACTION_BUTTONS.filter(
               (b) =>
                 !b.townOnly ||
-                (localPlayer(game).zoneId === "overworld" &&
-                  inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)),
+                (localPlayer(game).zoneId === "surface" &&
+                  inRect(worldCampRect("overworld"), localPlayer(game).pos)),
             ).map(
               ({ action, key, label }) => (
                 <button
@@ -292,10 +290,10 @@ export function BottomBar({
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
           lvl {p.level} ·{" "}
-          {isAreaId(localPlayer(game).zoneId)
-            ? inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)
+          {localPlayer(game).zoneId === "surface"
+            ? inRect(worldCampRect("overworld"), localPlayer(game).pos)
               ? "safe ground"
-              : zoneTitle(localPlayer(game).zoneId).toLowerCase()
+              : locationTitle("surface", localPlayer(game).pos).toLowerCase()
             : `depth ${zoneDepth(localPlayer(game).zoneId)}`}{" "}
           ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>

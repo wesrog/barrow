@@ -1,15 +1,12 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
-import { zoneDepth, zoneOf, type GameState, type PlayerInput, type ZoneId } from "../sim/state";
-import { AREAS, isAreaId } from "../sim/areas";
-import { inCamp } from "../sim/map";
-import { BIOME_PALETTES, type BiomePalette } from "./render/biomes";
+import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
-import { zoneTitle } from "../sim/zone";
 import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
@@ -34,15 +31,10 @@ const TICK_MS = 1000 / TICK_RATE;
 let nextToastId = 1;
 let nextIntroSeq = 1;
 
-/** The biome palette for a zone, or undefined for the crypt's dungeon look. */
-function zonePalette(zoneId: ZoneId): BiomePalette | undefined {
-  return isAreaId(zoneId) ? BIOME_PALETTES[AREAS[zoneId].biome] : undefined;
-}
-
 /** Is the local player standing on the camp's safe ground? */
 function onCampGround(game: GameState): boolean {
   const p = localPlayer(game);
-  return p.zoneId === "overworld" && inCamp(zoneOf(game, p).map, p.pos);
+  return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
 }
 
 function Game({
@@ -117,7 +109,7 @@ function Game({
         zoneOf(game, localPlayer(game)).map,
         assets,
         onItemClick,
-        zonePalette(localPlayer(game).zoneId),
+        localPlayer(game).zoneId === "surface",
       );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
@@ -305,8 +297,8 @@ function Game({
             case "player_died": {
               const depth = zoneDepth(e.zone);
               pushToast(
-                isAreaId(e.zone)
-                  ? `P${e.playerId + 1} fell in ${zoneTitle(e.zone)}`
+                e.zone === "surface"
+                  ? `P${e.playerId + 1} fell in ${locationTitle(e.zone, e.pos)}`
                   : depth > 0
                     ? `P${e.playerId + 1} fell on floor ${depth}`
                     : `P${e.playerId + 1} died`,
@@ -319,6 +311,17 @@ function Game({
           }
           // Another zone entirely: neither the scene nor the HUD cares.
           if ("zone" in e && e.zone !== localZone) continue;
+          // One shared surface zone means zone-filtering no longer localizes
+          // events; anything with a position that isn't ours gets range-culled.
+          const me = localPlayer(game);
+          if (
+            "pos" in e &&
+            !("playerId" in e && e.playerId === localId()) &&
+            e.type !== "player_died" &&
+            Math.hypot(e.pos.x - me.pos.x, e.pos.y - me.pos.y) > 24
+          ) {
+            continue;
+          }
           // The scene animates every hero on screen; the HUD and the sound
           // effects only react to the local one.
           scene.handleEvent(e, game);
@@ -374,25 +377,35 @@ function Game({
               break;
             case "traveled":
               play("portal");
-              if (e.to !== "overworld") {
-                setShopOpen(false);
-                setHealerOpen(false);
-              }
+              // Any travel leaves the camp behind.
+              setShopOpen(false);
+              setHealerOpen(false);
               if (e.playerId === localId()) {
                 setWaypointsOpen(false);
                 // The big "entering a new land" card, D2-style.
-                const depth = zoneDepth(e.to);
-                setIntro({
-                  seq: nextIntroSeq++,
-                  title: zoneTitle(e.to),
-                  sub: isAreaId(e.to) ? undefined : `depth ${depth}`,
-                });
+                const title = locationTitle(e.to, localPlayer(game).pos);
+                setIntro((prev) =>
+                  prev?.title === title
+                    ? prev
+                    : {
+                        seq: nextIntroSeq++,
+                        title,
+                        sub: e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`,
+                      },
+                );
                 save(); // a zone crossing is a moment worth keeping
+              }
+              break;
+            case "region_entered":
+              if (e.playerId === localId()) {
+                const title = regionTitle(e.area);
+                setIntro((prev) => (prev?.title === title ? prev : { seq: nextIntroSeq++, title }));
+                save(); // a border crossing is a moment worth keeping
               }
               break;
             case "waypoint_found":
               if (e.playerId === localId()) {
-                pushToast(`waypoint found: ${zoneTitle(e.area)}`);
+                pushToast(`waypoint found: ${regionTitle(e.area)}`);
                 play("levelup");
                 save(); // the new checkpoint survives even an immediate crash
               }
@@ -506,7 +519,7 @@ function Game({
           currentMap,
           assets,
           onItemClick,
-          zonePalette(localPlayer(game).zoneId),
+          localPlayer(game).zoneId === "surface",
         );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();

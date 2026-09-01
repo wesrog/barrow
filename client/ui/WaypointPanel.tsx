@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { AREAS, type AreaId } from "../../sim/areas";
 import type { GameState } from "../../sim/state";
+import { areaAt } from "../../sim/surface";
 import { localPlayer } from "../local";
 import { PanelChrome } from "./PanelChrome";
 
@@ -46,7 +47,7 @@ export function WaypointPanel({
       <PanelChrome title="waypoint" color="#c9a84c" onClose={onClose} />
       {p.waypoints.map((id) => {
         const def = AREAS[id];
-        const here = id === p.zoneId;
+        const here = p.zoneId === "surface" && id === areaAt(p.pos);
         return (
           <div
             key={id}

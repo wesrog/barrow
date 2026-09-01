@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { serializeCharacter } from "../sim/save";
 import { createGame, joinPlayer, step, travel } from "../sim/tick";
+import { getZone } from "../sim/state";
 import { worldWaypointPos } from "../sim/surface";
 import { deserializeGame, serializeGame } from "./snapshot";
 
@@ -52,7 +53,7 @@ test("a joiner restored at a far-off outpost replays identically on every peer",
   step(host, structuredClone(joinFrame));
   step(peer, structuredClone(joinFrame));
   expect(host.players.get(1)!.zoneId).toBe("surface");
-  expect(host.players.get(1)!.pos).toEqual(worldWaypointPos("redfen"));
+  expect(host.players.get(1)!.pos).toEqual(worldWaypointPos(getZone(host, "surface").map, "redfen"));
   for (let t = 0; t < 60; t++) {
     const f = { tick: host.tick, inputs: {} };
     step(host, structuredClone(f));

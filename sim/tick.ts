@@ -46,15 +46,12 @@ import {
   applyBuyPotionInput,
   applyCastPortalInput,
   applyShopInput,
-  applyTalkHealerInput,
-  applyTalkVendorInput,
   applyUsePortalInput,
-  healerSystem,
   portalSystem,
   removePortalsOwnedBy,
   restock,
-  vendorSystem,
 } from "./systems/town";
+import { applyTalkNpcInput, npcSystem } from "./systems/quests";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -75,8 +72,7 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
   p.pendingStrike = null;
@@ -301,8 +297,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     leap: null,
     pickupTarget: null,
     smashTarget: null,
-    vendorTarget: false,
-    healerTarget: false,
+    npcTarget: null,
     portalTarget: null,
     reclaimTarget: null,
     level: 1,
@@ -372,8 +367,7 @@ export function step(state: GameState, frame: Frame): void {
     applyDropItemInput(state, p, input);
     applyDrinkInput(state, p, input);
     applySpendSkillInput(state, p, input);
-    applyTalkVendorInput(state, p, input);
-    applyTalkHealerInput(state, p, input);
+    applyTalkNpcInput(state, p, input);
     applyShopInput(state, p, input);
     applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);
@@ -392,8 +386,7 @@ export function step(state: GameState, frame: Frame): void {
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
     reclaimSystem(state, zone, acting());
-    vendorSystem(state, zone, acting());
-    healerSystem(state, zone, acting());
+    npcSystem(state, zone, acting());
     portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
     leapSystem(state, zone, here());

@@ -164,12 +164,6 @@ function Game({
       } else if (picked.kind === "breakable" && allowAttack) {
         pending.smash = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "vendor" && allowAttack) {
-        pending.talkVendor = true;
-        delete pending.moveTo;
-      } else if (picked.kind === "healer" && allowAttack) {
-        pending.talkHealer = true;
-        delete pending.moveTo;
       } else if (picked.kind === "portal" && allowAttack) {
         pending.usePortal = picked.id;
         delete pending.moveTo;
@@ -415,12 +409,6 @@ function Game({
                 play("levelup");
                 save(); // the new checkpoint survives even an immediate crash
               }
-              break;
-            case "shop_opened":
-              setShopOpen(true);
-              break;
-            case "healer_opened":
-              setHealerOpen(true);
               break;
             case "healed":
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");

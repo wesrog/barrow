@@ -220,8 +220,7 @@ export function applyReclaimInput(state: GameState, p: Player, input: PlayerInpu
   p.attackTarget = null;
   p.smashTarget = null;
   p.portalTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.path = [];
 }
 

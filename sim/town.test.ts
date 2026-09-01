@@ -5,6 +5,7 @@ import { getZone } from "./state";
 import { inCamp } from "./map";
 import { placeItem } from "./character";
 import type { GameState } from "./state";
+import { NPC_TALK_RANGE } from "./systems/quests";
 
 /** The solo player back on safe camp ground (where every game begins). */
 function goToCamp(state: GameState): void {
@@ -38,88 +39,58 @@ describe("the camp", () => {
   });
 });
 
-describe("talking to the vendor", () => {
-  function vendorPos(state: GameState): { x: number; y: number } {
-    const v = getZone(state, "surface").map.markers.find((m) => m.ch === "V")!;
-    return { x: v.x, y: v.y };
-  }
-
-  test("clicking Maren walks the hero over and opens the shop on arrival", () => {
-    const state = soloGame(1);
-    stepSolo(state, { talkVendor: true });
-    expect(player(state).vendorTarget).toBe(true);
-    let opened = false;
-    for (let i = 0; i < 200 && !opened; i++) {
+describe("talking to an npc", () => {
+  test("clicking an npc walks over and opens talk", () => {
+    const state = soloGame(5);
+    const p = player(state);
+    const surface = getZone(state, "surface");
+    const maren = [...surface.npcs.values()].find((n) => n.npcId === "maren")!;
+    p.pos = { x: maren.pos.x + 3, y: maren.pos.y };
+    stepSolo(state, { talkNpc: maren.id });
+    // walk until within range (bounded loop so a pathing bug fails, not hangs)
+    for (let i = 0; i < 200 && !state.events.some((e) => e.type === "npc_talk"); i++) {
       stepSolo(state, {});
-      opened = state.events.some((e) => e.type === "shop_opened");
     }
-    expect(opened).toBe(true);
-    expect(player(state).vendorTarget).toBe(false);
-    const v = vendorPos(state);
-    expect(Math.hypot(player(state).pos.x - v.x, player(state).pos.y - v.y)).toBeLessThanOrEqual(1.5);
+    const talk = state.events.find((e) => e.type === "npc_talk");
+    expect(talk).toMatchObject({ playerId: 0, npcId: "maren" });
+    expect(Math.hypot(p.pos.x - maren.pos.x, p.pos.y - maren.pos.y)).toBeLessThanOrEqual(
+      NPC_TALK_RANGE + 0.01,
+    );
   });
 
-  test("talkVendor does nothing down in the crypt", () => {
-    const state = soloGame(1);
+  test("arriving at sera heals in full", () => {
+    const state = soloGame(5);
+    const p = player(state);
+    const surface = getZone(state, "surface");
+    const sera = [...surface.npcs.values()].find((n) => n.npcId === "sera")!;
+    p.pos = { x: sera.pos.x + 0.5, y: sera.pos.y };
+    p.life = 1;
+    stepSolo(state, { talkNpc: sera.id });
+    stepSolo(state, {});
+    expect(p.life).toBe(p.maxLife);
+  });
+
+  test("talkNpc does nothing down in the crypt", () => {
+    const state = soloGame(5);
+    const surface = getZone(state, "surface");
+    const maren = [...surface.npcs.values()].find((n) => n.npcId === "maren")!;
     travel(state, player(state), "floor:1");
-    stepSolo(state, { talkVendor: true });
-    expect(player(state).vendorTarget).toBe(false);
+    stepSolo(state, { talkNpc: maren.id });
+    expect(player(state).npcTarget).toBe(null);
   });
 
   test("walking somewhere else cancels the approach", () => {
-    const state = soloGame(1);
-    stepSolo(state, { talkVendor: true });
-    expect(player(state).vendorTarget).toBe(true);
+    const state = soloGame(5);
+    const surface = getZone(state, "surface");
+    const maren = [...surface.npcs.values()].find((n) => n.npcId === "maren")!;
+    stepSolo(state, { talkNpc: maren.id });
+    expect(player(state).npcTarget).toBe(maren.id);
     stepSolo(state, { moveTo: { x: player(state).pos.x, y: player(state).pos.y } });
-    expect(player(state).vendorTarget).toBe(false);
+    expect(player(state).npcTarget).toBe(null);
   });
 });
 
 describe("the healer", () => {
-  function healerPos(state: GameState): { x: number; y: number } {
-    const h = getZone(state, "surface").map.markers.find((m) => m.ch === "H")!;
-    return { x: h.x, y: h.y };
-  }
-
-  test("clicking Sera walks the hero over; arrival restores life and mana", () => {
-    const state = soloGame(1);
-    player(state).life = 1;
-    player(state).mana = 0;
-    stepSolo(state, { talkHealer: true });
-    expect(player(state).healerTarget).toBe(true);
-    let healed = false;
-    for (let i = 0; i < 200 && !healed; i++) {
-      stepSolo(state, {});
-      healed = state.events.some((e) => e.type === "healed");
-    }
-    expect(healed).toBe(true);
-    expect(player(state).life).toBe(player(state).maxLife);
-    expect(player(state).mana).toBe(player(state).maxMana);
-    expect(player(state).healerTarget).toBe(false);
-    const h = healerPos(state);
-    expect(Math.hypot(player(state).pos.x - h.x, player(state).pos.y - h.y)).toBeLessThanOrEqual(
-      1.5,
-    );
-  });
-
-  test("talkHealer does nothing down in the crypt", () => {
-    const state = soloGame(1);
-    travel(state, player(state), "floor:1");
-    stepSolo(state, { talkHealer: true });
-    expect(player(state).healerTarget).toBe(false);
-  });
-
-  test("arriving at Sera also opens her potion stall", () => {
-    const state = soloGame(1);
-    stepSolo(state, { talkHealer: true });
-    let opened = false;
-    for (let i = 0; i < 200 && !opened; i++) {
-      stepSolo(state, {});
-      opened = state.events.some((e) => e.type === "healer_opened");
-    }
-    expect(opened).toBe(true);
-  });
-
   test("buying potions fills the matching belt row and charges gold", () => {
     const state = soloGame(1);
     player(state).gold = 100;
@@ -154,13 +125,6 @@ describe("the healer", () => {
     expect(player(state).gold).toBe(100);
   });
 
-  test("walking somewhere else cancels the approach", () => {
-    const state = soloGame(1);
-    stepSolo(state, { talkHealer: true });
-    expect(player(state).healerTarget).toBe(true);
-    stepSolo(state, { moveTo: { x: player(state).pos.x, y: player(state).pos.y } });
-    expect(player(state).healerTarget).toBe(false);
-  });
 });
 
 describe("the vendor", () => {

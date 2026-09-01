@@ -395,8 +395,7 @@ export function deathSystem(
     p.attackTarget = null;
     p.pickupTarget = null;
     p.smashTarget = null;
-    p.vendorTarget = false;
-    p.healerTarget = false;
+    p.npcTarget = null;
     p.portalTarget = null;
     p.reclaimTarget = null;
 

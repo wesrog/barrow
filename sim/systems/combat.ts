@@ -1,5 +1,5 @@
 import type { Rng } from "../rng";
-import { hasLineOfSight, inCamp, isWalkable, type Vec, type ZoneMap } from "../map";
+import { hasLineOfSight, inCamp, isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
 import {
   zoneOf,
@@ -16,6 +16,21 @@ import { damageMultiplier } from "../skills";
 import { moveAlongPath } from "./movement";
 import { createEquipment, type EquipSlot } from "../character";
 import { recomputePlayerStats } from "./inventory";
+import { worldWaypointPos } from "../surface";
+
+/**
+ * Scatter a drop around `origin`, clamped to walkable ground so loot never
+ * lands inside a tree or wall where it can't be reached (or even clicked).
+ */
+export function dropSpot(rng: Rng, map: ZoneMap, origin: Vec, spread = 1.4): Vec {
+  const pos = {
+    x: origin.x + (rng.next() - 0.5) * spread,
+    y: origin.y + (rng.next() - 0.5) * spread,
+  };
+  if (isWalkable(map, Math.floor(pos.x), Math.floor(pos.y))) return pos;
+  const cell = nearestWalkable(map, pos);
+  return cell ? { x: cell.x + 0.5, y: cell.y + 0.5 } : { ...origin };
+}
 
 export function computeHitChance(attackRating: number, defense: number): number {
   const raw = attackRating / (attackRating + defense);
@@ -53,20 +68,44 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
       1,
       Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
-    target.life -= amount;
-    target.lastHitBy = p.id;
-    state.events.push({
-      type: "monster_hit",
-      id: target.id,
-      amount,
-      pos: { ...target.pos },
-      zone: zone.id,
-    });
+    hitMonster(state, zone, target, p, amount);
   }
 }
 
 export function rollDamage(rng: Rng, min: number, max: number): number {
   return rng.int(min, max);
+}
+
+/** Idle monsters this close to a struck ally join the fight (if they can see it). */
+const ALERT_RADIUS = 5;
+
+/**
+ * Land player-dealt damage on a monster. Pain provokes: even a hit from beyond
+ * the monster's aggro radius (a firebolt from across the room) wakes it up and
+ * sends it after its attacker. Nearby idle monsters that can see the victim
+ * join in; returning ones stay leashed to their walk home.
+ */
+export function hitMonster(
+  state: GameState,
+  zone: ZoneState,
+  m: Monster,
+  p: Player,
+  amount: number,
+): void {
+  m.life -= amount;
+  m.lastHitBy = p.id;
+  if (m.ai !== "chasing") {
+    m.ai = "chasing";
+    m.path = [];
+  }
+  for (const other of zone.monsters.values()) {
+    if (other === m || other.ai !== "idle") continue;
+    if (dist(other.pos, m.pos) > ALERT_RADIUS) continue;
+    if (!hasLineOfSight(zone.map, other.pos, m.pos)) continue;
+    other.ai = "chasing";
+    other.path = [];
+  }
+  state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
 }
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -92,6 +131,7 @@ export function applyAttackInput(state: GameState, p: Player, input: PlayerInput
     p.smashTarget = null;
     p.portalTarget = null;
     p.reclaimTarget = null;
+    p.castTarget = null;
     p.path = [];
   }
 }
@@ -104,6 +144,7 @@ export function applySwingInPlaceInput(state: GameState, p: Player, input: Playe
   p.pickupTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   if (p.swingCooldown > 0) return;
   p.swingCooldown = p.swingEvery;
   state.events.push({
@@ -136,12 +177,20 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
           zone: zone.id,
         });
         p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+        // One input buys one swing. Holding the button re-sends the attack
+        // every tick, which re-arms the target before the next cooldown ends —
+        // that's what makes click-and-hold auto-attack while a single click
+        // stays a single swing (and leaves skills free to fire between them).
+        p.attackTarget = null;
       }
     } else {
       p.path = pathToward(zone.map, p.pos, target.pos);
     }
   }
 }
+
+/** Chasers dragged farther than this from their spawn anchor give up and go home. */
+const MAX_CHASE_DIST = 12;
 
 /** Idle strolls stay within this many cells of the spawn anchor. */
 const WANDER_RADIUS = 1.5;
@@ -190,13 +239,34 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
       m.strikeAt = null;
       continue;
     }
-    // Nobody left standing here: idle monsters over an empty or dead zone.
+    // Homeward bound: ignore everyone until back at the spawn anchor.
+    if (m.ai === "returning") {
+      if (m.path.length === 0) {
+        m.path = pathToward(zone.map, m.pos, m.home);
+        if (m.path.length === 0) {
+          // No way home from here — settle down and re-anchor where it stands.
+          m.ai = "idle";
+          m.home = { ...m.pos };
+          continue;
+        }
+      }
+      moveAlongPath(m.pos, m.path, m.speed);
+      if (dist(m.pos, m.home) <= 1) {
+        m.ai = "idle";
+        m.path = [];
+      }
+      continue;
+    }
+    // Nobody left standing here: monsters drop aggro but keep ambling.
     const p = nearestPlayer(living, m.pos);
     if (!p) {
-      m.ai = "idle";
-      m.path = [];
+      if (m.ai !== "idle") {
+        m.ai = "idle";
+        m.path = [];
+      }
       m.windingUntil = null;
       m.strikeAt = null;
+      idleWander(state, zone, m);
       continue;
     }
     // A swing in flight: damage lands at the contact frame.
@@ -242,6 +312,13 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
         idleWander(state, zone, m);
         continue;
       }
+    }
+    // Leashed: a chase that strays too far from home is abandoned. Stops
+    // players from kiting half the zone into one giant train.
+    if (dist(m.pos, m.home) > MAX_CHASE_DIST) {
+      m.ai = "returning";
+      m.path = [];
+      continue;
     }
     const inReach =
       m.ranged !== undefined
@@ -339,20 +416,17 @@ export function deathSystem(
       typeId: m.typeId,
       pos: { ...m.pos },
       xp: m.xp,
+      mlvl: m.mlvl,
       zone: zone.id,
       killer: m.lastHitBy,
     });
-    const item = rollDrop(
-      state.rng,
-      m.tc,
-      m.mlvl,
-      m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" } : {},
-    );
+    const biasClass = m.lastHitBy !== null ? state.players.get(m.lastHitBy)?.klass : undefined;
+    const item = rollDrop(state.rng, m.tc, m.mlvl, {
+      biasClass,
+      ...(m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" as const } : {}),
+    });
     if (item) {
-      const pos = {
-        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
-        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
-      };
+      const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;
       zone.groundItems.set(id, { id, item, pos });
       state.events.push({
@@ -367,10 +441,7 @@ export function deathSystem(
     // Gold: a separate 35% roll, scaling with the monster's level
     if (state.rng.next() < 0.35) {
       const amount = state.rng.int(2, 5) + Math.floor(m.mlvl * state.rng.next() * 2);
-      const pos = {
-        x: m.pos.x + (state.rng.next() - 0.5) * 1.4,
-        y: m.pos.y + (state.rng.next() - 0.5) * 1.4,
-      };
+      const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;
       zone.goldPiles.set(id, { id, amount, pos });
       state.events.push({ type: "gold_dropped", id, amount, pos, zone: zone.id });
@@ -385,10 +456,10 @@ export function deathSystem(
     p.attackTarget = null;
     p.pickupTarget = null;
     p.smashTarget = null;
-    p.vendorTarget = false;
-    p.healerTarget = false;
+    p.npcTarget = null;
     p.portalTarget = null;
     p.reclaimTarget = null;
+    p.castTarget = null;
 
     // Strip gear onto a corpse here, merging in any corpse this player already
     // left behind elsewhere (a corpse run that ends in another death).
@@ -428,8 +499,9 @@ export function deathSystem(
 
     state.events.push({ type: "player_died", playerId: p.id, zone: zone.id, pos: { ...p.pos } });
 
-    // Immediate respawn on camp ground — there is no persistent "you are dead" state.
-    travel(state, p, "overworld");
+    // Immediate respawn at the checkpoint's pad — there is no persistent "you are dead" state.
+    travel(state, p, "surface");
+    p.pos = { ...worldWaypointPos(zoneOf(state, p).map, p.checkpoint) };
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;

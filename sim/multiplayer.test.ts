@@ -13,7 +13,7 @@ test("two players join on camp ground with starter blades", () => {
   const g = join2();
   expect([...g.players.keys()]).toEqual([0, 1]);
   for (const p of g.players.values()) {
-    expect(p.zoneId).toBe("overworld");
+    expect(p.zoneId).toBe("surface");
     expect(p.equipment.weapon?.baseId).toBe("rusted_blade");
   }
 });

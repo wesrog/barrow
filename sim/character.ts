@@ -6,6 +6,7 @@ export const INV_W = 10;
 export const INV_H = 4;
 export const BELT_SIZE = 4;
 export const POTION_HEAL = 35;
+export const POTION_MANA = 25;
 
 export interface InvEntry {
   id: number;
@@ -18,7 +19,7 @@ export interface Inventory {
   entries: InvEntry[];
 }
 
-export type EquipSlot = "weapon" | "helm" | "chest" | "boots" | "amulet" | "ring1" | "ring2";
+export type EquipSlot = "weapon" | "shield" | "helm" | "chest" | "boots" | "amulet" | "ring1" | "ring2";
 
 export type Equipment = Record<EquipSlot, Item | null>;
 
@@ -27,7 +28,7 @@ export function createInventory(): Inventory {
 }
 
 export function createEquipment(): Equipment {
-  return { weapon: null, helm: null, chest: null, boots: null, amulet: null, ring1: null, ring2: null };
+  return { weapon: null, shield: null, helm: null, chest: null, boots: null, amulet: null, ring1: null, ring2: null };
 }
 
 export function itemSize(item: Item): { w: number; h: number } {
@@ -84,6 +85,7 @@ export function removeEntry(inv: Inventory, id: number): InvEntry | null {
 export function slotForItem(item: Item, eq: Equipment): EquipSlot {
   const slot = BASES[item.baseId]!.slot;
   if (slot === "potion") throw new Error("potions go to the belt, not equipment");
+  if (slot === "quest") throw new Error("quest items don't equip");
   if (slot === "ring") {
     if (!eq.ring1) return "ring1";
     if (!eq.ring2) return "ring2";
@@ -127,10 +129,21 @@ export const CLASS_STATS: Record<
   witch: { maxLife: 75, maxMana: 60, lifePerLevel: 5, manaPerLevel: 4 },
 };
 
+/** Each level's price grows this much over the last — the slope that makes
+ * early levels quick and the late game a genuine climb. */
+const XP_LEVEL_BASE = 40;
+const XP_LEVEL_GROWTH = 1.22;
+
+/** Cumulative thresholds, extended on demand; grantXp probes this in a loop. */
+const xpTable: number[] = [0, 0];
+
 /** Total xp at which the player becomes `level`. */
 export function xpForLevel(level: number): number {
-  const n = level - 1;
-  return 20 * n + 15 * n * n;
+  while (xpTable.length <= level) {
+    const l = xpTable.length;
+    xpTable.push(xpTable[l - 1]! + Math.round(XP_LEVEL_BASE * Math.pow(XP_LEVEL_GROWTH, l - 2)));
+  }
+  return xpTable[level]!;
 }
 
 /** Broken gear (durability 0) contributes nothing until repaired. */

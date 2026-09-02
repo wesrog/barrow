@@ -31,7 +31,7 @@ export interface Affix {
 }
 
 const WEAPON: Slot[] = ["weapon"];
-const ARMOR: Slot[] = ["helm", "chest", "boots"];
+const ARMOR: Slot[] = ["shield", "helm", "chest", "boots"];
 const JEWELRY: Slot[] = ["ring", "amulet"];
 
 const a = (x: Affix) => x;
@@ -48,6 +48,11 @@ export const AFFIXES: Record<string, Affix> = {
   sturdy: a({ id: "sturdy", kind: "prefix", group: "def_pre", name: "Sturdy", alvl: 1, slots: ARMOR, mods: [{ stat: "defense", min: 3, max: 8 }] }),
   fortified: a({ id: "fortified", kind: "prefix", group: "def_pre", name: "Fortified", alvl: 10, slots: ARMOR, mods: [{ stat: "defense", min: 12, max: 24 }] }),
   gleaming: a({ id: "gleaming", kind: "prefix", group: "mf_pre", name: "Gleaming", alvl: 5, slots: [...ARMOR, ...JEWELRY], mods: [{ stat: "magicFind", min: 5, max: 12 }] }),
+  merciless: a({ id: "merciless", kind: "prefix", group: "dmg_pct", name: "Merciless", alvl: 24, slots: WEAPON, mods: [{ stat: "dmgPct", min: 90, max: 130 }] }),
+  grim: a({ id: "grim", kind: "prefix", group: "dmg_flat", name: "Grim", alvl: 22, slots: WEAPON, mods: [{ stat: "dmgMin", min: 6, max: 9 }, { stat: "dmgMax", min: 10, max: 16 }] }),
+  hawkeye: a({ id: "hawkeye", kind: "prefix", group: "ar_pre", name: "Hawkeye", alvl: 20, slots: [...WEAPON, ...JEWELRY], mods: [{ stat: "attackRating", min: 100, max: 170 }] }),
+  bulwark: a({ id: "bulwark", kind: "prefix", group: "def_pre", name: "Bulwark", alvl: 20, slots: ARMOR, mods: [{ stat: "defense", min: 30, max: 52 }] }),
+  radiant: a({ id: "radiant", kind: "prefix", group: "mf_pre", name: "Radiant", alvl: 22, slots: [...ARMOR, ...JEWELRY], mods: [{ stat: "magicFind", min: 14, max: 24 }] }),
 
   // --- suffixes ---
   of_the_fox: a({ id: "of_the_fox", kind: "suffix", group: "life", name: "of the Fox", alvl: 1, slots: "any", mods: [{ stat: "life", min: 5, max: 15 }] }),
@@ -62,4 +67,9 @@ export const AFFIXES: Record<string, Affix> = {
   of_fortune: a({ id: "of_fortune", kind: "suffix", group: "mf_suf", name: "of Fortune", alvl: 5, slots: "any", mods: [{ stat: "magicFind", min: 5, max: 15 }] }),
   of_plenty: a({ id: "of_plenty", kind: "suffix", group: "mf_suf", name: "of Plenty", alvl: 18, slots: "any", mods: [{ stat: "magicFind", min: 16, max: 30 }] }),
   of_iron: a({ id: "of_iron", kind: "suffix", group: "def_suf", name: "of Iron", alvl: 1, slots: ARMOR, mods: [{ stat: "defense", min: 4, max: 10 }] }),
+  of_the_titan: a({ id: "of_the_titan", kind: "suffix", group: "life", name: "of the Titan", alvl: 21, slots: "any", mods: [{ stat: "life", min: 40, max: 70 }] }),
+  of_the_maelstrom: a({ id: "of_the_maelstrom", kind: "suffix", group: "mana", name: "of the Maelstrom", alvl: 22, slots: "any", mods: [{ stat: "mana", min: 35, max: 55 }] }),
+  of_the_gale: a({ id: "of_the_gale", kind: "suffix", group: "frw", name: "of the Gale", alvl: 18, slots: ["boots"], mods: [{ stat: "moveSpeedPct", min: 11, max: 15 }] }),
+  of_the_citadel: a({ id: "of_the_citadel", kind: "suffix", group: "def_suf", name: "of the Citadel", alvl: 24, slots: ARMOR, mods: [{ stat: "defense", min: 35, max: 60 }] }),
+  of_cinders: a({ id: "of_cinders", kind: "suffix", group: "ember", name: "of Cinders", alvl: 16, slots: WEAPON, mods: [{ stat: "dmgMin", min: 3, max: 6 }, { stat: "dmgMax", min: 7, max: 12 }] }),
 };

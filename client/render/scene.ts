@@ -8,8 +8,13 @@ import {
   type SimEvent,
 } from "../../sim/state";
 import { MONSTER_TYPES } from "../../sim/monsters";
-import { zoneTitle } from "../../sim/zone";
+import { potionKind } from "../../sim/items/bases";
+import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
+import { npcIndicator } from "../../sim/quests";
+import { AREAS } from "../../sim/areas";
+import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
+import { BIOME_PALETTES } from "./biomes";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -30,8 +35,8 @@ export type PickResult =
   | { kind: "breakable"; id: number }
   | { kind: "portal"; id: number }
   | { kind: "corpse"; id: number }
-  | { kind: "vendor" }
-  | { kind: "healer" }
+  | { kind: "npc"; id: number }
+  | { kind: "waypoint"; pos: Vec }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -63,9 +68,11 @@ export function createScene(
   mount: HTMLElement,
   map: ZoneMap,
   assets: GameAssets,
+  npcs: Npc[],
   onItemClick?: (id: number) => void,
-  outdoor = false,
+  surface = false,
 ): SceneHandle {
+  const outdoor = surface;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -80,12 +87,15 @@ export function createScene(
   mount.appendChild(overlay);
 
   const scene = new THREE.Scene();
-  const dbg = window as unknown as { __scenes: THREE.Scene[] };
-  (dbg.__scenes ??= []).push(scene); // TEMP debug
-  // The moors sit under an open night sky; the crypt under dead black.
-  const bg = outdoor ? 0x0c1310 : 0x0a0a0c;
+  // Regions sit under their biome's night sky; the crypt under dead black.
+  // Outdoors the sky starts on the spawn region's palette and the per-frame
+  // blend (below) corrects to wherever the hero actually stands.
+  const startPal = outdoor ? BIOME_PALETTES[AREAS[areaAt(map.spawn)].biome] : null;
+  const bg = startPal ? startPal.bg : 0x0a0a0c;
   scene.background = new THREE.Color(bg);
-  scene.fog = outdoor ? new THREE.Fog(bg, 24, 52) : new THREE.Fog(bg, 20, 40);
+  scene.fog = startPal
+    ? new THREE.Fog(bg, startPal.fogNear, startPal.fogFar)
+    : new THREE.Fog(bg, 20, 40);
   const fx = new Effects(scene);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
@@ -106,7 +116,10 @@ export function createScene(
   window.addEventListener("resize", resize);
 
   // --- Lights ---
-  scene.add(new THREE.AmbientLight(outdoor ? 0x70806e : 0x6a6a80, outdoor ? 0.65 : 0.5));
+  const ambient = startPal
+    ? new THREE.AmbientLight(startPal.ambient, startPal.ambientIntensity)
+    : new THREE.AmbientLight(0x6a6a80, 0.5);
+  scene.add(ambient);
   const moon = new THREE.DirectionalLight(0xb8c4e0, outdoor ? 1.3 : 1.1);
   moon.position.set(18, 30, 8);
   moon.castShadow = true;
@@ -120,9 +133,48 @@ export function createScene(
   scene.add(moon);
   scene.add(moon.target);
 
-  const heroLight = new THREE.PointLight(0xffb35c, 8, 9, 1.6);
-  heroLight.position.set(0, 1.6, 0);
+  // Torso height, not overhead: right above the scalp the falloff term blows
+  // up and a bare head reads as a lamp. From the chest the crown faces away.
+  const heroLight = new THREE.PointLight(0xffb35c, 6, 9, 1.6);
+  heroLight.position.set(0, 1.05, 0);
   scene.add(heroLight);
+
+  // --- Atmosphere: the surface is one scene, so sky, fog and ambient follow
+  // the hero across region borders instead of snapping at a zone change ---
+  const BLEND = 10; // cells on each side of a border that participate in the mix
+  const bands = AREA_ORDER.map((id) => ({
+    rect: areaRect(id),
+    pal: BIOME_PALETTES[AREAS[id].biome],
+  })).sort((a, b) => a.rect.x0 - b.rect.x0);
+  const bgColor = new THREE.Color();
+  const ambColor = new THREE.Color();
+  const tmpColor = new THREE.Color();
+
+  /** Blend the hero's region palette with a neighbor's near the border. */
+  const applyAtmosphere = (x: number) => {
+    let i = bands.findIndex((b) => x < b.rect.x1);
+    if (i < 0) i = bands.length - 1;
+    const cur = bands[i]!;
+    let other = cur;
+    let t = 0; // 0 = pure current, 0.5 = standing on the border
+    if (i > 0 && x - cur.rect.x0 < BLEND) {
+      other = bands[i - 1]!;
+      t = 0.5 * (1 - (x - cur.rect.x0) / BLEND);
+    } else if (i < bands.length - 1 && cur.rect.x1 - x < BLEND) {
+      other = bands[i + 1]!;
+      t = 0.5 * (1 - (cur.rect.x1 - x) / BLEND);
+    }
+    bgColor.set(cur.pal.bg).lerp(tmpColor.set(other.pal.bg), t);
+    (scene.background as THREE.Color).copy(bgColor);
+    const fog = scene.fog as THREE.Fog;
+    fog.color.copy(bgColor);
+    fog.near = cur.pal.fogNear + (other.pal.fogNear - cur.pal.fogNear) * t;
+    fog.far = cur.pal.fogFar + (other.pal.fogFar - cur.pal.fogFar) * t;
+    ambColor.set(cur.pal.ambient).lerp(tmpColor.set(other.pal.ambient), t);
+    ambient.color.copy(ambColor);
+    ambient.intensity =
+      cur.pal.ambientIntensity + (other.pal.ambientIntensity - cur.pal.ambientIntensity) * t;
+  };
 
   // --- Environment from the KayKit dungeon set: brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
@@ -174,9 +226,11 @@ export function createScene(
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
-  // Stair cells get a real stairwell instead of a floor tile.
+  // Stair cells (down and up) get a real stairwell instead of a floor tile.
   const stairCells = new Set(
-    map.markers.filter((m) => m.ch === ">").map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
+    map.markers
+      .filter((m) => m.ch === ">" || m.ch === "<")
+      .map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
   );
   if (!outdoor) {
     for (let y = 0; y < map.height; y++) {
@@ -201,55 +255,101 @@ export function createScene(
         }
       }
     }
-  } else {
-    // --- The moors: one heath plane, then instanced crags, dead pines, tufts ---
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(map.width, map.height),
-      flatMat(0x1f2a1b, 1),
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(map.width / 2, 0, map.height / 2);
-    ground.receiveShadow = true;
-    scene.add(ground);
 
-    const rockMats: THREE.Matrix4[] = [];
-    const pineMats: THREE.Matrix4[] = [];
-    const trunkMats: THREE.Matrix4[] = [];
-    const tuftMats: THREE.Matrix4[] = [];
+    // --- Crypt dressing: coffins, bone piles, and columns along the walls ---
+    // Deterministic from the cell hash, hugging wall-adjacent floor so the
+    // walking lanes stay readable. Pure decoration — nothing here collides.
+    const markerCells = new Set(
+      map.markers.map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
+    );
+    const coffinBase = flatMat(0x453424, 1);
+    const coffinLid = flatMat(0x574433, 1);
+    const boneMat = flatMat(0xcfc4a8, 0.9);
+    const makeCoffin = (h: number): THREE.Group => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.4), coffinBase);
+      body.position.y = 0.1;
+      g.add(body);
+      // The head end is broader — two overlapping boxes fake the casket taper.
+      const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.48), coffinBase);
+      shoulders.position.set(-0.12, 0.1, 0);
+      g.add(shoulders);
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.05, 0.44), coffinLid);
+      if (h % 5 === 0) {
+        // Ajar: the lid slid sideways, whatever rested inside long gone.
+        lid.position.set(0.1, 0.23, 0.14);
+        lid.rotation.z = 0.12;
+      } else {
+        lid.position.y = 0.22;
+      }
+      g.add(lid);
+      g.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+      return g;
+    };
+    const makeBonePile = (h: number): THREE.Group => {
+      const g = new THREE.Group();
+      for (let i = 0; i < 3 + (h % 2); i++) {
+        const bit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05 + ((h >> i) % 3) * 0.015, 0), boneMat);
+        bit.position.set(((h >> (i * 2)) % 5 - 2) * 0.07, 0.04, ((h >> (i * 2 + 3)) % 5 - 2) * 0.07);
+        bit.castShadow = true;
+        g.add(bit);
+      }
+      const shard = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.24, 4), boneMat);
+      shard.rotation.set(Math.PI / 2, 0, (h % 628) / 100);
+      shard.position.y = 0.04;
+      g.add(shard);
+      return g;
+    };
+    const spawnX = map.spawn.x;
+    const spawnY = map.spawn.y;
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (!isWalkable(map, x, y)) continue;
+        const key = `${x},${y}`;
+        if (stairCells.has(key) || markerCells.has(key)) continue;
+        if (Math.hypot(x + 0.5 - spawnX, y + 0.5 - spawnY) < 2.5) continue;
+        const nearWall =
+          !isWalkable(map, x, y + 1) ||
+          !isWalkable(map, x, y - 1) ||
+          !isWalkable(map, x + 1, y) ||
+          !isWalkable(map, x - 1, y);
+        if (!nearWall) continue;
+        const h = hash(x, y);
+        const jx = x + 0.5 + ((h >> 9) % 5 - 2) * 0.06;
+        const jz = y + 0.5 + ((h >> 12) % 5 - 2) * 0.06;
+        if (h % 23 === 3) {
+          const coffin = makeCoffin(h);
+          coffin.position.set(jx, 0, jz);
+          coffin.rotation.y = ((h >> 4) % 4) * (Math.PI / 2) + ((h >> 7) % 20 - 10) * 0.02;
+          scene.add(coffin);
+        } else if (h % 29 === 5) {
+          const bones = makeBonePile(h);
+          bones.position.set(jx, 0, jz);
+          scene.add(bones);
+        } else if (h % 61 === 7) {
+          placePiece(assets.dungeon.column, x + 0.5, y + 0.5, ((h >> 5) % 4) * (Math.PI / 2), {
+            x: 0.3,
+            y: 0.34,
+            z: 0.3,
+          });
+        }
+      }
+    }
+  } else {
+    // --- Open ground: every region lays its own biome-tinted plane over its
+    // slice of the world, then instanced crags, dead pines and tufts in its
+    // own colors. Cell hashes stay keyed on world coordinates, so the scatter
+    // is the same wherever a region happens to sit in the layout. ---
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const eul = new THREE.Euler();
     const scl = new THREE.Vector3();
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const h = hash(x, y);
-        const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
-        const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
-        if (!isWalkable(map, x, y)) {
-          if (stairCells.has(`${x},${y}`)) continue;
-          const border = x === 0 || y === 0 || x === map.width - 1 || y === map.height - 1;
-          if (border || h % 5 < 3) {
-            const s = 0.6 + ((h >> 6) % 45) / 100;
-            eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
-            m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
-            rockMats.push(m.clone());
-          } else {
-            const s = 0.75 + ((h >> 6) % 55) / 100;
-            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-            m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
-            pineMats.push(m.clone());
-            m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
-            trunkMats.push(m.clone());
-          }
-        } else if (h % 11 === 0) {
-          quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-          const s = 0.7 + ((h >> 7) % 60) / 100;
-          m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
-          tuftMats.push(m.clone());
-        }
-      }
-    }
     const addInstanced = (
       geo: THREE.BufferGeometry,
       color: number,
@@ -262,10 +362,56 @@ export function createScene(
       mesh.receiveShadow = true;
       scene.add(mesh);
     };
-    addInstanced(new THREE.IcosahedronGeometry(0.62, 0), 0x3c4046, rockMats, true);
-    addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), 0x17231a, pineMats, true);
-    addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), 0x2c2018, trunkMats, false);
-    addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), 0x2a381f, tuftMats, false);
+    for (const areaId of AREA_ORDER) {
+      const rect = areaRect(areaId);
+      const pal = BIOME_PALETTES[AREAS[areaId].biome];
+      const rw = rect.x1 - rect.x0;
+      const rh = rect.y1 - rect.y0;
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh), flatMat(pal.ground, 1));
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.set(rect.x0 + rw / 2, 0, rect.y0 + rh / 2);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const rockMats: THREE.Matrix4[] = [];
+      const pineMats: THREE.Matrix4[] = [];
+      const trunkMats: THREE.Matrix4[] = [];
+      const tuftMats: THREE.Matrix4[] = [];
+      for (let y = rect.y0; y < rect.y1; y++) {
+        for (let x = rect.x0; x < rect.x1; x++) {
+          const h = hash(x, y);
+          const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
+          const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
+          if (!isWalkable(map, x, y)) {
+            if (stairCells.has(`${x},${y}`)) continue;
+            const border =
+              x === rect.x0 || y === rect.y0 || x === rect.x1 - 1 || y === rect.y1 - 1;
+            if (border || h % 5 < 3) {
+              const s = 0.6 + ((h >> 6) % 45) / 100;
+              eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
+              m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
+              rockMats.push(m.clone());
+            } else {
+              const s = 0.75 + ((h >> 6) % 55) / 100;
+              quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+              m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
+              pineMats.push(m.clone());
+              m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
+              trunkMats.push(m.clone());
+            }
+          } else if (h % 11 === 0) {
+            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+            const s = 0.7 + ((h >> 7) % 60) / 100;
+            m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
+            tuftMats.push(m.clone());
+          }
+        }
+      }
+      addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
+      addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
+      addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
+      addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
+    }
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---
@@ -309,10 +455,66 @@ export function createScene(
     stairGlows.push(glow);
   }
 
+  // --- Stairs up: stone steps climbing toward a warm daylight glow ---
+  for (const marker of map.markers) {
+    if (marker.ch !== "<") continue;
+    const cx = Math.floor(marker.x);
+    const cy = Math.floor(marker.y);
+    // You walk in from the open side; the steps rise away from it.
+    const approaches = [
+      { dx: 0, dy: 1 },
+      { dx: 1, dy: 0 },
+      { dx: 0, dy: -1 },
+      { dx: -1, dy: 0 },
+    ];
+    const open = approaches.find((a) => isWalkable(map, cx + a.dx, cy + a.dy)) ?? approaches[0]!;
+    const rise = { x: -open.dx, y: -open.dy };
+    const stepMat = flatMat(0x5c5768, 0.95);
+    for (let s = 0; s < 4; s++) {
+      const height = 0.14 + s * 0.16;
+      const step = new THREE.Mesh(
+        new THREE.BoxGeometry(rise.x !== 0 ? 0.24 : 0.78, height, rise.y !== 0 ? 0.24 : 0.78),
+        stepMat,
+      );
+      const along = -0.33 + s * 0.22;
+      step.position.set(marker.x + rise.x * along, height / 2, marker.y + rise.y * along);
+      step.castShadow = true;
+      step.receiveShadow = true;
+      scene.add(step);
+    }
+    // A warm rim and glow: the way back toward the sky.
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.56, 4),
+      new THREE.MeshBasicMaterial({ color: 0xe8c27a, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.rotation.z = Math.PI / 4;
+    rim.position.set(marker.x, 0.05, marker.y);
+    scene.add(rim);
+    // A shaft of daylight spilling down the well — tall enough to show over
+    // the walls that box the stairs in, so the way out reads from anywhere.
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.4, 2.6, 8, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0xf5dfa0,
+        transparent: true,
+        opacity: 0.15,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    beam.position.set(marker.x, 1.3, marker.y);
+    scene.add(beam);
+    const glow = new THREE.PointLight(0xf5c877, 3.4, 5.5, 1.7);
+    glow.position.set(marker.x, 1.4, marker.y);
+    scene.add(glow);
+    stairGlows.push(glow);
+  }
+
   const placePieceLater: (() => void)[] = [];
 
-  // --- Travel pads: slowly turning arcane rings. P descends, O/C pass the moor gate ---
-  const PAD_COLORS: Record<string, number> = { P: 0x7fb8f5 };
+  // --- Travel pads: the waypoint's slowly turning arcane ring ---
+  const PAD_COLORS: Record<string, number> = { W: 0xc9a84c };
   const padRings: THREE.Mesh[] = [];
   for (const marker of map.markers) {
     const color = PAD_COLORS[marker.ch];
@@ -330,34 +532,92 @@ export function createScene(
     scene.add(glow);
   }
 
-  // --- Vendor (town): a knight minding the stall ---
-  let vendorRig: Rig | null = null;
+  // --- Market stall (town): crates and a barrel beside the V marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "V") continue;
-    vendorRig = makeMonsterModelRig(assets, "__vendor__") as Rig;
-    scene.add(vendorRig.group);
-    vendorRig.group.position.set(marker.x, 0, marker.y);
-    vendorRig.group.rotation.y = Math.PI * 0.75;
-    // A market stall: crates and a barrel beside the knight
     placePieceLater.push(() => {
       placePiece(assets.dungeon.crates, marker.x + 0.9, marker.y + 0.3, 0.4, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.chest, marker.x + 0.1, marker.y + 0.9, Math.PI, { x: 0.35, y: 0.35, z: 0.35 });
     });
   }
-  // --- Healer (town): a pale knight at a candlelit shrine ---
-  let healerRig: Rig | null = null;
+  // --- Candlelit shrine (town): a quiet glow beside the H marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "H") continue;
-    healerRig = makeMonsterModelRig(assets, "__healer__") as Rig;
-    scene.add(healerRig.group);
-    healerRig.group.position.set(marker.x, 0, marker.y);
-    healerRig.group.rotation.y = -Math.PI * 0.65;
     const shrineGlow = new THREE.PointLight(0xf5dfa0, 1.8, 4, 1.8);
     shrineGlow.position.set(marker.x, 1.1, marker.y);
     scene.add(shrineGlow);
   }
   for (const fn of placePieceLater) fn();
+
+  // --- NPCs: one knight-model rig per entity, tinted so each reads apart ---
+  const NPC_TINTS: Record<NpcId, number> = {
+    maren: 0x8a5a2c, // camp trader — warm leather
+    sera: 0xd8cfc0, // camp healer — pale cloth
+    betha: 0x4a6a4a, // redfen hermit — moss green
+    corvin: 0x5a5a6e, // gallowmire soldier — cold steel-blue
+    aldous: 0xc9a84c, // barrow sentinel — gilded
+  };
+  const npcRigs = new Map<number, Rig>();
+  // Per-npc tick interpolation, eased facing, and walk-cycle phase.
+  const npcLerp = new Map<
+    number,
+    { px: number; py: number; cx: number; cy: number; yaw: number; phase: number }
+  >();
+  for (const npc of npcs) {
+    const rig = makeMonsterModelRig(assets, "__vendor__") as Rig;
+    scene.add(rig.group);
+    rig.group.position.set(npc.pos.x, 0, npc.pos.y);
+    // Stable per-entity facing rather than one fixed pose for everyone.
+    rig.group.rotation.y = (npc.id * 1.7) % (Math.PI * 2);
+    npcLerp.set(npc.id, {
+      px: npc.pos.x, py: npc.pos.y, cx: npc.pos.x, cy: npc.pos.y,
+      yaw: rig.group.rotation.y, phase: npc.id * 3.7,
+    });
+    const tint = new THREE.Color(NPC_TINTS[npc.npcId]);
+    rig.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.lerp(tint, 0.4);
+      }
+    });
+    npcRigs.set(npc.id, rig);
+  }
+
+  // --- NPC quest indicators: a floating icon showing what each NPC has for you ---
+  const makeIndicatorTexture = (glyph: string, color: string): THREE.CanvasTexture => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.font = "bold 46px sans-serif";
+    ctx.fillStyle = color;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(glyph, 32, 34);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  };
+  const NPC_INDICATOR_TEXTURES: Record<"offer" | "turnin" | "progress", THREE.CanvasTexture> = {
+    offer: makeIndicatorTexture("!", "#f0c96a"),
+    turnin: makeIndicatorTexture("?", "#f0c96a"),
+    progress: makeIndicatorTexture("?", "#8f8778"),
+  };
+  const npcIndicatorSprites = new Map<number, THREE.Sprite>();
+  for (const npc of npcs) {
+    const material = new THREE.SpriteMaterial({
+      map: NPC_INDICATOR_TEXTURES.offer,
+      transparent: true,
+      depthTest: false,
+    });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(0.5, 0.5, 1);
+    sprite.position.set(npc.pos.x, 1.8, npc.pos.y);
+    sprite.visible = false;
+    sprite.renderOrder = 10;
+    scene.add(sprite);
+    npcIndicatorSprites.set(npc.id, sprite);
+  }
 
   // --- Gold piles ---
   const goldVisuals = new Map<number, THREE.Group>();
@@ -431,6 +691,41 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
+  // --- Campfire (camp): stones, crossed logs, and a breathing flame ---
+  for (const marker of map.markers) {
+    if (marker.ch !== "F") continue;
+    const fire = new THREE.Group();
+    fire.position.set(marker.x, 0, marker.y);
+    const stoneMat = flatMat(0x55524e, 1);
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
+      stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
+      stone.castShadow = true;
+      fire.add(stone);
+    }
+    const logMat = flatMat(0x3d2c1c, 1);
+    for (let i = 0; i < 3; i++) {
+      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
+      log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
+      log.position.y = 0.12;
+      log.castShadow = true;
+      fire.add(log);
+    }
+    const flame = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(0.16, 0),
+      new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: 0xff8c28, emissiveIntensity: 2.4 }),
+    );
+    flame.position.y = 0.32;
+    fire.add(flame);
+    scene.add(fire);
+    const light = new THREE.PointLight(0xff9a45, 5, 8, 1.7);
+    light.position.set(marker.x, 1.1, marker.y);
+    scene.add(light);
+    // Riding the torch flicker keeps the fire breathing with everything else.
+    torches.push({ flame, light, seed: 43 });
+  }
+
   // --- Heroes: one animated KayKit barbarian per player standing in this zone ---
   interface HeroEntry {
     rig: HeroModelRig;
@@ -441,7 +736,7 @@ export function createScene(
     equipSignature: string;
     targetYaw: number;
     wasDead: boolean;
-    /** "P2" over the head — remote party members only. */
+    /** Character name over the head — remote party members only. */
     nameplate: HTMLDivElement | null;
   }
   const heroes = new Map<PlayerId, HeroEntry>();
@@ -522,14 +817,11 @@ export function createScene(
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
   // --- Hover tooltip: name + what it is, following the cursor ---
-  const NPC_INFO = {
-    vendor: { name: "Bram the Peddler", role: "Vendor — trades and repairs gear" },
-    healer: { name: "Sister Vess", role: "Healer — mends wounds for free" },
-  } as const;
   // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
   const AREA_INFO: Record<string, { name: string; role: string }> = {
     ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
-    P: { name: "Travel Pad", role: `Down to ${zoneTitle("floor:1")}` },
+    "<": { name: "Stairs Up", role: "Climbs back toward daylight" },
+    F: { name: "Campfire", role: "The heart of the camp" },
   };
   const areaIndicators = map.markers
     .filter((m) => m.ch in AREA_INFO)
@@ -631,6 +923,59 @@ export function createScene(
     );
   };
 
+  // --- Flying spell projectiles: a flame streaks caster -> target, then pops ---
+  const boltFlight = (from: Vec, to: Vec, coreColor: number, glowColor: number) => {
+    const g = new THREE.Group();
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 10, 8),
+      new THREE.MeshBasicMaterial({ color: coreColor }),
+    );
+    g.add(core);
+    const shell = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 10, 8),
+      new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.55 }),
+    );
+    g.add(shell);
+    const light = new THREE.PointLight(glowColor, 3.0, 6, 1.6);
+    g.add(light);
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy);
+    const nx = dist > 1e-6 ? dx / dist : 0;
+    const ny = dist > 1e-6 ? dy / dist : 1;
+    // Leave from the hand, a step ahead of the caster, not from inside the chest.
+    const sx = from.x + nx * 0.45;
+    const sz = from.y + ny * 0.45;
+    g.position.set(sx, 1.05, sz);
+    scene.add(g);
+    fx.burst(sx, 1.05, sz, glowColor, 5, 1.2); // muzzle flare on launch
+    const flightDist = Math.max(0.3, dist - 0.45);
+    const dur = Math.max(130, Math.min(420, (flightDist / 16) * 1000));
+    let lastEmber = 0;
+    fx.tween(
+      dur,
+      (t) => {
+        const x = sx + (to.x - sx) * t;
+        const z = sz + (to.y - sz) * t;
+        const y = 1.05 - 0.5 * t + Math.sin(t * Math.PI) * 0.2;
+        g.position.set(x, y, z);
+        const wob = 1 + Math.sin(t * 40) * 0.18;
+        shell.scale.set(wob, wob, wob);
+        const now = performance.now();
+        if (now - lastEmber > 40) {
+          lastEmber = now;
+          fx.burst(x, y, z, glowColor, 1, 0.5); // trailing ember
+        }
+      },
+      () => {
+        scene.remove(g);
+        core.material.dispose();
+        shell.material.dispose();
+        fx.burst(to.x, 0.55, to.y, glowColor, 12, 2.4); // impact pop
+      },
+    );
+  };
+
   // --- Picking ---
   const raycaster = new THREE.Raycaster();
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -711,7 +1056,7 @@ export function createScene(
 
         // Rebuild visible gear when equipment changes.
         const eq = p.equipment;
-        const signature = [eq.weapon, eq.helm, eq.chest, eq.boots]
+        const signature = [eq.weapon, eq.helm, eq.chest, eq.boots, eq.shield]
           .map((it) => (it ? `${it.baseId}:${it.rarity}` : "-"))
           .join("|");
         if (signature !== entry.equipSignature) {
@@ -728,6 +1073,8 @@ export function createScene(
         entry.lastPos = { x, y };
 
         if (entry.nameplate) {
+          const plateText = p.name || `P${p.id + 1}`;
+          if (entry.nameplate.textContent !== plateText) entry.nameplate.textContent = plateText;
           const at = worldToScreen({ x, y }, 1.9);
           entry.nameplate.style.left = `${at.x}px`;
           entry.nameplate.style.top = `${at.y}px`;
@@ -737,11 +1084,15 @@ export function createScene(
           py = y;
         }
       }
-      heroLight.position.set(px, 1.6, py);
+      heroLight.position.set(px, 1.05, py);
+      if (outdoor) applyAtmosphere(px);
 
-      // Sync monster rigs with sim state
+      // Sync monster rigs with sim state. Only the hero's neighborhood keeps a
+      // skinned rig — the surface holds hundreds of monsters at once — and the
+      // drop radius trails the create radius so pacing a border doesn't churn.
       for (const [id, rig] of monsterRigs) {
-        if (!zoneOf(state, me).monsters.has(id)) {
+        const monster = zoneOf(state, me).monsters.get(id);
+        if (!monster || Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 32) {
           scene.remove(rig.group);
           monsterRigs.delete(id);
           monsterAnim.delete(id);
@@ -753,6 +1104,7 @@ export function createScene(
       for (const monster of zoneOf(state, me).monsters.values()) {
         let rig = monsterRigs.get(monster.id);
         if (!rig) {
+          if (Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 28) continue;
           rig = makeMonsterModelRig(assets, monster.typeId);
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
@@ -814,7 +1166,9 @@ export function createScene(
         }
       }
       for (const [id, bar] of healthBars) {
-        if (!zoneOf(state, me).monsters.has(id)) {
+        // A bar outlives its rig when the monster wanders out of the window;
+        // drop it too, or it freezes at the last screen position it had.
+        if (!zoneOf(state, me).monsters.has(id) || !monsterRigs.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
         }
@@ -832,15 +1186,19 @@ export function createScene(
         let v = groundItemVisuals.get(gi.id);
         if (!v) {
           const colors = RARITY_COLORS[gi.item.rarity]!;
-          const isPotion = gi.item.baseId === "minor_potion";
+          const potion = potionKind(gi.item.baseId);
+          const POTION_TINT = {
+            health: { color: 0xc93a3a, emissive: 0xa02828 },
+            mana: { color: 0x3a55c9, emissive: 0x2838a0 },
+          } as const;
           const mesh = new THREE.Mesh(
-            isPotion
+            potion
               ? new THREE.IcosahedronGeometry(0.11, 0)
               : new THREE.OctahedronGeometry(0.14, 0),
             new THREE.MeshStandardMaterial({
-              color: isPotion ? 0xc93a3a : colors.hex,
-              emissive: isPotion ? 0xa02828 : colors.hex,
-              emissiveIntensity: isPotion ? 0.8 : 0.55,
+              color: potion ? POTION_TINT[potion].color : colors.hex,
+              emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
+              emissiveIntensity: potion ? 0.8 : 0.55,
               roughness: 0.4,
               flatShading: true,
             }),
@@ -939,10 +1297,49 @@ export function createScene(
         v.rig.animate(frameNow, 0, 0);
       }
 
-      // Town dressing: the portal ring turns, the vendor idles
+      // Town dressing: the portal ring turns, the NPCs stroll their patch
       for (const [i, ring] of padRings.entries()) ring.rotation.z = performance.now() / 1400 + i;
-      vendorRig?.animate(frameNow, 0, 0);
-      healerRig?.animate(frameNow, 0, 0);
+      for (const npc of npcs) {
+        const rig = npcRigs.get(npc.id);
+        const lerp = npcLerp.get(npc.id);
+        if (!rig || !lerp) continue;
+        if (tickAdvanced) {
+          lerp.px = lerp.cx;
+          lerp.py = lerp.cy;
+          lerp.cx = npc.pos.x;
+          lerp.cy = npc.pos.y;
+        }
+        rig.group.position.set(
+          lerp.px + (lerp.cx - lerp.px) * alpha,
+          0,
+          lerp.py + (lerp.cy - lerp.py) * alpha,
+        );
+        const vx = lerp.cx - lerp.px;
+        const vy = lerp.cy - lerp.py;
+        const tickDist = Math.hypot(vx, vy); // cells per sim tick — stable between ticks
+        if (tickDist > 0.005) {
+          lerp.yaw = Math.atan2(vx, vy);
+        } else if (Math.hypot(me.pos.x - npc.pos.x, me.pos.y - npc.pos.y) < 4) {
+          // Standing and attended: turn to face whoever walked up.
+          lerp.yaw = Math.atan2(me.pos.x - npc.pos.x, me.pos.y - npc.pos.y);
+        }
+        rig.group.rotation.y = approachAngle(rig.group.rotation.y, lerp.yaw, frameDt * 6);
+        lerp.phase += tickDist * 8 * frameDt * 25;
+        rig.animate(frameNow, lerp.phase, tickDist * 25);
+      }
+
+      // NPC quest indicators: swap the overhead icon to match this player's
+      // standing with each NPC (cheap per-frame work — visibility + texture).
+      for (const npc of npcs) {
+        const sprite = npcIndicatorSprites.get(npc.id);
+        if (!sprite) continue;
+        sprite.position.set(npc.pos.x, 1.8, npc.pos.y);
+        const indicator = npcIndicator(me, npc.npcId);
+        sprite.visible = indicator !== null;
+        if (indicator !== null) {
+          (sprite.material as THREE.SpriteMaterial).map = NPC_INDICATOR_TEXTURES[indicator];
+        }
+      }
 
       // Corpses: a run reset empties the sim's list — clear our meshes too
       if (zoneOf(state, me).corpses.length < corpseCount) {
@@ -1019,47 +1416,13 @@ export function createScene(
           if (v.group === obj) return { kind: "corpse", id };
         }
       }
-      const rect = renderer.domElement.getBoundingClientRect();
-      const cx = clientX - rect.left;
-      const cy = clientY - rect.top;
-      // Forgiving fallback: nearest monster within a generous screen radius.
-      {
-        let bestId: number | null = null;
-        let bestD = 30; // px
-        for (const [id] of monsterRigs) {
-          const monster = zone.monsters.get(id);
-          if (!monster) continue;
-          const at = worldToScreen(monster.pos, 0.55);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            bestId = id;
-          }
+      const npcHits = raycaster.intersectObjects([...npcRigs.values()].map((r) => r.group), true);
+      if (npcHits.length > 0) {
+        let obj: THREE.Object3D | null = npcHits[0]!.object;
+        while (obj && obj.parent !== scene) obj = obj.parent;
+        for (const [id, rig] of npcRigs) {
+          if (rig.group === obj) return { kind: "npc", id };
         }
-        if (bestId !== null) return { kind: "monster", id: bestId };
-      }
-      // Portals and bodies lie flat, so their silhouettes are thin — allow the
-      // same near-miss slack the monsters get.
-      {
-        let best: PickResult = null;
-        let bestD = 22; // px
-        for (const portal of zone.portals.values()) {
-          const at = worldToScreen(portal.pos, 0.3);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            best = { kind: "portal", id: portal.id };
-          }
-        }
-        for (const pc of zone.playerCorpses.values()) {
-          const at = worldToScreen(pc.pos, 0.2);
-          const d = Math.hypot(at.x - cx, at.y - cy);
-          if (d < bestD) {
-            bestD = d;
-            best = { kind: "corpse", id: pc.id };
-          }
-        }
-        if (best) return best;
       }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
@@ -1068,14 +1431,6 @@ export function createScene(
         for (const [id, v] of groundItemVisuals) {
           if (v.mesh === itemHits[0]!.object) return { kind: "item", id };
         }
-      }
-      if (vendorRig) {
-        const vendorHits = raycaster.intersectObject(vendorRig.group, true);
-        if (vendorHits.length > 0) return { kind: "vendor" };
-      }
-      if (healerRig) {
-        const healerHits = raycaster.intersectObject(healerRig.group, true);
-        if (healerHits.length > 0) return { kind: "healer" };
       }
       const breakableGroups: THREE.Object3D[] = [];
       for (const g of breakableVisuals.values()) breakableGroups.push(g);
@@ -1087,7 +1442,56 @@ export function createScene(
           if (g === obj) return { kind: "breakable", id };
         }
       }
+      // Nothing hit dead-on. Forgiving fallback: one shared pool of nearby
+      // interactables, nearest normalized screen distance wins — so a monster
+      // never steals a click that lands closer to loot, a portal, or a pad.
+      {
+        const rect = renderer.domElement.getBoundingClientRect();
+        const cx = clientX - rect.left;
+        const cy = clientY - rect.top;
+        let best: PickResult = null;
+        let bestScore = 1;
+        const consider = (result: PickResult, pos: Vec, height: number, radius: number) => {
+          const at = worldToScreen(pos, height);
+          const score = Math.hypot(at.x - cx, at.y - cy) / radius;
+          if (score < bestScore) {
+            bestScore = score;
+            best = result;
+          }
+        };
+        for (const [id] of monsterRigs) {
+          const monster = zone.monsters.get(id);
+          if (monster) consider({ kind: "monster", id }, monster.pos, 0.55, 30);
+        }
+        // Small standing figures are easy to miss with a precise raycast.
+        for (const [id] of npcRigs) {
+          const npc = zone.npcs.get(id);
+          if (npc) consider({ kind: "npc", id }, npc.pos, 0.9, 30);
+        }
+        for (const portal of zone.portals.values()) {
+          consider({ kind: "portal", id: portal.id }, portal.pos, 0.3, 26);
+        }
+        for (const pc of zone.playerCorpses.values()) {
+          consider({ kind: "corpse", id: pc.id }, pc.pos, 0.2, 24);
+        }
+        for (const gi of zone.groundItems.values()) {
+          consider({ kind: "item", id: gi.id }, gi.pos, 0.2, 24);
+        }
+        for (const marker of zone.map.markers) {
+          if (marker.ch !== "W") continue;
+          const pos = { x: marker.x, y: marker.y };
+          consider({ kind: "waypoint", pos }, pos, 0.1, 26);
+        }
+        if (best) return best;
+      }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
+      // The waypoint ring lies flat on the ground — claim clicks landing on it.
+      for (const marker of zone.map.markers) {
+        if (marker.ch !== "W") continue;
+        if (Math.hypot(hit.x - marker.x, hit.z - marker.y) < 1.2) {
+          return { kind: "waypoint", pos: { x: marker.x, y: marker.y } };
+        }
+      }
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
     },
 
@@ -1099,7 +1503,7 @@ export function createScene(
 
     updateHover(state, clientX, clientY) {
       const picked = this.pick(state, clientX, clientY);
-      const HIGHLIGHT = ["monster", "breakable", "portal", "corpse"];
+      const HIGHLIGHT = ["monster", "breakable", "portal", "corpse", "npc"];
       const key =
         picked && HIGHLIGHT.includes(picked.kind) && "id" in picked
           ? `${picked.kind}:${picked.id}`
@@ -1111,6 +1515,7 @@ export function createScene(
         if (kind === "monster") return monsterRigs.get(id)?.group;
         if (kind === "breakable") return breakableVisuals.get(id);
         if (kind === "portal") return portalVisuals.get(id);
+        if (kind === "npc") return npcRigs.get(id)?.group;
         return playerCorpseVisuals.get(id)?.group;
       };
       if (key !== hoveredKey) {
@@ -1125,15 +1530,17 @@ export function createScene(
       const px = clientX - rect.left;
       const py = clientY - rect.top;
       let tip: { name: string; role: string } | null = null;
-      if (picked?.kind === "vendor" || picked?.kind === "healer") {
-        tip = NPC_INFO[picked.kind];
+      if (picked?.kind === "npc") {
+        const npc = zoneOf(state, localPlayer(state)).npcs.get(picked.id);
+        const def = npc && NPCS[npc.npcId];
+        if (def) tip = { name: def.name, role: def.title };
       } else if (picked?.kind === "monster") {
         const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
         const type = m && MONSTER_TYPES[m.typeId];
         if (m && type) tip = { name: type.name, role: `Monster — level ${m.mlvl}` };
       } else if (picked?.kind === "portal") {
         const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
-        if (portal) tip = { name: "Town Portal", role: `To ${zoneTitle(portal.link.zone)}` };
+        if (portal) tip = { name: "Town Portal", role: `To ${locationTitle(portal.link.zone, portal.link.pos)}` };
       } else if (!picked || picked.kind === "ground") {
         // Stairs, pads, and gates are flat rings — match by cursor proximity.
         let bestD = 22; // px
@@ -1143,6 +1550,14 @@ export function createScene(
           if (d < bestD) {
             bestD = d;
             tip = ind;
+          }
+        }
+        for (const pile of zoneOf(state, localPlayer(state)).goldPiles.values()) {
+          const at = worldToScreen(pile.pos, 0.25);
+          const d = Math.hypot(at.x - px, at.y - py);
+          if (d < bestD) {
+            bestD = d;
+            tip = { name: `${pile.amount} gold`, role: "walk over to pick up" };
           }
         }
       }
@@ -1316,9 +1731,25 @@ export function createScene(
           } else if (event.skill === "crush") {
             caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
             shake(0.12);
+          } else if (event.skill === "stomp") {
+            caster?.oneShot("2H_Melee_Attack_Slice", { timeScale: 1.4 });
+            ring(event.pos, 2.2, 0xb5a582, 300);
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
+            shake(0.16);
+          } else if (event.skill === "deathblow") {
+            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.7 });
+            if (event.at) fx.burst(event.at.x, 0.5, event.at.y, 0xc03030, 14, 2.8);
+            shake(0.2);
+          } else if (event.skill === "fireball") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.4 });
+            shake(0.08); // the blast itself arrives as an `exploded` event
+          } else if (event.skill === "chainbolt") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6 });
+            ring(event.pos, 1.6, 0x9ad1f5, 220);
+            shake(0.08);
           } else if (event.skill === "firebolt") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
-            if (event.at) fx.burst(event.at.x, 0.4, event.at.y, 0xe08a3c, 12, 2.4);
+            if (event.at) boltFlight(event.pos, event.at, 0xffd27a, 0xe8722c);
             shake(0.06);
           } else if (event.skill === "frostnova") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });

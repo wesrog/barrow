@@ -2,16 +2,19 @@ import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState }
 import {
   BELT_SIZE,
   POTION_HEAL,
+  POTION_MANA,
   computeStats,
   placeItem,
   removeEntry,
   slotForItem,
   type EquipSlot,
 } from "../character";
-import { BASES } from "../items/bases";
-import { findPath, smoothPath } from "../path";
+import { BASES, potionKind } from "../items/bases";
+import { approachPath } from "./movement";
 
-const PICKUP_RANGE = 1.0;
+// Generous enough to grab loot lying in blocked ground (a tree cell) from the
+// nearest open cell, even when that cell is only diagonally adjacent (~1.42).
+const PICKUP_RANGE = 1.5;
 
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
 export function recomputePlayerStats(state: GameState, p: Player): void {
@@ -113,13 +116,34 @@ export function repairAll(state: GameState, p: Player): boolean {
   return true;
 }
 
+/** Stow a potion into its belt row if there's room. False means the row is full. */
+export function stowPotion(p: Player, kind: "health" | "mana"): boolean {
+  if (kind === "mana") {
+    if (p.manaBelt >= BELT_SIZE) return false;
+    p.manaBelt++;
+  } else {
+    if (p.belt >= BELT_SIZE) return false;
+    p.belt++;
+  }
+  return true;
+}
+
 export function applyDrinkInput(state: GameState, p: Player, input: PlayerInput): void {
   if (!input.drink) return;
+  if (input.drink === "mana") {
+    if (p.manaBelt <= 0 || p.mana >= p.maxMana) return;
+    p.manaBelt--;
+    const restored = Math.min(POTION_MANA, Math.ceil(p.maxMana - p.mana));
+    p.mana = Math.min(p.maxMana, p.mana + POTION_MANA);
+    state.events.push({ type: "potion_drunk", playerId: p.id, healed: restored, kind: "mana" });
+    return;
+  }
+  // "health", or the legacy boolean `true` from older clients.
   if (p.belt <= 0 || p.life >= p.maxLife) return;
   p.belt--;
   const healed = Math.min(POTION_HEAL, p.maxLife - p.life);
   p.life += healed;
-  state.events.push({ type: "potion_drunk", playerId: p.id, healed });
+  state.events.push({ type: "potion_drunk", playerId: p.id, healed, kind: "health" });
 }
 
 export function applyPickupInput(state: GameState, p: Player, input: PlayerInput): void {
@@ -130,6 +154,7 @@ export function applyPickupInput(state: GameState, p: Player, input: PlayerInput
   p.smashTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 
@@ -137,7 +162,7 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
   for (const p of players) {
     // Gold is scooped just by walking near it.
     for (const pile of [...zone.goldPiles.values()]) {
-      if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= 0.7) {
+      if (Math.hypot(p.pos.x - pile.pos.x, p.pos.y - pile.pos.y) <= PICKUP_RANGE) {
         zone.goldPiles.delete(pile.id);
         p.gold += pile.amount;
         state.events.push({ type: "gold_picked", playerId: p.id, amount: pile.amount });
@@ -153,9 +178,8 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
     if (d <= PICKUP_RANGE) {
       p.pickupTarget = null;
       p.path = [];
-      const isPotion = BASES[target.item.baseId]!.slot === "potion";
-      if (isPotion && p.belt < BELT_SIZE) {
-        p.belt++;
+      const kind = potionKind(target.item.baseId);
+      if (kind && stowPotion(p, kind)) {
         zone.groundItems.delete(target.id);
         state.events.push({
           type: "item_picked",
@@ -175,17 +199,13 @@ export function pickupSystem(state: GameState, zone: ZoneState, players: Player[
         state.events.push({ type: "inventory_full", playerId: p.id });
       }
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, target.pos);
+      // No route, or already as close as open ground gets: give up the chase.
+      if (path === null || path.length === 0) {
         p.pickupTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...target.pos });
+      p.path = path;
     }
   }
 }
@@ -199,8 +219,8 @@ export function applyReclaimInput(state: GameState, p: Player, input: PlayerInpu
   p.attackTarget = null;
   p.smashTarget = null;
   p.portalTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 
@@ -240,17 +260,12 @@ export function reclaimSystem(state: GameState, zone: ZoneState, players: Player
       recomputePlayerStats(state, p);
       state.events.push({ type: "corpse_reclaimed", playerId: p.id });
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(corpse.pos.x), y: Math.floor(corpse.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, corpse.pos);
+      if (path === null || path.length === 0) {
         p.reclaimTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...corpse.pos });
+      p.path = path;
     }
   }
 }
@@ -261,11 +276,17 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
     if (!entry) return;
     const base = BASES[entry.item.baseId]!;
     if (base.slot === "potion") {
-      if (p.belt < BELT_SIZE) p.belt++;
-      else placeItem(p.inventory, entry.id, entry.item);
+      if (!stowPotion(p, potionKind(entry.item.baseId)!)) {
+        placeItem(p.inventory, entry.id, entry.item);
+      }
       return;
     }
-    if (base.levelReq > p.level) {
+    if (base.slot === "quest") {
+      // Quest goods don't equip — back into the pack.
+      placeItem(p.inventory, entry.id, entry.item);
+      return;
+    }
+    if (base.levelReq > p.level || (base.classReq && base.classReq !== p.klass)) {
       placeItem(p.inventory, entry.id, entry.item);
       return;
     }

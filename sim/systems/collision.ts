@@ -8,8 +8,8 @@ export const PLAYER_RADIUS = 0.35;
 /** Body radius of solid map-marker NPCs (the vendor). */
 export const NPC_RADIUS = 0.4;
 
-/** Marker characters that are people, not floor decals — walking through is rude. */
-const SOLID_MARKERS = new Set(["V"]);
+/** Markers that are solid bodies, not floor decals: the vendor, the campfire. */
+const SOLID_MARKERS = new Set(["V", "F"]);
 
 /** Extra passes let packs settle instead of shivering against each other. */
 const PASSES = 3;

@@ -1,3 +1,4 @@
+import type { AreaId } from "./areas";
 import type { Rng } from "./rng";
 import type { Vec, ZoneMap } from "./map";
 import type { Monster, Corpse } from "./monsters";
@@ -5,14 +6,17 @@ import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { Klass, SkillId } from "./skills";
+import type { Npc, NpcId } from "./npcs";
+import type { QuestId, QuestLog } from "./quests";
 
-export type ZoneId = "overworld" | `floor:${number}`;
+/** The whole open-air world is one zone; the barrow's floors are the rest. */
+export type ZoneId = "surface" | `floor:${number}`;
 
 export const floorZone = (n: number): ZoneId => `floor:${n}`;
 
-/** The moors = 1; floor:N = N. Drives monster/loot scaling exactly as old `depth`. */
+/** floor:N = N; the surface = 1. Regions take their level from the registry. */
 export function zoneDepth(id: ZoneId): number {
-  if (id === "overworld") return 1;
+  if (!id.startsWith("floor:")) return 1;
   return Number(id.slice("floor:".length));
 }
 
@@ -26,6 +30,7 @@ export interface ZoneState {
   corpses: Corpse[];
   portals: Map<number, Portal>;
   playerCorpses: Map<number, PlayerCorpse>;
+  npcs: Map<number, Npc>;
 }
 
 /** A dead player's stripped gear, waiting to be walked back to and reclaimed. */
@@ -117,14 +122,20 @@ export interface Player {
   pickupTarget: number | null;
   /** Breakable id being walked to for smashing, if any. */
   smashTarget: number | null;
-  /** Walking over to Maren to trade (town only). */
-  vendorTarget: boolean;
-  /** Walking over to Sera for healing (town only). */
-  healerTarget: boolean;
+  /** NPC entity id being walked to for a word, if any. */
+  npcTarget: number | null;
   /** Portal id being walked to for riding, if any. */
   portalTarget: number | null;
   /** Player corpse id being walked to for reclaiming, if any. */
   reclaimTarget: number | null;
+  /** A hovered cast beyond reach: walk toward the mark until in range, then fire. */
+  castTarget: { skill: SkillId; monster?: number; breakable?: number } | null;
+  /** Areas whose waypoint this player has touched. Sorted; arrays serialize, Sets don't. */
+  waypoints: AreaId[];
+  /** Where death and a reload seat this player: last waypoint or safe ground touched. */
+  checkpoint: AreaId;
+  /** Last surface region this player stood in; kept while below ground. */
+  region: AreaId;
   level: number;
   xp: number;
   skillPoints: number;
@@ -135,10 +146,14 @@ export interface Player {
   buffUntil: number;
   /** Healing potions on the belt. */
   belt: number;
+  /** Mana potions on the belt's second row. */
+  manaBelt: number;
   gold: number;
   inventory: Inventory;
   equipment: Equipment;
   magicFind: number;
+  /** Per-hero quest log; absent key = never started. Saves with the character. */
+  quests: QuestLog;
 }
 
 export interface GroundItem {
@@ -165,21 +180,27 @@ export type SimEvent =
       typeId: string;
       pos: Vec;
       xp: number;
+      mlvl: number;
       zone: ZoneId;
       killer: PlayerId | null;
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
+  | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
+  | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
-  | { type: "potion_drunk"; playerId: PlayerId; healed: number }
+  | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }
   | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | { type: "gold_picked"; playerId: PlayerId; amount: number }
   | { type: "item_broke"; playerId: PlayerId; name: string }
   | { type: "repaired"; playerId: PlayerId; cost: number }
-  | { type: "shop_opened"; playerId: PlayerId }
+  | { type: "npc_talk"; playerId: PlayerId; npcId: NpcId }
+  | { type: "quest_accepted"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_completed"; playerId: PlayerId; quest: QuestId }
+  | { type: "quest_progress"; playerId: PlayerId; quest: QuestId; count: number; needed: number }
   | { type: "healed"; playerId: PlayerId }
   | { type: "bought"; playerId: PlayerId; name: string; price: number }
   | { type: "sold"; playerId: PlayerId; name: string; price: number }
@@ -192,7 +213,8 @@ export type SimEvent =
   | { type: "player_left"; playerId: PlayerId }
   | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
   | { type: "corpse_reclaimed"; playerId: PlayerId }
-  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec };
+  | { type: "portal_cast"; playerId: PlayerId; zone: ZoneId; pos: Vec }
+  | { type: "region_entered"; playerId: PlayerId; area: AreaId };
 
 export interface ShopEntry {
   item: Item;
@@ -201,8 +223,10 @@ export interface ShopEntry {
 
 export interface GameState {
   tick: number;
+  /** The seed this world was created from; persisted so a hero can come home. */
+  seed: number;
   rng: Rng;
-  /** The world: the moors (camp included) plus every floor generated so far. */
+  /** The world: the stitched surface (camp included) plus every floor generated so far. */
   zones: Map<ZoneId, ZoneState>;
   /** The vendor's current stock; restocked each arrival on camp ground. */
   shop: ShopEntry[];
@@ -233,21 +257,27 @@ export interface PlayerInput {
   /** Spend a skill point on this skill. */
   spendSkill?: SkillId;
   /** Cast a skill, optionally at a ground position or monster target. */
-  cast?: { skill: SkillId; at?: Vec; target?: number };
-  /** Drink a healing potion from the belt. */
-  drink?: boolean;
+  cast?: { skill: SkillId; at?: Vec; target?: number; breakable?: number };
+  /** Drink a potion from the belt. Legacy `true` means "health". */
+  drink?: "health" | "mana";
+  /** Buy a potion straight from Sera's stall (town only). */
+  buyPotion?: "health" | "mana";
   /** Start a fresh run: forget the floors, revive, keep the character. */
   newGame?: boolean;
   /** Cast a two-way portal pair between here and camp. */
   townPortal?: boolean;
+  /** Standing at a waypoint: jump to this discovered area's waypoint. */
+  waypointTo?: AreaId;
   /** Walk to and ride this portal id. */
   usePortal?: number;
   /** Walk to and reclaim this player corpse id. */
   reclaim?: number;
-  /** Walk to the vendor and open the shop (town only). */
-  talkVendor?: boolean;
-  /** Walk to the healer for a full restore (town only). */
-  talkHealer?: boolean;
+  /** NPC entity id to walk to and talk with. */
+  talkNpc?: number;
+  /** Accept this quest from its giver (must be in range and offered). */
+  acceptQuest?: QuestId;
+  /** Turn in this quest at its turn-in npc (must be in range and objective met). */
+  turnInQuest?: QuestId;
   /** Buy the shop entry at this index (town only). */
   buy?: number;
   /** Sell this inventory entry to the vendor (town only). */

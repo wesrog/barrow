@@ -1,7 +1,7 @@
 import { createRng } from "../sim/rng";
 import type { GameState, ZoneState } from "../sim/state";
 
-const SNAPSHOT_VERSION = 1;
+const SNAPSHOT_VERSION = 3;
 
 /**
  * JSON string of the entire GameState: Maps as entry arrays, Uint8Array
@@ -11,6 +11,7 @@ export function serializeGame(state: GameState): string {
   const snapshot = {
     version: SNAPSHOT_VERSION,
     tick: state.tick,
+    seed: state.seed,
     rng: state.rng.state(),
     zones: [...state.zones.entries()].map(([id, zone]) => [id, encodeZone(zone)]),
     shop: state.shop,
@@ -39,6 +40,7 @@ export function deserializeGame(raw: string): GameState {
 
   return {
     tick: data.tick,
+    seed: data.seed,
     rng: createRng(data.rng),
     zones,
     shop: data.shop,
@@ -62,6 +64,7 @@ function encodeZone(zone: ZoneState) {
     corpses: zone.corpses,
     portals: [...zone.portals.entries()],
     playerCorpses: [...zone.playerCorpses.entries()],
+    npcs: [...zone.npcs.entries()],
   };
 }
 
@@ -81,5 +84,6 @@ function decodeZone(zone: any): ZoneState {
     playerCorpses: new Map(
       (zone.playerCorpses as [number, any][]).map(([id, p]) => [Number(id), p]),
     ),
+    npcs: new Map((zone.npcs as [number, any][]).map(([id, n]) => [Number(id), n])),
   };
 }

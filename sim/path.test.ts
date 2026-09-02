@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings, isWalkable } from "./map";
-import { findPath, smoothPath } from "./path";
+import { findPath, furthestWalkable, smoothPath } from "./path";
 
 describe("findPath", () => {
   test("finds a path across open ground ending at the goal cell", () => {
@@ -99,5 +99,57 @@ describe("smoothPath", () => {
       }
       prev = wp;
     }
+  });
+});
+
+describe("furthestWalkable", () => {
+  test("a clear line reaches the target", () => {
+    const map = mapFromStrings([
+      "@....",
+      ".....",
+    ]);
+    const p = furthestWalkable(map, { x: 0.5, y: 0.5 }, { x: 4.5, y: 1.5 });
+    expect(p.x).toBeCloseTo(4.5);
+    expect(p.y).toBeCloseTo(1.5);
+  });
+
+  test("a blocked line stops on the near side of the wall", () => {
+    const map = mapFromStrings([
+      "@.#..",
+      "..#..",
+    ]);
+    const p = furthestWalkable(map, { x: 0.5, y: 0.5 }, { x: 4.5, y: 0.5 });
+    expect(p.x).toBeLessThan(2);
+    expect(p.x).toBeGreaterThan(0.5);
+    expect(p.y).toBeCloseTo(0.5);
+    expect(isWalkable(map, Math.floor(p.x), Math.floor(p.y))).toBe(true);
+  });
+
+  test("a wall in the adjacent cell leaves the point inside the start cell", () => {
+    const map = mapFromStrings([
+      "@#...",
+    ]);
+    const p = furthestWalkable(map, { x: 0.5, y: 0.5 }, { x: 4.5, y: 0.5 });
+    expect(p.x).toBeGreaterThanOrEqual(0.5);
+    expect(p.x).toBeLessThan(1);
+    expect(p.y).toBeCloseTo(0.5);
+  });
+});
+
+describe("findPath expansion cap", () => {
+  const open = mapFromStrings(Array.from({ length: 20 }, () => ".".repeat(20)));
+
+  test("a tiny budget still yields a partial path toward the goal", () => {
+    const path = findPath(open, { x: 0, y: 0 }, { x: 19, y: 19 }, 6);
+    expect(path).not.toBeNull();
+    expect(path!.length).toBeGreaterThan(0);
+    const last = path![path!.length - 1]!;
+    // Strictly closer to the goal than the start was.
+    expect(Math.hypot(19 - last.x, 19 - last.y)).toBeLessThan(Math.hypot(19, 19));
+  });
+
+  test("unreachable goals still return null", () => {
+    const walled = mapFromStrings(["...#.", "...#.", "...#."]);
+    expect(findPath(walled, { x: 0, y: 0 }, { x: 4, y: 1 })).toBeNull();
   });
 });

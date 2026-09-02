@@ -1,9 +1,10 @@
 import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { INV_H, INV_W, type EquipSlot } from "../../sim/character";
-import { BASES } from "../../sim/items/bases";
-import type { Item, ItemMod } from "../../sim/items/generate";
+import { INV_H, INV_W, computeStats, type EquipSlot } from "../../sim/character";
+import { BASES, potionKind } from "../../sim/items/bases";
+import type { Item } from "../../sim/items/generate";
+import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
 import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
@@ -12,28 +13,23 @@ import { PanelChrome } from "./PanelChrome";
 
 const CELL = 32;
 
-export const RARITY_CSS: Record<string, string> = {
-  normal: "#d6d6d6",
-  magic: "#8ba3f5",
-  rare: "#f0e68c",
-  unique: "#d9a05c",
+export { RARITY_CSS } from "./ItemHoverDetail";
+
+// Potion icons tint by what they restore, not rarity.
+const POTION_CSS: Record<"health" | "mana", string> = {
+  health: "#d05c5c",
+  mana: "#6b8fe8",
 };
 
-const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
-  dmgMin: (v) => `+${v} to minimum damage`,
-  dmgMax: (v) => `+${v} to maximum damage`,
-  dmgPct: (v) => `+${v}% enhanced damage`,
-  attackRating: (v) => `+${v} to attack rating`,
-  defense: (v) => `+${v} defense`,
-  life: (v) => `+${v} to life`,
-  mana: (v) => `+${v} to mana`,
-  attackSpeedPct: (v) => `+${v}% attack speed`,
-  moveSpeedPct: (v) => `+${v}% run speed`,
-  magicFind: (v) => `+${v}% better chance of magic items`,
-};
+/** Icon tint: potions by kind, everything else by rarity. */
+function iconColor(item: Item): string {
+  const kind = potionKind(item.baseId);
+  return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
+}
 
 const EQUIP_SLOTS: { slot: EquipSlot; label: string }[] = [
   { slot: "weapon", label: "weapon" },
+  { slot: "shield", label: "shield" },
   { slot: "helm", label: "helm" },
   { slot: "chest", label: "chest" },
   { slot: "boots", label: "boots" },
@@ -59,23 +55,6 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 30px rgba(0,0,0,.6)",
 };
 
-function itemDetail(item: Item): { lines: string[]; color: string } {
-  const base = BASES[item.baseId]!;
-  const lines: string[] = [];
-  if (base.dmgMin !== undefined) lines.push(`damage ${base.dmgMin}–${base.dmgMax}`);
-  if (base.defense !== undefined) lines.push(`defense ${base.defense}`);
-  if (base.levelReq > 1) lines.push(`requires level ${base.levelReq}`);
-  for (const mod of item.mods) lines.push(MOD_LABELS[mod.stat](mod.value));
-  if (item.durability) {
-    lines.push(
-      item.durability.cur === 0
-        ? "BROKEN — repair at the vendor"
-        : `durability ${item.durability.cur}/${item.durability.max}`,
-    );
-  }
-  return { lines, color: RARITY_CSS[item.rarity]! };
-}
-
 export function InventoryPanel({
   game,
   assets,
@@ -91,20 +70,53 @@ export function InventoryPanel({
   onDrop: (entryId: number) => void;
   onClose: () => void;
 }) {
-  const [hovered, setHovered] = useState<Item | null>(null);
+  const [hovered, setHovered] = useState<{ item: Item; fromGrid: boolean } | null>(null);
   const p = localPlayer(game);
 
   return (
     <div style={panelStyle}>
-      <PanelChrome
-        title={`inventory — dmg ${p.dmgMin}–${p.dmgMax} · ar ${p.attackRating} · def ${p.defense} · mf ${p.magicFind}%`}
-        onClose={onClose}
-      />
+      <PanelChrome title="inventory" onClose={onClose} />
 
       {/* Character */}
       {assets && (
         <CharacterView assets={assets} equipment={p.equipment} width={INV_W * CELL} />
       )}
+
+      {/* Identity */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <span style={{ color: "#e8dcc0", fontSize: 13 }}>{p.name}</span>
+        <span style={{ color: "#6b6455" }}>
+          {p.klass} · lvl {p.level}
+        </span>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 10 }}>
+        {(
+          [
+            ["damage", `${p.dmgMin}–${p.dmgMax}`],
+            ["attack rating", `${p.attackRating}`],
+            ["defense", `${p.defense}`],
+            ["magic find", `${p.magicFind}%`],
+            ["run speed", `+${computeStats(p.equipment, p.level, p.klass).moveSpeedPct}%`],
+            ["life", `${Math.ceil(p.life)}/${p.maxLife}`],
+            ["mana", `${Math.floor(p.mana)}/${p.maxMana}`],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ color: "#6b6455" }}>{label}</span>
+            <span style={{ color: "#c9c2b8" }}>{value}</span>
+          </div>
+        ))}
+      </div>
 
       {/* Equipment */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 10 }}>
@@ -114,7 +126,7 @@ export function InventoryPanel({
             <div
               key={slot}
               onClick={() => item && onUnequip(slot)}
-              onMouseEnter={() => item && setHovered(item)}
+              onMouseEnter={() => item && setHovered({ item, fromGrid: false })}
               onMouseLeave={() => setHovered(null)}
               style={{
                 cursor: item ? "pointer" : "default",
@@ -128,7 +140,7 @@ export function InventoryPanel({
               title={item ? "click to unequip" : undefined}
             >
               <span style={{ color: "#6b6455" }}>{label} </span>
-              {item && <ItemIcon baseId={item.baseId} color={RARITY_CSS[item.rarity]!} size={14} />}
+              {item && <ItemIcon baseId={item.baseId} color={iconColor(item)} size={14} />}
               <span
                 style={{
                   color: item ? RARITY_CSS[item.rarity] : "#494339",
@@ -159,6 +171,8 @@ export function InventoryPanel({
         {p.inventory.entries.map((e) => {
           const base = BASES[e.item.baseId]!;
           const color = RARITY_CSS[e.item.rarity]!;
+          const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
+          const locked = base.levelReq > p.level || classLocked;
           return (
             <div
               key={e.id}
@@ -168,27 +182,34 @@ export function InventoryPanel({
                 setHovered(null);
                 onDrop(e.id);
               }}
-              onMouseEnter={() => setHovered(e.item)}
+              onMouseEnter={() => setHovered({ item: e.item, fromGrid: true })}
               onMouseLeave={() => setHovered(null)}
-              title="click to equip · right-click to drop"
+              title={
+                classLocked
+                  ? `${base.classReq} only · right-click to drop`
+                  : locked
+                    ? `requires level ${base.levelReq} · right-click to drop`
+                    : "click to equip · right-click to drop"
+              }
               style={{
                 position: "absolute",
                 left: e.x * CELL + 1,
                 top: e.y * CELL + 1,
                 width: base.w * CELL - 3,
                 height: base.h * CELL - 3,
-                background: "rgba(38,34,46,.9)",
-                border: `1px solid ${color}`,
+                background: locked ? "rgba(46,26,28,.9)" : "rgba(38,34,46,.9)",
+                border: `1px solid ${locked ? "#8a4640" : color}`,
                 borderRadius: 2,
-                cursor: "pointer",
+                cursor: locked ? "not-allowed" : "pointer",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                opacity: locked ? 0.55 : 1,
               }}
             >
               <ItemIcon
                 baseId={e.item.baseId}
-                color={color}
+                color={iconColor(e.item)}
                 size={Math.min(base.w, base.h) * CELL - 8}
               />
             </div>
@@ -199,14 +220,13 @@ export function InventoryPanel({
       {/* Hover detail */}
       <div style={{ minHeight: 64, marginTop: 8, lineHeight: 1.45 }}>
         {hovered ? (
-          <>
-            <div style={{ color: itemDetail(hovered).color }}>{hovered.name}</div>
-            {itemDetail(hovered).lines.map((line, i) => (
-              <div key={i} style={{ color: "#948c7d" }}>
-                {line}
-              </div>
-            ))}
-          </>
+          <ItemHoverDetail
+            item={hovered.item}
+            equipment={p.equipment}
+            level={p.level}
+            klass={p.klass}
+            compare={hovered.fromGrid}
+          />
         ) : (
           <div style={{ color: "#55503f" }}>
             click to equip / unequip · right-click to drop · i or esc to close

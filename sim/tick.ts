@@ -1,5 +1,5 @@
 import { createRng } from "./rng";
-import { inCamp, isWalkable, type ZoneMap } from "./map";
+import { inCamp, isWalkable, type Vec, type ZoneMap } from "./map";
 import {
   allPlayers,
   floorZone,
@@ -32,84 +32,47 @@ import {
   pickupSystem,
   reclaimSystem,
 } from "./systems/inventory";
-import { applyCastInput, applySpendSkillInput, leapSystem, manaRegenSystem } from "./systems/skills";
+import {
+  applyCastInput,
+  applySpendSkillInput,
+  castPursuitSystem,
+  leapSystem,
+  manaRegenSystem,
+} from "./systems/skills";
 import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
-import { spawnMonster } from "./monsters";
-import { cryptZone, MARKER_TYPES, overworldZone } from "./zone";
+import { isAreaId } from "./areas";
+import { ensureFloor, ensureSurface } from "./world";
+import { areaAt, campCorpseSpot, worldWaypointPos } from "./surface";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
+import { SKILL_IDS, type SkillId } from "./skills";
 import { rollDurability } from "./items/generate";
 import { durabilitySystem } from "./systems/inventory";
 import {
+  applyBuyPotionInput,
   applyCastPortalInput,
   applyShopInput,
-  applyTalkHealerInput,
-  applyTalkVendorInput,
   applyUsePortalInput,
-  healerSystem,
   portalSystem,
   removePortalsOwnedBy,
   restock,
-  vendorSystem,
 } from "./systems/town";
-import { applySmashInput, breakSystem, spawnBreakables } from "./breakables";
+import {
+  applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem, questProgressSystem,
+} from "./systems/quests";
+import { npcWanderSystem } from "./systems/npcs";
+import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
 export const TICK_RATE = 25;
 
 const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 
-function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
-  const zone: ZoneState = {
-    id,
-    map,
-    monsters: new Map(),
-    groundItems: new Map(),
-    goldPiles: new Map(),
-    breakables: new Map(),
-    corpses: [],
-    portals: new Map(),
-    playerCorpses: new Map(),
-  };
-  state.zones.set(id, zone);
-  return zone;
-}
-
-/** Get-or-generate floor N deterministically from the world rng. */
-export function ensureFloor(state: GameState, n: number): ZoneState {
-  const id = floorZone(n);
-  const existing = state.zones.get(id);
-  if (existing) return existing;
-  const zone = makeZone(state, id, cryptZone());
-  for (const marker of zone.map.markers) {
-    const typeId = MARKER_TYPES[marker.ch];
-    if (typeId) spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, n);
-  }
-  spawnBreakables(state, zone, n);
-  return zone;
-}
-
-/** Get-or-generate the moors above the barrow deterministically from the world rng. */
-export function ensureOverworld(state: GameState): ZoneState {
-  const existing = state.zones.get("overworld");
-  if (existing) return existing;
-  const zone = makeZone(state, "overworld", overworldZone(state.rng));
-  const spawn = zone.map.spawn;
-  for (const marker of zone.map.markers) {
-    const typeId = MARKER_TYPES[marker.ch];
-    if (!typeId) continue;
-    // Packs grow tougher the farther from the camp gate they prowl.
-    const dist = Math.hypot(marker.x - spawn.x, marker.y - spawn.y);
-    const depth = 1 + Math.min(2, Math.floor(dist / 28));
-    spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, depth);
-  }
-  spawnBreakables(state, zone, 1);
-  return zone;
-}
+export { ensureFloor, ensureSurface } from "./world";
 
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {
-  if (to === "overworld") ensureOverworld(state);
+  if (to === "surface") ensureSurface(state);
   else ensureFloor(state, zoneDepth(to));
   p.zoneId = to;
   p.wasInCamp = false; // arrival triggers (restock) re-fire on camp ground
@@ -118,88 +81,115 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.portalTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.pendingStrike = null;
   p.leap = null;
   state.events.push({ type: "traveled", playerId: p.id, to });
 }
 
-/** A player standing on a '>' marker heads one floor deeper. Runs after movement. */
+/** A walkable cell center adjacent to a marker — where climbers land so they
+ * stand beside the stairs (or the barrow mouth) without re-triggering them. */
+function besideMarker(map: ZoneMap, ch: string): Vec | null {
+  const marker = map.markers.find((m) => m.ch === ch);
+  if (!marker) return null;
+  const cx = Math.floor(marker.x);
+  const cy = Math.floor(marker.y);
+  for (const [dx, dy] of [[0, 1], [1, 0], [0, -1], [-1, 0]] as const) {
+    if (isWalkable(map, cx + dx, cy + dy)) return { x: cx + dx + 0.5, y: cy + dy + 0.5 };
+  }
+  return null;
+}
+
+/** A player standing on a '>' marker heads one floor deeper; on '<', one floor
+ * back up — surfacing beside the barrow mouth from floor 1. Runs after movement. */
 export function stairsSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   for (const p of players) {
     if (p.dead || p.zoneId !== zone.id) continue;
     for (const marker of zone.map.markers) {
-      if (marker.ch !== ">") continue;
-      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
-        // The barrow mouth in the moors is the way in; below it, stairs descend.
-        travel(state, p, p.zoneId === "overworld" ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
-        break;
+      if (marker.ch !== ">" && marker.ch !== "<") continue;
+      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) > 0.5) continue;
+      if (marker.ch === ">") {
+        // A barrow mouth on the surface is the way in; below it, stairs descend.
+        travel(state, p, p.zoneId === "surface" ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
+      } else {
+        if (p.zoneId === "surface") continue; // no climbing out of the open sky
+        const depth = zoneDepth(p.zoneId);
+        const dest: ZoneId = depth <= 1 ? "surface" : floorZone(depth - 1);
+        travel(state, p, dest);
+        // Come out beside the stairs you once went down, not on top of them.
+        const spot = besideMarker(getZone(state, dest).map, ">");
+        if (spot) p.pos = spot;
       }
+      break;
     }
   }
 }
 
-/** A player standing on the camp's 'P' pad descends to floor 1. */
-export function travelPadSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (zone.id !== "overworld") return;
+/** Track which region each surface player stands in; announce crossings. */
+export function regionSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  if (zone.id !== "surface") return;
   for (const p of players) {
-    if (p.dead || p.zoneId !== "overworld") continue;
-    for (const marker of zone.map.markers) {
-      if (marker.ch !== "P") continue;
-      if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) <= 0.5) {
-        travel(state, p, floorZone(1));
-        break;
-      }
+    const r = areaAt(p.pos);
+    if (r !== p.region) {
+      p.region = r;
+      state.events.push({ type: "region_entered", playerId: p.id, area: r });
     }
   }
 }
 
 /**
- * Crossing onto camp ground counts as arriving in town. Only a lone arrival
- * refills the stall — a camp that's already occupied keeps its stock.
+ * Crossing onto any region's safe ground counts as arriving in town: the
+ * checkpoint stamps there, and in the moors camp — the only stall — a lone
+ * arrival refills Maren's stock (an occupied camp keeps what it has).
  */
-export function campArrivalSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  if (zone.id !== "overworld") return;
+export function safeGroundArrivalSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  if (zone.id !== "surface") return;
   for (const p of players) {
     const inside = inCamp(zone.map, p.pos);
     if (inside && !p.wasInCamp) {
-      const occupied = allPlayers(state).some(
-        (o) => o !== p && o.zoneId === "overworld" && o.wasInCamp,
-      );
-      if (!occupied) restock(state, p);
+      p.checkpoint = areaAt(p.pos);
+      if (p.checkpoint === "overworld") {
+        const occupied = allPlayers(state).some(
+          (o) => o !== p && o.zoneId === "surface" && o.wasInCamp && areaAt(o.pos) === "overworld",
+        );
+        if (!occupied) restock(state, p);
+      }
     }
     p.wasInCamp = inside;
   }
 }
 
-/**
- * A free walkable camp-ground cell for a relocated corpse: rings outward from
- * the spawn, west-to-east then north-to-south within each ring, skipping cells
- * already claimed. Pure scan of the map — no rng, so every client picks the same
- * cells in the same order.
- */
-function campCorpseSpot(overworld: ZoneState, claimed: Set<string>): { x: number; y: number } {
-  const map = overworld.map;
-  const cx = Math.floor(map.spawn.x);
-  const cy = Math.floor(map.spawn.y);
-  for (let r = 0; r <= 8; r++) {
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; // ring edge only
-        const x = cx + dx;
-        const y = cy + dy;
-        const key = `${x},${y}`;
-        if (claimed.has(key) || !isWalkable(map, x, y)) continue;
-        if (!inCamp(map, { x: x + 0.5, y: y + 0.5 })) continue;
-        claimed.add(key);
-        return { x: x + 0.5, y: y + 0.5 };
+/** Touching a region's W pad discovers it for good and stamps the checkpoint. */
+export function waypointSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  if (zone.id !== "surface") return;
+  for (const w of zone.map.markers) {
+    if (w.ch !== "W") continue;
+    const area = areaAt({ x: w.x, y: w.y });
+    for (const p of players) {
+      if (p.dead || Math.hypot(p.pos.x - w.x, p.pos.y - w.y) > 1.2) continue;
+      p.checkpoint = area;
+      if (!p.waypoints.includes(area)) {
+        p.waypoints = [...p.waypoints, area].sort();
+        state.events.push({ type: "waypoint_found", playerId: p.id, area });
       }
     }
   }
-  return { x: cx + 0.5, y: cy + 0.5 }; // shouldn't happen on real maps
+}
+
+/** Standing at a waypoint, jump to any other discovered region's waypoint. */
+export function applyWaypointInput(state: GameState, p: Player, input: PlayerInput): void {
+  const dest = input.waypointTo;
+  if (!dest || !isAreaId(dest) || dest === areaAt(p.pos)) return;
+  if (!p.waypoints.includes(dest)) return;
+  const near = getZone(state, p.zoneId).map.markers.some(
+    (m) => m.ch === "W" && Math.hypot(p.pos.x - m.x, p.pos.y - m.y) <= 1.6,
+  );
+  if (!near) return;
+  travel(state, p, "surface");
+  p.pos = { ...worldWaypointPos(getZone(state, "surface").map, dest) };
 }
 
 /** Fresh run: regenerate the world, revive everyone, back to camp ground. */
@@ -211,19 +201,21 @@ export function resetRun(state: GameState): void {
     strays.push(...zone.playerCorpses.values());
   }
   state.zones.clear();
-  const overworld = ensureOverworld(state);
+  const surface = ensureSurface(state);
   ensureFloor(state, 1);
   const claimed = new Set<string>();
   for (const corpse of strays) {
-    corpse.pos = campCorpseSpot(overworld, claimed);
-    overworld.playerCorpses.set(corpse.id, corpse);
+    corpse.pos = campCorpseSpot(surface.map, claimed);
+    surface.playerCorpses.set(corpse.id, corpse);
   }
   for (const p of allPlayers(state)) {
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;
     p.buffUntil = 0;
-    travel(state, p, "overworld");
+    // A fresh world starts from camp, but the waypoints you've earned are yours.
+    p.checkpoint = "overworld";
+    travel(state, p, "surface");
   }
 }
 
@@ -231,6 +223,7 @@ export function resetRun(state: GameState): void {
 export function createGame(seed: number): GameState {
   const state: GameState = {
     tick: 0,
+    seed,
     rng: createRng(seed),
     zones: new Map(),
     players: new Map(),
@@ -238,7 +231,7 @@ export function createGame(seed: number): GameState {
     events: [],
     nextId: 1,
   };
-  ensureOverworld(state);
+  ensureSurface(state);
   ensureFloor(state, 1);
   return state;
 }
@@ -259,14 +252,17 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     durability: rollDurability("rusted_blade"),
   };
   const stats = computeStats(equipment);
-  const overworld = getZone(state, "overworld");
+  const surface = getZone(state, "surface");
   const p: Player = {
     id: join.id,
     name: "Wanderer",
     klass: "warrior",
-    zoneId: "overworld",
+    zoneId: "surface",
     wasInCamp: false,
-    pos: { ...overworld.map.spawn },
+    waypoints: ["overworld"],
+    checkpoint: "overworld",
+    region: "overworld",
+    pos: { ...surface.map.spawn },
     speed: PLAYER_SPEED,
     path: [],
     life: stats.maxLife,
@@ -284,31 +280,24 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     leap: null,
     pickupTarget: null,
     smashTarget: null,
-    vendorTarget: false,
-    healerTarget: false,
+    npcTarget: null,
     portalTarget: null,
     reclaimTarget: null,
+    castTarget: null,
     level: 1,
     xp: 0,
     skillPoints: 0,
-    skills: {
-      cleave: 0,
-      crush: 0,
-      warcry: 0,
-      leap: 0,
-      firebolt: 0,
-      frostnova: 0,
-      focus: 0,
-      blink: 0,
-    },
+    skills: Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>,
     mana: stats.maxMana,
     maxMana: stats.maxMana,
     buffUntil: 0,
     belt: 0,
+    manaBelt: 0,
     gold: 0,
     inventory: createInventory(),
     equipment,
     magicFind: 0,
+    quests: {},
   };
   state.players.set(join.id, p);
   if (join.character) applyCharacter(state, join.id, join.character);
@@ -362,12 +351,15 @@ export function step(state: GameState, frame: Frame): void {
     applyDropItemInput(state, p, input);
     applyDrinkInput(state, p, input);
     applySpendSkillInput(state, p, input);
-    applyTalkVendorInput(state, p, input);
-    applyTalkHealerInput(state, p, input);
+    applyTalkNpcInput(state, p, input);
+    applyAcceptQuestInput(state, p, input);
+    applyTurnInQuestInput(state, p, input);
     applyShopInput(state, p, input);
+    applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);
     applyCastPortalInput(state, p, input);
     applyUsePortalInput(state, p, input);
+    applyWaypointInput(state, p, input);
   }
 
   // Rosters are snapshotted up front: a player who travels mid-tick is not
@@ -380,21 +372,24 @@ export function step(state: GameState, frame: Frame): void {
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
     reclaimSystem(state, zone, acting());
-    vendorSystem(state, zone, acting());
-    healerSystem(state, zone, acting());
+    npcSystem(state, zone, acting());
+    npcWanderSystem(state, zone, here());
     portalSystem(state, zone, acting(), travel);
     breakSystem(state, zone, acting());
+    castPursuitSystem(state, zone, acting());
     leapSystem(state, zone, here());
     // Airborne players neither walk nor trip floor triggers until they land.
     const grounded = () => acting().filter((p) => !p.leap);
     movementSystem(grounded());
-    travelPadSystem(state, zone, grounded());
-    campArrivalSystem(state, zone, grounded());
+    regionSystem(state, zone, grounded());
+    safeGroundArrivalSystem(state, zone, grounded());
+    waypointSystem(state, zone, grounded());
     stairsSystem(state, zone, grounded());
     monsterAiSystem(state, zone, here());
     collisionSystem(state, zone, here());
     deathSystem(state, zone, here(), travel);
   }
+  questProgressSystem(state);
   xpSystem(state);
   durabilitySystem(state);
   state.tick++;

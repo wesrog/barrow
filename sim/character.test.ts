@@ -74,6 +74,7 @@ describe("slotForItem", () => {
     expect(slotForItem(plain("bone_ring"), eq)).toBe("ring2");
     eq.ring2 = plain("bone_ring");
     expect(slotForItem(plain("bone_ring"), eq)).toBe("ring1"); // both full: swap first
+    expect(slotForItem(plain("plank_buckler"), eq)).toBe("shield");
   });
 });
 
@@ -93,6 +94,13 @@ describe("computeStats", () => {
     const s = computeStats(eq);
     expect(s.dmgMin).toBe(1);
     expect(s.dmgMax).toBe(6);
+    expect(s.defense).toBe(BASE_STATS.defense + 4);
+  });
+
+  test("an equipped shield adds its defense", () => {
+    const eq = createEquipment();
+    eq.shield = plain("plank_buckler"); // def 4
+    const s = computeStats(eq);
     expect(s.defense).toBe(BASE_STATS.defense + 4);
   });
 

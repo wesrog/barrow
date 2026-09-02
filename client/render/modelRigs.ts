@@ -130,16 +130,50 @@ class AnimRig implements ModelRig {
 }
 
 /** Weapon base id -> KayKit weapon model + whether it swings two-handed. */
-const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = {
+const WEAPON_LOOKS: Record<string, { model: WeaponName | "orb"; twoHanded: boolean }> = {
   rusted_blade: { model: "sword_1handed", twoHanded: false },
   hatchet: { model: "axe_1handed", twoHanded: false },
   twin_fang: { model: "dagger", twoHanded: false },
   war_maul: { model: "axe_2handed", twoHanded: true },
   grave_scythe: { model: "sword_2handed", twoHanded: true },
+  gnarled_staff: { model: "skeleton_staff", twoHanded: false },
+  ember_staff: { model: "skeleton_staff", twoHanded: false },
+  wyrmwood_staff: { model: "skeleton_staff", twoHanded: false },
+  ashen_orb: { model: "orb", twoHanded: false },
+  fen_pearl: { model: "orb", twoHanded: false },
+  grave_star: { model: "orb", twoHanded: false },
+  dire_flail: { model: "axe_1handed", twoHanded: false },
+  moon_glaive: { model: "axe_2handed", twoHanded: true },
+  kingsbane: { model: "sword_1handed", twoHanded: false },
 };
+
+/** Held caster orb: a flat-shaded sphere floating just above the fist. */
+function makeOrbModel(): THREE.Group {
+  const g = new THREE.Group();
+  const orb = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.11, 1),
+    flatMat(0x9db8d9, 0.4),
+  );
+  orb.castShadow = true;
+  orb.position.y = -0.12;
+  g.add(orb);
+  return g;
+}
 
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+}
+
+/** Object3D.clone shares materials; give each held weapon its own so
+ * per-instance hit flashes and tints don't leak across enemies. */
+function cloneWeapon(model: THREE.Object3D): THREE.Object3D {
+  const clone = model.clone(true);
+  clone.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) {
+      obj.material = obj.material.clone();
+    }
+  });
+  return clone;
 }
 
 /**
@@ -208,6 +242,16 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     const node = rig.group.getObjectByName(prop);
     if (node) node.visible = false;
   }
+  // The round shield stays part of the skinned model (so it tracks the left
+  // arm); equipping any shield base un-hides it. Clone its material so rarity
+  // glow doesn't bleed onto the shared character atlas.
+  const shieldProp = rig.group.getObjectByName("Barbarian_Round_Shield");
+  shieldProp?.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+      child.material = child.material.clone();
+    }
+  });
+
   const boneOf = (name: string) => findNode(rig.group, name);
   const gear: THREE.Object3D[] = [];
   const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
@@ -257,15 +301,25 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
         addGear(`lowerleg.${side}`, greave, eq.boots);
       }
     }
+    if (shieldProp) {
+      shieldProp.visible = !!eq.shield;
+      const glow = eq.shield ? RARITY_GLOW[eq.shield.rarity] : undefined;
+      shieldProp.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+          child.material.emissive.setHex(glow ?? 0x000000);
+          child.material.emissiveIntensity = glow !== undefined ? 0.35 : 0;
+        }
+      });
+    }
+
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const model = assets.weapons[look.model].clone(true);
+      const model = look.model === "orb" ? makeOrbModel() : cloneWeapon(assets.weapons[look.model]);
       const glow = RARITY_GLOW[eq.weapon.rarity];
       if (glow !== undefined) {
         model.traverse((obj) => {
           if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-            obj.material = obj.material.clone();
             obj.material.emissive.setHex(glow);
             obj.material.emissiveIntensity = 0.5;
           }
@@ -316,6 +370,29 @@ const MONSTER_LOOKS: Record<
     weapon: "skeleton_staff",
     tint: 0x9a8ab8,
   },
+  fen_howler: {
+    model: "skeleton_rogue",
+    idle: "Idle",
+    walk: "Running_A",
+    scale: 0.55,
+    tint: 0x6a8a4a,
+  },
+  bog_maw: {
+    model: "skeleton_mage",
+    idle: "Idle",
+    walk: "Walking_A",
+    scale: 0.78,
+    weapon: "skeleton_staff",
+    tint: 0x5a7a52,
+  },
+  cairn_wight: {
+    model: "skeleton_warrior",
+    idle: "Idle_Combat",
+    walk: "Walking_A",
+    scale: 0.9,
+    weapon: "skeleton_axe",
+    tint: 0xd8d2c0,
+  },
   barrow_lord: {
     model: "skeleton_warrior",
     idle: "Idle_Combat",
@@ -347,7 +424,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   const inst = instantiate(assets.characters[look.model]);
   const rig = new AnimRig(inst, look.idle, look.walk, 3);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", assets.weapons[look.weapon].clone(true));
+  if (look.weapon) rig.attach("r", cloneWeapon(assets.weapons[look.weapon]));
   if (look.tint !== undefined) {
     rig.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
@@ -360,8 +437,8 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
 
 /** Attack clip for a monster swing. */
 export function monsterAttackClip(typeId: string): string {
-  if (typeId === "gravespit") return "Spellcast_Shoot";
-  if (typeId === "barrow_lord") return "2H_Melee_Attack_Slice";
-  if (typeId === "skitter") return "Unarmed_Melee_Attack_Punch_A";
+  if (typeId === "gravespit" || typeId === "bog_maw") return "Spellcast_Shoot";
+  if (typeId === "barrow_lord" || typeId === "cairn_wight") return "2H_Melee_Attack_Slice";
+  if (typeId === "skitter" || typeId === "fen_howler") return "Unarmed_Melee_Attack_Punch_A";
   return "1H_Melee_Attack_Slice_Horizontal";
 }

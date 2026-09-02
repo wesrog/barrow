@@ -1,6 +1,6 @@
+import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
 import type { Rng } from "./rng";
-import { zoneDepth, type ZoneId } from "./state";
 
 /** Map marker characters -> monster types. */
 export const MARKER_TYPES: Record<string, string> = {
@@ -8,19 +8,23 @@ export const MARKER_TYPES: Record<string, string> = {
   s: "skitter",
   r: "gravespit",
   e: "tomb_bloat",
+  h: "fen_howler",
+  m: "bog_maw",
+  w: "cairn_wight",
   B: "barrow_lord",
 };
 
 /**
- * The crypt under the barrow. '#' wall, '.' floor, '@' spawn,
+ * The crypt under the barrow. '#' wall, '.' floor, '@' spawn, '<' the stairs
+ * back up (a dead-end nook so ordinary pathing never trips it),
  * z/s/r/e monsters, B the Barrow Lord in his vault.
  */
 export function cryptZone(): ZoneMap {
   return mapFromStrings([
     "######################################",
     "#@........#..........#....z.....#...#",
-    "#.........#....s.....#..........#.r.#",
-    "#...##....#..........#...####...#...#",
+    "#<#.......#....s.....#..........#.r.#",
+    "##..##....#..........#...####...#...#",
     "#...##....####...#####...#..#.......#",
     "#..............s.........#..#...z...#",
     "#......z..................ss........#",
@@ -49,75 +53,173 @@ export function zoneName(depth: number): string {
   return "The Wyrm's Undercroft";
 }
 
-/** Display name for a zone id (the depth-based names cover the crypt floors). */
-export function zoneTitle(id: ZoneId): string {
-  if (id === "overworld") return "The Wither Moors";
-  return zoneName(zoneDepth(id));
-}
-
 /** The camp's display name — a region of the moors, not a zone of its own. */
 export const CAMP_TITLE = "The Camp";
 
-/**
- * The moors above the barrow: an open world of windswept heath. The camp is a
- * palisaded clearing at the west end — safe ground holding the spawn, V the
- * vendor, H the healer, and P the travel pad — open to the moor through a gap
- * in its east wall. Procedural rock crags and dead copses break up the open
- * ground beyond, '>' is the barrow mouth far to the southeast, and monster
- * packs thicken the farther you roam from the palisade.
- */
-export function overworldZone(rng: Rng): ZoneMap {
-  const size = 64;
-  const cells = new Uint8Array(size * size).fill(1);
-  const idx = (x: number, y: number) => y * size + x;
-
-  // A rim of impassable crags hems in the moor.
-  for (let i = 0; i < size; i++) {
-    cells[idx(i, 0)] = 0;
-    cells[idx(i, size - 1)] = 0;
-    cells[idx(0, i)] = 0;
-    cells[idx(size - 1, i)] = 0;
+/** The mouth of an exit's carved channel, just inside the rim. */
+export function exitMouth(def: AreaDef, e: AreaExit): { x: number; y: number } {
+  switch (e.edge) {
+    case "N":
+      return { x: e.at, y: 3 };
+    case "S":
+      return { x: e.at, y: def.height - 4 };
+    case "W":
+      return { x: 3, y: e.at };
+    case "E":
+      return { x: def.width - 4, y: e.at };
   }
+}
 
-  // Safe ground: the palisade ring sits on the rect's edges, camp floor inside.
-  const camp = { x0: 2, y0: 26, x1: 13, y1: 39 };
-  const spawn = { x: 7.5, y: 32.5 };
-  const barrow = { x: size - 6, y: size - 8 };
+/**
+ * A surface region grown from its AreaDef: an organic landmass — random floor
+ * smoothed into an irregular blob by cellular automata, so the coast wanders in
+ * bays and peninsulas instead of hugging the rect. Safe ground (palisaded, gate
+ * in its east wall — the town only), fixed markers, and exit openings are
+ * stamped at their seed-independent spots, worn trails keep them connected, and
+ * monster packs scatter over the open ground beyond. Regions without a fixed W
+ * marker hide their waypoint at a seed-random spot deep in the wilds instead.
+ */
+export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
+  const { width: w, height: h } = def;
+  const cells = new Uint8Array(w * h); // all wall until the landmass grows
+  const idx = (x: number, y: number) => y * w + x;
+
+  // Seed the landmass inside a 2-cell rim, then smooth it into a blob:
+  // a cell survives as floor only in the company of 5+ floor neighbors.
+  for (let y = 2; y < h - 2; y++) {
+    for (let x = 2; x < w - 2; x++) {
+      if (rng.next() < def.gen.density) cells[idx(x, y)] = 1;
+    }
+  }
+  for (let it = 0; it < def.gen.smooth; it++) {
+    const next = new Uint8Array(cells);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        let floors = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if ((dx !== 0 || dy !== 0) && cells[idx(x + dx, y + dy)] === 1) floors++;
+          }
+        }
+        next[idx(x, y)] = floors >= 5 ? 1 : 0;
+      }
+    }
+    cells.set(next);
+  }
 
   // Crag/copse blobs: short random walks of wall, steering clear of the anchors.
+  const anchors = [def.spawn, ...def.markers];
   const nearAnchor = (x: number, y: number) =>
-    Math.hypot(x - spawn.x, y - spawn.y) < 4 ||
-    Math.hypot(x - barrow.x, y - barrow.y) < 4;
-  for (let b = 0; b < 120; b++) {
-    let x = rng.int(2, size - 3);
-    let y = rng.int(2, size - 3);
-    const len = rng.int(3, 10);
+    anchors.some((a) => Math.hypot(x - a.x, y - a.y) < 4);
+  for (let b = 0; b < def.gen.blobs; b++) {
+    let x = rng.int(2, w - 3);
+    let y = rng.int(2, h - 3);
+    const len = rng.int(def.gen.lenMin, def.gen.lenMax);
     for (let i = 0; i < len; i++) {
       if (!nearAnchor(x, y)) cells[idx(x, y)] = 0;
-      x = Math.min(size - 3, Math.max(2, x + rng.int(-1, 1)));
-      y = Math.min(size - 3, Math.max(2, y + rng.int(-1, 1)));
+      x = Math.min(w - 3, Math.max(2, x + rng.int(-1, 1)));
+      y = Math.min(h - 3, Math.max(2, y + rng.int(-1, 1)));
     }
   }
 
-  // Raise the palisade and clear the camp floor (blobs never carve safe ground).
-  for (let y = camp.y0 - 1; y <= camp.y1; y++) {
-    for (let x = camp.x0 - 1; x <= camp.x1; x++) {
-      const onEdge = x === camp.x0 - 1 || x === camp.x1 || y === camp.y0 - 1 || y === camp.y1;
-      cells[idx(x, y)] = onEdge ? 0 : 1;
+  // Fixed features sit in small clearings whatever the landmass grew there.
+  for (const a of anchors) {
+    for (let y = Math.max(1, Math.floor(a.y - 2)); y <= Math.min(h - 2, Math.floor(a.y + 2)); y++) {
+      for (let x = Math.max(1, Math.floor(a.x - 2)); x <= Math.min(w - 2, Math.floor(a.x + 2)); x++) {
+        if (Math.hypot(x + 0.5 - a.x, y + 0.5 - a.y) < 2.2) cells[idx(x, y)] = 1;
+      }
     }
   }
-  // The east wall opens onto the moor.
-  const sy = Math.floor(spawn.y);
-  for (let y = sy - 1; y <= sy + 1; y++) cells[idx(camp.x1, y)] = 1;
 
-  // A worn trail from the camp gap to the barrow mouth is always open.
-  const sx = Math.floor(spawn.x);
-  for (let x = camp.x1; x <= barrow.x; x++) cells[idx(x, sy)] = 1;
-  for (let y = Math.min(sy, barrow.y); y <= Math.max(sy, barrow.y); y++) {
-    cells[idx(barrow.x, y)] = 1;
+  // Safe ground: the palisade ring sits on the rect's edges, floor inside,
+  // open to the wilds through a gap in its east wall at the spawn row.
+  const safe = def.safe;
+  const gy = Math.floor(def.spawn.y);
+  if (safe) {
+    for (let y = safe.y0 - 1; y <= safe.y1; y++) {
+      for (let x = safe.x0 - 1; x <= safe.x1; x++) {
+        const onEdge = x === safe.x0 - 1 || x === safe.x1 || y === safe.y0 - 1 || y === safe.y1;
+        cells[idx(x, y)] = onEdge ? 0 : 1;
+      }
+    }
+    for (let y = gy - 1; y <= gy + 1; y++) cells[idx(safe.x1, y)] = 1;
   }
 
-  // Seal off any pocket the blobs cut away from the trail network.
+  // Exits: 3-wide channels carved through the rim toward the neighbor.
+  for (const e of def.exits) {
+    for (let d = 0; d < 4; d++) {
+      for (let off = -1; off <= 1; off++) {
+        if (e.edge === "N") cells[idx(e.at + off, d)] = 1;
+        else if (e.edge === "S") cells[idx(e.at + off, h - 1 - d)] = 1;
+        else if (e.edge === "W") cells[idx(d, e.at + off)] = 1;
+        else cells[idx(w - 1 - d, e.at + off)] = 1;
+      }
+    }
+  }
+
+  // Worn trails from the gate keep every far feature and exit mouth open.
+  // Without safe ground there is no gate — the spawn anchor plays its part.
+  const gate = safe ? { x: safe.x1, y: gy } : { x: Math.floor(def.spawn.x), y: gy };
+  const inSafe = (x: number, y: number) =>
+    safe !== undefined && x >= safe.x0 && x < safe.x1 && y >= safe.y0 && y < safe.y1;
+  const targets = [
+    ...def.markers
+      .map((m) => ({ x: Math.floor(m.x), y: Math.floor(m.y) }))
+      .filter((t) => !inSafe(t.x, t.y)),
+    ...def.exits.map((e) => exitMouth(def, e)),
+  ];
+  for (const t of targets) {
+    for (let x = Math.min(gate.x, t.x); x <= Math.max(gate.x, t.x); x++) cells[idx(x, gate.y)] = 1;
+    for (let y = Math.min(gate.y, t.y); y <= Math.max(gate.y, t.y); y++) cells[idx(t.x, y)] = 1;
+  }
+
+  // Stitch: the automaton grows the landmass in fragments, and only luck ties
+  // them to the spawn network. Carve a trail from every sizable fragment to
+  // just outside the gate — the leg along the palisade's east face never cuts
+  // through safe ground — so the seal below only ever swallows small islets.
+  const sx = Math.floor(def.spawn.x);
+  const sy = Math.floor(def.spawn.y);
+  {
+    const comp = new Int32Array(cells.length).fill(-1);
+    const sizes: number[] = [];
+    const firsts: number[] = [];
+    for (let i = 0; i < cells.length; i++) {
+      if (cells[i] !== 1 || comp[i] !== -1) continue;
+      const label = sizes.length;
+      let size = 0;
+      const stack = [i];
+      comp[i] = label;
+      while (stack.length > 0) {
+        const c = stack.pop()!;
+        size++;
+        const cx = c % w;
+        const cy = Math.floor(c / w);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = cx + dx;
+          const ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const n = idx(nx, ny);
+          if (cells[n] === 1 && comp[n] === -1) {
+            comp[n] = label;
+            stack.push(n);
+          }
+        }
+      }
+      sizes.push(size);
+      firsts.push(i);
+    }
+    const spawnComp = comp[idx(sx, sy)]!;
+    const gx = safe ? safe.x1 + 1 : gate.x;
+    for (let label = 0; label < sizes.length; label++) {
+      if (label === spawnComp || sizes[label]! < 25) continue;
+      const tx = firsts[label]! % w;
+      const ty = Math.floor(firsts[label]! / w);
+      for (let x = Math.min(tx, gx); x <= Math.max(tx, gx); x++) cells[idx(x, ty)] = 1;
+      for (let y = Math.min(ty, gy); y <= Math.max(ty, gy); y++) cells[idx(gx, y)] = 1;
+    }
+  }
+
+  // Seal off any pocket cut away from the trail network.
   const reachable = new Set<number>([idx(sx, sy)]);
   const queue = [{ x: sx, y: sy }];
   while (queue.length > 0) {
@@ -125,7 +227,7 @@ export function overworldZone(rng: Rng): ZoneMap {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nx = x + dx;
       const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= size || ny >= size) continue;
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
       const key = idx(nx, ny);
       if (reachable.has(key) || cells[key] !== 1) continue;
       reachable.add(key);
@@ -136,27 +238,62 @@ export function overworldZone(rng: Rng): ZoneMap {
     if (cells[i] === 1 && !reachable.has(i)) cells[i] = 0;
   }
 
-  const markers: MapMarker[] = [
-    { ch: "V", x: 4.5, y: 29.5 },
-    { ch: "H", x: 4.5, y: 35.5 },
-    { ch: "P", x: 10.5, y: 28.5 },
-    { ch: ">", x: barrow.x + 0.5, y: barrow.y + 0.5 },
-  ];
-
-  // Monster packs scattered over the open ground, never crowding the palisade.
-  const kinds = ["z", "z", "z", "s", "s", "r", "e"];
+  // Monster packs scattered over the open ground, never crowding safe ground.
+  const markers: MapMarker[] = def.markers.map((m) => ({ ...m }));
   const taken = new Set<number>();
+
+  // The hidden waypoint: regions without a fixed W pad roll one onto a random
+  // reachable cell far from every entrance, so finding it is the region's
+  // exploration prize — nobody arrives standing on it.
+  if (!markers.some((m) => m.ch === "W")) {
+    const mouths = def.exits.map((e) => exitMouth(def, e));
+    const clearOfMouths = (x: number, y: number, min: number) =>
+      mouths.every((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y) >= min);
+    let spot: { x: number; y: number } | null = null;
+    for (let tries = 0; spot === null && tries < 4000; tries++) {
+      const x = rng.int(3, w - 4);
+      const y = rng.int(3, h - 4);
+      if (reachable.has(idx(x, y)) && clearOfMouths(x, y, 20)) spot = { x, y };
+    }
+    if (spot === null) {
+      // Cramped landmass: settle for the reachable cell farthest into the wilds.
+      let bestDist = -1;
+      for (const key of reachable) {
+        const x = key % w;
+        const y = Math.floor(key / w);
+        const d = Math.min(...mouths.map((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y)));
+        if (d > bestDist) {
+          bestDist = d;
+          spot = { x, y };
+        }
+      }
+    }
+    if (spot) {
+      taken.add(idx(spot.x, spot.y));
+      markers.push({ ch: "W", x: spot.x + 0.5, y: spot.y + 0.5 });
+    }
+  }
   let placed = 0;
-  for (let tries = 0; placed < 55 && tries < 4000; tries++) {
-    const x = rng.int(2, size - 3);
-    const y = rng.int(2, size - 3);
+  for (let tries = 0; placed < def.gen.packs && tries < 4000; tries++) {
+    const x = rng.int(2, w - 3);
+    const y = rng.int(2, h - 3);
     const key = idx(x, y);
     if (!reachable.has(key) || taken.has(key)) continue;
-    if (Math.hypot(x + 0.5 - spawn.x, y + 0.5 - spawn.y) < 10) continue;
+    if (inSafe(x + 0.5, y + 0.5)) continue;
+    if (Math.hypot(x + 0.5 - def.spawn.x, y + 0.5 - def.spawn.y) < 10) continue;
     taken.add(key);
-    markers.push({ ch: kinds[rng.int(0, kinds.length - 1)]!, x: x + 0.5, y: y + 0.5 });
+    markers.push({
+      ch: def.spawnTable[rng.int(0, def.spawnTable.length - 1)]!,
+      x: x + 0.5,
+      y: y + 0.5,
+    });
     placed++;
   }
 
-  return { width: size, height: size, cells, spawn, markers, camp };
+  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: safe ? [{ ...safe }] : [] };
+}
+
+/** The moors above the barrow — the overworld row of the area registry. */
+export function overworldZone(rng: Rng): ZoneMap {
+  return areaZone(rng, AREAS.overworld);
 }

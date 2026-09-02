@@ -1,12 +1,12 @@
 import { localId } from "../local";
 import { playerCss } from "../render/tints";
 import type { GameState } from "../../sim/state";
-import { zoneTitle } from "../../sim/zone";
+import { locationTitle } from "../../sim/surface";
 
 const mono = "ui-monospace, monospace";
 
-/** Top-left column: one row per other player in the session — tint, seat
- * label, life bar, and where they are (greyed when it's not our zone). */
+/** Top-left column: one row per other player in the session — tint, name and
+ * level, life bar, and where they are (greyed when it's not our zone). */
 export function PartyStrip({ game }: { game: GameState }) {
   const me = localId();
   const localZone = game.players.get(me)?.zoneId;
@@ -51,9 +51,10 @@ export function PartyStrip({ game }: { game: GameState }) {
             />
             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
               <div style={{ fontSize: 11, color: sameZone ? "#e8dcc0" : "#8f8778" }}>
-                {`P${p.id + 1}`}{" "}
+                {p.name || `P${p.id + 1}`}
+                <span style={{ color: sameZone ? "#8f8778" : "#5f5a4e" }}> lvl {p.level}</span>{" "}
                 <span style={{ color: sameZone ? "#7fb8c9" : "#5f6a6d" }}>
-                  {zoneTitle(p.zoneId)}
+                  {locationTitle(p.zoneId, p.pos)}
                 </span>
               </div>
               <div

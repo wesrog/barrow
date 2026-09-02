@@ -65,7 +65,7 @@ export function CharacterView({
 
   // Re-dress the standing hero when gear changes; the mount effect handles
   // the first outfit.
-  const gearKey = (["weapon", "helm", "chest", "boots"] as const)
+  const gearKey = (["weapon", "shield", "helm", "chest", "boots"] as const)
     .map((slot) => {
       const item = equipment[slot];
       return item ? `${item.baseId}|${item.name}|${item.rarity}` : "";

@@ -110,10 +110,10 @@ describe("camp trips", () => {
     travel(state, player(state), "floor:1");
     const saved = [...playerZone(state).breakables.values()];
     expect(saved.length).toBeGreaterThan(0);
-    travel(state, player(state), "overworld");
-    // Walk onto the travel pad: back down to floor 1
-    const pad = playerZone(state).map.markers.find((m) => m.ch === "P")!;
-    player(state).pos = { x: pad.x, y: pad.y };
+    travel(state, player(state), "surface");
+    // Walk into the barrow mouth: back down to floor 1
+    const mouth = playerZone(state).map.markers.find((m) => m.ch === ">")!;
+    player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
     expect([...playerZone(state).breakables.values()]).toEqual(saved);
   });

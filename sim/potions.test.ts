@@ -24,6 +24,15 @@ const potion = (): Item => ({
   ilvl: 1,
 });
 
+const manaPotion = (): Item => ({
+  baseId: "minor_mana_potion",
+  rarity: "normal",
+  name: "Minor Mana Potion",
+  affixIds: [],
+  mods: [],
+  ilvl: 1,
+});
+
 function dropAt(state: GameState, item: Item, x: number, y: number): number {
   const id = state.nextId++;
   playerZone(state).groundItems.set(id, { id, item, pos: { x, y } });
@@ -60,6 +69,50 @@ describe("potions", () => {
     expect(player(state).life).toBe(player(state).maxLife); // clamped
     stepSolo(state, { drink: true }); // belt empty: no-op
     expect(player(state).belt).toBe(0);
+  });
+
+  test("mana potions fill their own belt row", () => {
+    const state = createGameOn(1, arena());
+    const id = dropAt(state, manaPotion(), 2.5, 1.5);
+    stepSolo(state, { pickup: id });
+    for (let t = 0; t < 40 && playerZone(state).groundItems.has(id); t++) stepSolo(state, {});
+    expect(player(state).manaBelt).toBe(1);
+    expect(player(state).belt).toBe(0);
+    expect(player(state).inventory.entries).toHaveLength(0);
+  });
+
+  test("drinking a mana potion restores mana, consumes a charge, never overfills", () => {
+    const state = createGameOn(1, arena());
+    player(state).manaBelt = 2;
+    player(state).mana = 0;
+    stepSolo(state, { drink: "mana" });
+    expect(player(state).manaBelt).toBe(1);
+    expect(player(state).mana).toBeCloseTo(25, 0); // +25, give or take a tick of regen
+    player(state).mana = player(state).maxMana - 1;
+    stepSolo(state, { drink: "mana" });
+    expect(player(state).mana).toBe(player(state).maxMana); // clamped
+    stepSolo(state, { drink: "mana" }); // row empty: no-op
+    expect(player(state).manaBelt).toBe(0);
+  });
+
+  test("drink 'health' and the legacy boolean both pull from the healing row", () => {
+    const state = createGameOn(1, arena());
+    player(state).belt = 2;
+    player(state).life = 10;
+    stepSolo(state, { drink: "health" });
+    expect(player(state).belt).toBe(1);
+    expect(player(state).life).toBe(45);
+    stepSolo(state, { drink: true as unknown as "health" });
+    expect(player(state).belt).toBe(0);
+  });
+
+  test("clicking an inventory mana potion moves it to the mana row", () => {
+    const state = createGameOn(1, arena());
+    const id = state.nextId++;
+    placeItem(player(state).inventory, id, manaPotion());
+    stepSolo(state, { equip: id });
+    expect(player(state).manaBelt).toBe(1);
+    expect(player(state).inventory.entries).toHaveLength(0);
   });
 
   test("clicking an inventory potion moves it to the belt", () => {

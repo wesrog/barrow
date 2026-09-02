@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { player, soloGame } from "./test-helpers";
-import { ensureOverworld, stepSolo, travel } from "./tick";
+import { ensureSurface, stepSolo } from "./tick";
 import { getZone, zoneDepth } from "./state";
 import { createRng } from "./rng";
-import { overworldZone, zoneTitle } from "./zone";
+import { overworldZone } from "./zone";
+import { areaRect, inRect, locationTitle, regionTitle, worldAreaSpawn } from "./surface";
 import { inCamp } from "./map";
 import type { ZoneMap } from "./map";
 
@@ -46,11 +47,11 @@ describe("overworld map", () => {
     }
   });
 
-  test("the camp is part of the moors: spawn, vendor, healer, and pad inside it", () => {
+  test("the camp is part of the moors: spawn, vendor, healer, and campfire inside it", () => {
     const map = overworldZone(createRng(9));
-    expect(map.camp).toBeDefined();
+    expect(map.camps.length).toBeGreaterThan(0);
     expect(inCamp(map, map.spawn)).toBe(true);
-    for (const ch of ["V", "H", "P"]) {
+    for (const ch of ["V", "H", "F"]) {
       const m = map.markers.find((mk) => mk.ch === ch)!;
       expect(m).toBeDefined();
       expect(inCamp(map, m)).toBe(true);
@@ -80,68 +81,70 @@ describe("overworld map", () => {
 describe("overworld travel", () => {
   test("players start on the moors, inside the camp", () => {
     const g = soloGame(1);
-    expect(player(g).zoneId).toBe("overworld");
-    expect(inCamp(getZone(g, "overworld").map, player(g).pos)).toBe(true);
+    expect(player(g).zoneId).toBe("surface");
+    expect(inCamp(getZone(g, "surface").map, player(g).pos)).toBe(true);
   });
 
   test("the barrow mouth in the moors descends to floor 1", () => {
     const g = soloGame(1);
-    const mouth = getZone(g, "overworld").map.markers.find((m) => m.ch === ">")!;
+    const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
     player(g).pos = { x: mouth.x, y: mouth.y };
     stepSolo(g, {});
     expect(player(g).zoneId).toBe("floor:1");
   });
 
-  test("the camp travel pad descends to floor 1", () => {
+  test("no travel pad remains — the barrow mouth is the only way down", () => {
     const g = soloGame(1);
-    const pad = getZone(g, "overworld").map.markers.find((m) => m.ch === "P")!;
-    player(g).pos = { x: pad.x, y: pad.y };
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1");
+    expect(getZone(g, "surface").map.markers.some((m) => m.ch === "P")).toBe(false);
   });
 });
 
 describe("overworld population", () => {
   test("monsters roam the moors, tougher the farther from the camp", () => {
     const g = soloGame(2);
-    const zone = ensureOverworld(g);
-    expect(zone.monsters.size).toBeGreaterThanOrEqual(30);
-    const spawn = zone.map.spawn;
-    const byDist = [...zone.monsters.values()].sort(
-      (a, b) =>
-        Math.hypot(a.pos.x - spawn.x, a.pos.y - spawn.y) -
-        Math.hypot(b.pos.x - spawn.x, b.pos.y - spawn.y),
-    );
+    const zone = ensureSurface(g);
+    const rect = areaRect("overworld");
+    const spawn = worldAreaSpawn("overworld");
+    const byDist = [...zone.monsters.values()]
+      .filter((m) => inRect(rect, m.pos))
+      .sort(
+        (a, b) =>
+          Math.hypot(a.pos.x - spawn.x, a.pos.y - spawn.y) -
+          Math.hypot(b.pos.x - spawn.x, b.pos.y - spawn.y),
+      );
+    expect(byDist.length).toBeGreaterThanOrEqual(30);
     const near = byDist[0]!;
     const far = [...byDist].reverse().find((m) => m.typeId === near.typeId);
     if (far && far !== near) expect(far.maxLife).toBeGreaterThanOrEqual(near.maxLife);
   });
 
-  test("a new game regenerates the moors", () => {
+  test("a new game regenerates the surface", () => {
     const g = soloGame(1);
-    const before = getZone(g, "overworld");
+    const before = getZone(g, "surface");
     const populated = before.monsters.size;
     stepSolo(g, { newGame: true });
-    const after = getZone(g, "overworld");
+    const after = getZone(g, "surface");
     expect(after).not.toBe(before);
     expect(after.monsters.size).toBe(populated);
-    expect(player(g).zoneId).toBe("overworld");
+    expect(player(g).zoneId).toBe("surface");
   });
 
   test("zone identity", () => {
-    expect(zoneDepth("overworld")).toBe(1);
-    expect(zoneTitle("overworld")).toBe("The Wither Moors");
-    expect(zoneTitle("floor:1")).toBe("The Barrow Crypt");
+    expect(zoneDepth("surface")).toBe(1);
+    expect(regionTitle("overworld")).toBe("The Wither Moors");
+    expect(locationTitle("surface", worldAreaSpawn("overworld"))).toBe("The Wither Moors");
+    expect(locationTitle("surface", worldAreaSpawn("redfen"))).toBe("The Redfen");
+    expect(locationTitle("floor:1", { x: 0, y: 0 })).toBe("The Barrow Crypt");
   });
 });
 
 describe("camp safety", () => {
   test("monsters ignore a player standing on camp ground", () => {
     const g = soloGame(1);
-    const zone = getZone(g, "overworld");
+    const zone = getZone(g, "surface");
     const p = player(g);
     // A monster right at the palisade gap, player just inside.
-    const c = zone.map.camp!;
+    const c = zone.map.camps[0]!;
     p.pos = { x: c.x1 - 0.5, y: p.pos.y };
     const m = [...zone.monsters.values()][0]!;
     m.pos = { x: c.x1 + 1.5, y: p.pos.y };
@@ -150,5 +153,21 @@ describe("camp safety", () => {
     expect(m.ai).toBe("idle");
     expect(inCamp(zone.map, m.pos)).toBe(false);
     expect(p.life).toBe(p.maxLife);
+  });
+
+  test("monsters keep wandering while everyone stands in camp", () => {
+    const g = soloGame(1);
+    const zone = getZone(g, "surface");
+    const p = player(g);
+    expect(inCamp(zone.map, p.pos)).toBe(true);
+    const m = [...zone.monsters.values()][0]!;
+    const home = { ...m.pos };
+    let moved = false;
+    for (let i = 0; i < 500; i++) {
+      stepSolo(g, {});
+      expect(m.ai).toBe("idle");
+      if (Math.hypot(m.pos.x - home.x, m.pos.y - home.y) > 0.3) moved = true;
+    }
+    expect(moved).toBe(true);
   });
 });

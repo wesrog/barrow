@@ -1,5 +1,7 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { hostDriver, joinDriver, localDriver, type NetDriver } from "../net/driver";
+import { createLobbyScene, type LobbySceneHandle } from "../render/lobbyScene";
+import type { GameAssets } from "../render/models";
 import { SIGNAL_URL } from "../net/config";
 import {
   createCharacter,
@@ -7,6 +9,7 @@ import {
   deleteCharacter,
   listCharacters,
   selectCharacter,
+  worldSeedOf,
   type CharacterSummary,
 } from "../roster";
 import type { Klass } from "../../sim/skills";
@@ -58,17 +61,39 @@ const KLASS_BLURB: Record<Klass, string> = {
  * still auto-joins — but only when a current character already exists; a
  * first-time visitor forges one first, with the code kept in the join field. */
 export function Lobby({
+  assets,
   onReady,
 }: {
+  assets: GameAssets | null;
   onReady: (driver: NetDriver, roomCode: string | null) => void;
 }) {
   const [chars, setChars] = useState<CharacterSummary[]>(() => listCharacters());
-  const [chosen, setChosen] = useState<CharacterSummary | null>(null);
+  // The last-played hero (the roster's autosave slot) greets you already chosen.
+  const [chosen, setChosen] = useState<CharacterSummary | null>(
+    () => listCharacters().find((c) => c.id === currentCharacterId()) ?? null,
+  );
   const [newName, setNewName] = useState(() => generateName());
   const [newKlass, setNewKlass] = useState<Klass>("warrior");
   const [busy, setBusy] = useState<"solo" | "host" | "join" | null>(null);
   const [code, setCode] = useState(() => joinCodeFromUrl() ?? "");
   const [error, setError] = useState<string | null>(null);
+  const dioramaRef = useRef<HTMLDivElement>(null);
+  const sceneRef = useRef<LobbySceneHandle | null>(null);
+  const [dioramaReady, setDioramaReady] = useState(false);
+
+  // The barrow-entrance diorama behind the card, mounted once assets arrive.
+  useEffect(() => {
+    if (!assets || !dioramaRef.current) return;
+    const handle = createLobbyScene(dioramaRef.current, assets);
+    sceneRef.current = handle;
+    const t = requestAnimationFrame(() => setDioramaReady(true));
+    return () => {
+      cancelAnimationFrame(t);
+      setDioramaReady(false);
+      sceneRef.current = null;
+      handle.dispose();
+    };
+  }, [assets]);
 
   /** The chosen character's save payload; selecting also marks its slot as the
    * autosave target. */
@@ -77,10 +102,13 @@ export function Lobby({
     return target ? (selectCharacter(target.id) ?? undefined) : undefined;
   };
 
+  /** The chosen hero's saved world, so a reload comes back to the same moors. */
+  const worldSeed = (): number => (chosen ? worldSeedOf(chosen.id) : null) ?? (Date.now() >>> 0);
+
   const startSolo = () => {
     setError(null);
     setBusy("solo");
-    onReady(localDriver(Date.now() >>> 0, characterRaw()), null);
+    onReady(localDriver(worldSeed(), characterRaw()), null);
   };
 
   const startHost = async () => {
@@ -88,7 +116,7 @@ export function Lobby({
     setBusy("host");
     try {
       const { driver, code: roomCode } = await hostDriver(
-        Date.now() >>> 0,
+        worldSeed(),
         SIGNAL_URL,
         characterRaw(),
       );
@@ -99,13 +127,14 @@ export function Lobby({
     }
   };
 
-  const startJoin = async (joinCode: string, as?: CharacterSummary) => {
+  const startJoin = async (joinCode: string, as?: CharacterSummary, cancelled?: () => boolean) => {
     const trimmed = joinCode.trim();
     if (!trimmed) return;
     setError(null);
     setBusy("join");
     try {
-      const driver = await joinDriver(SIGNAL_URL, trimmed, characterRaw(as));
+      const driver = await joinDriver(SIGNAL_URL, trimmed, characterRaw(as), cancelled);
+      if (!driver) return; // cancelled — a fresher attempt owns the lobby now
       onReady(driver, null);
     } catch (e) {
       setBusy(null);
@@ -127,22 +156,31 @@ export function Lobby({
   // Never from a prerendered page: Chrome speculatively loads (and runs!) URLs
   // typed in the omnibox, and a hidden prerender that joins seats a zombie
   // player. Join only once this copy of the page is the one the user is
-  // looking at.
+  // looking at. The cleanup cancels the attempt because StrictMode runs every
+  // effect twice (mount, cleanup, mount): without it the doomed first run
+  // joins too, seating a second copy of the character that nothing drives.
   useEffect(() => {
     const initial = joinCodeFromUrl();
     if (!initial) return;
     const current = listCharacters().find((c) => c.id === currentCharacterId());
     if (!current) return;
+    let cancelled = false;
     const autoJoin = () => {
       setChosen(current);
-      void startJoin(initial, current);
+      void startJoin(initial, current, () => cancelled);
     };
     const doc = document as Document & { prerendering?: boolean };
     if (doc.prerendering) {
       doc.addEventListener("prerenderingchange", autoJoin, { once: true });
-      return () => doc.removeEventListener("prerenderingchange", autoJoin);
+      return () => {
+        cancelled = true;
+        doc.removeEventListener("prerenderingchange", autoJoin);
+      };
     }
     autoJoin();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -159,7 +197,29 @@ export function Lobby({
       }}
     >
       <div
+        ref={dioramaRef}
         style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 0,
+          opacity: dioramaReady ? 1 : 0,
+          transition: "opacity 1.2s ease",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: "none",
+          background: "radial-gradient(ellipse at center, transparent 40%, rgba(10,10,12,.8) 100%)",
+        }}
+      />
+      <div
+        style={{
+          position: "relative",
+          zIndex: 1,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -167,7 +227,8 @@ export function Lobby({
           padding: "32px 40px",
           border: "1px solid #3a3442",
           borderRadius: 6,
-          background: "rgba(12,11,15,.85)",
+          background: "rgba(10,9,13,.92)",
+          boxShadow: "0 8px 40px rgba(0,0,0,.6)",
           minWidth: 300,
           maxWidth: 380,
         }}
@@ -195,7 +256,10 @@ export function Lobby({
                   <div key={c.id} style={{ display: "flex", gap: 6 }}>
                     <button
                       style={{ ...buttonStyle, flex: 1, textAlign: "left", padding: "8px 12px" }}
-                      onClick={() => setChosen(c)}
+                      onClick={() => {
+                        setChosen(c);
+                        sceneRef.current?.cheer(c.klass);
+                      }}
                     >
                       {c.name}
                       <span style={{ color: "#8f8778" }}>
@@ -259,7 +323,10 @@ export function Lobby({
                       borderColor: newKlass === k ? "#8f7a4c" : "#3a3442",
                       color: newKlass === k ? "#e8dcc0" : "#8f8778",
                     }}
-                    onClick={() => setNewKlass(k)}
+                    onClick={() => {
+                      setNewKlass(k);
+                      sceneRef.current?.cheer(k);
+                    }}
                   >
                     {k}
                   </button>

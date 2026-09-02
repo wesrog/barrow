@@ -1,8 +1,12 @@
+import { isAreaId, type AreaId } from "./areas";
 import { createEquipment, createInventory, type Equipment, type Inventory } from "./character";
 import { recomputePlayerStats } from "./systems/inventory";
 import { rollDurability } from "./items/generate";
-import type { Klass, SkillId } from "./skills";
-import { zoneOf, type GameState, type PlayerId } from "./state";
+import { SKILL_IDS, type Klass, type SkillId } from "./skills";
+import { type GameState, type PlayerId } from "./state";
+import { campCorpseSpot, worldWaypointPos } from "./surface";
+import { ensureSurface } from "./world";
+import { isQuestId, QUESTS, type QuestLog } from "./quests";
 
 const VERSION = 1;
 
@@ -16,14 +20,35 @@ export interface CharacterSave {
   skillPoints: number;
   skills: Record<SkillId, number>;
   belt: number;
+  /** Mana potions on the belt's second row. Missing on older saves. */
+  manaBelt?: number;
   gold?: number;
   inventory: Inventory;
   equipment: Equipment;
+  /** Seed of the world this character last played; the lobby reuses it. */
+  worldSeed?: number;
+  /** Area to resume at. Unknown or undiscovered values fall back to camp. */
+  checkpoint?: string;
+  /** Discovered waypoint area ids; filtered to areas this build knows. */
+  waypoints?: string[];
+  /** Quest progress: accepted quest ids and their stage/count. Missing on older saves. */
+  quests?: Record<string, { stage: string; count: number }>;
+  /** Gear on this player's unreclaimed corpse, if they left one behind. The
+   * world it stood in dies with the session, so the save carries the loot and
+   * a restore lays the corpse back down at camp. */
+  corpse?: Equipment;
 }
 
 export function serializeCharacter(state: GameState, playerId: PlayerId): string {
   const p = state.players.get(playerId);
   if (!p) return "";
+  let corpse: Equipment | undefined;
+  for (const zone of state.zones.values()) {
+    for (const c of zone.playerCorpses.values()) {
+      if (c.playerId === playerId) corpse = c.equipment;
+    }
+    if (corpse) break;
+  }
   const save: CharacterSave = {
     v: VERSION,
     name: p.name,
@@ -33,9 +58,15 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     skillPoints: p.skillPoints,
     skills: { ...p.skills },
     belt: p.belt,
+    manaBelt: p.manaBelt,
     gold: p.gold,
     inventory: p.inventory,
     equipment: p.equipment,
+    worldSeed: state.seed,
+    checkpoint: p.checkpoint,
+    waypoints: p.waypoints,
+    quests: p.quests,
+    corpse,
   };
   return JSON.stringify(save);
 }
@@ -74,17 +105,6 @@ export function newCharacterRaw(name: string, klass: Klass): string {
   };
   return JSON.stringify(save);
 }
-
-const SKILL_IDS: SkillId[] = [
-  "cleave",
-  "crush",
-  "warcry",
-  "leap",
-  "firebolt",
-  "frostnova",
-  "focus",
-  "blink",
-];
 
 /** Every known skill rank as a finite number, or null if the saved shape is
  * unusable. Ranks a save omits (an older save, a newer skill) come back as 0 —
@@ -133,9 +153,45 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.skillPoints = save.skillPoints;
   p.skills = skills;
   p.belt = save.belt;
+  p.manaBelt = Number.isFinite(save.manaBelt) ? save.manaBelt! : 0;
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;
   p.inventory = save.inventory;
-  p.equipment = save.equipment;
+  // Merge over the empty layout so slots added since the save (e.g. shield)
+  // come back null instead of undefined.
+  p.equipment = { ...createEquipment(), ...save.equipment };
+  // Checkpoint fields are lenient where the rest is strict: a garbled area name
+  // shouldn't brick the hero. Normalization is a pure function of the payload,
+  // so every peer replaying this join computes the identical result.
+  const waypoints = Array.isArray(save.waypoints)
+    ? [...new Set(save.waypoints.filter((w): w is AreaId => typeof w === "string" && isAreaId(w)))]
+    : [];
+  if (!waypoints.includes("overworld")) waypoints.push("overworld");
+  p.waypoints = waypoints.sort();
+  // Quests are lenient like checkpoints: a garbled log sheds its junk instead
+  // of bricking the hero. Pure function of the payload — identical on every peer.
+  const quests: QuestLog = {};
+  if (save.quests && typeof save.quests === "object") {
+    for (const [id, prog] of Object.entries(save.quests)) {
+      if (!isQuestId(id)) continue;
+      if (prog?.stage !== "active" && prog?.stage !== "done") continue;
+      const n = Number.isFinite(prog.count) ? prog.count : 0;
+      // Never trust a saved count past what the objective can reach — a
+      // tampered or stale save shouldn't be able to hand out a pre-completed
+      // kill/collect quest with an absurd count.
+      const o = QUESTS[id].objective;
+      const cap = o.kind === "kill" || o.kind === "collect" ? o.count : Infinity;
+      quests[id] = { stage: prog.stage, count: Math.min(Math.max(0, Math.floor(n)), cap) };
+    }
+  }
+  p.quests = quests;
+  // Any registry area is a valid checkpoint — outposts stamp it on arrival,
+  // before their waypoint is ever touched — and every area's safe spot is
+  // fixed, so restoring there is layout-safe in any world.
+  p.checkpoint =
+    typeof save.checkpoint === "string" && isAreaId(save.checkpoint)
+      ? save.checkpoint
+      : "overworld";
+  p.region = p.checkpoint;
   // Keep item ids clear of the fresh state's counter.
   for (const e of p.inventory.entries) {
     if (e.id >= state.nextId) state.nextId = e.id + 1;
@@ -143,6 +199,36 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   recomputePlayerStats(state, p);
   p.life = p.maxLife;
   p.mana = p.maxMana;
-  p.pos = { ...zoneOf(state, p).map.spawn };
+  // Wake at the checkpoint's waypoint — generating the surface if this world
+  // hasn't grown it yet. Runs inside the join frame, so it lands identically
+  // on every peer, wherever this world's seed hid the pad.
+  const surface = ensureSurface(state);
+  p.zoneId = "surface";
+  p.pos = { ...worldWaypointPos(surface.map, p.checkpoint) };
+  // A corpse the save carries comes back down at camp — unless this world still
+  // holds the player's corpse (a live rejoin), which would duplicate the gear.
+  if (save.corpse && typeof save.corpse === "object") {
+    let alreadyLaid = false;
+    for (const zone of state.zones.values()) {
+      for (const c of zone.playerCorpses.values()) {
+        if (c.playerId === playerId) alreadyLaid = true;
+      }
+    }
+    const equipment = { ...createEquipment(), ...save.corpse };
+    const hasGear = Object.values(equipment).some((it) => it !== null);
+    if (!alreadyLaid && hasGear) {
+      const claimed = new Set<string>();
+      for (const c of surface.playerCorpses.values()) {
+        claimed.add(`${Math.floor(c.pos.x)},${Math.floor(c.pos.y)}`);
+      }
+      const id = state.nextId++;
+      surface.playerCorpses.set(id, {
+        id,
+        playerId,
+        pos: campCorpseSpot(surface.map, claimed),
+        equipment,
+      });
+    }
+  }
   return true;
 }

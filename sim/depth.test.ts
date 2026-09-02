@@ -59,7 +59,7 @@ describe("stairs", () => {
     walkOnStairs(state);
     expect(player(state).zoneId).toBe("floor:2");
     stepSolo(state, { newGame: true });
-    expect(player(state).zoneId).toBe("overworld");
+    expect(player(state).zoneId).toBe("surface");
     expect(state.zones.has("floor:2")).toBe(false);
     const m = [...getZone(state, "floor:1").monsters.values()].find(
       (m) => m.typeId === "shambler",

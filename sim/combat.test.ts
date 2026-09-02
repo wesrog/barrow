@@ -3,7 +3,16 @@ import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
 import { computeHitChance, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
+import { dropSpot } from "./systems/combat";
 import { createRng } from "./rng";
+import type { ZoneMap } from "./map";
+
+/** A hand-built map: floor only at the given cells, wall everywhere else. */
+function wallMap(width: number, height: number, floor: [number, number][]): ZoneMap {
+  const cells = new Uint8Array(width * height);
+  for (const [x, y] of floor) cells[y * width + x] = 1;
+  return { width, height, cells, spawn: { x: 0.5, y: 0.5 }, markers: [], camps: [] };
+}
 
 const arena = () =>
   mapFromStrings([
@@ -12,6 +21,15 @@ const arena = () =>
     "#..........#",
     "#..........#",
     "############",
+  ]);
+
+const longArena = () =>
+  mapFromStrings([
+    "####################################",
+    "#@.................................#",
+    "#..................................#",
+    "#..................................#",
+    "####################################",
   ]);
 
 describe("hit math", () => {
@@ -79,6 +97,35 @@ describe("monster AI", () => {
     expect(sawDamageEvent).toBe(true);
   });
 
+  test("a hit from beyond aggro range provokes the monster into chasing", () => {
+    const game = createGameOn(1, arena());
+    const p = player(game);
+    p.klass = "witch";
+    p.skills.firebolt = 1;
+    p.mana = 50;
+    // Within firebolt range (8) but outside the shambler's aggro radius (6).
+    const m = spawnAt(game, "shambler", { x: 8.5, y: 1.5 });
+    stepSolo(game, {});
+    expect(m.ai).toBe("idle");
+    stepSolo(game, { cast: { skill: "firebolt", target: m.id } });
+    expect(m.life).toBeLessThan(m.maxLife);
+    expect(m.ai).toBe("chasing");
+  });
+
+  test("a chaser dragged too far from home gives up and returns", () => {
+    const game = createGameOn(1, longArena());
+    const m = spawnAt(game, "shambler", { x: 30.5, y: 2.5 });
+    const p = player(game);
+    p.pos = { x: 26.5, y: 2.5 };
+    stepSolo(game, {});
+    expect(m.ai).toBe("chasing");
+    // The player sprints off across the zone; the monster shouldn't follow forever.
+    p.pos = { x: 2.5, y: 2.5 };
+    for (let i = 0; i < 600; i++) stepSolo(game, {});
+    expect(m.ai).toBe("idle");
+    expect(Math.hypot(m.pos.x - 30.5, m.pos.y - 2.5)).toBeLessThanOrEqual(3);
+  });
+
   test("monster respects its swing cooldown", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
@@ -98,10 +145,10 @@ describe("player attacking", () => {
   test("attacking a monster walks into range and kills it", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "skitter", { x: 8.5, y: 2.5 });
-    stepSolo(game, { attack: m.id });
     let died = false;
+    // Hold the click: the client re-sends the attack input every tick.
     for (let i = 0; i < 600 && !died; i++) {
-      stepSolo(game, {});
+      stepSolo(game, { attack: m.id });
       if (game.events.some((e) => e.type === "monster_died" && e.id === m.id)) died = true;
     }
     expect(died).toBe(true);
@@ -109,13 +156,49 @@ describe("player attacking", () => {
     expect(playerZone(game).corpses.some((c) => c.typeId === "skitter")).toBe(true);
   });
 
+  test("a single attack input swings once, then disengages", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 60; i++) {
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBe(1);
+    expect(player(game).attackTarget).toBeNull();
+  });
+
+  test("a single click on a distant monster still walks into range for its one swing", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 8.5, y: 2.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 200; i++) {
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBe(1);
+  });
+
+  test("holding the attack (input re-sent every tick) keeps swinging", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    let swings = 0;
+    for (let i = 0; i < 60; i++) {
+      stepSolo(game, { attack: m.id });
+      swings += game.events.filter((e) => e.type === "player_swing").length;
+    }
+    expect(swings).toBeGreaterThanOrEqual(2);
+  });
+
   test("monster hits emit events with damage amounts", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "skitter", { x: 2.5, y: 1.5 });
-    stepSolo(game, { attack: m.id });
     const amounts: number[] = [];
     for (let i = 0; i < 200 && playerZone(game).monsters.has(m.id); i++) {
-      stepSolo(game, {});
+      stepSolo(game, { attack: m.id });
       for (const e of game.events) {
         if (e.type === "monster_hit" && e.id === m.id) amounts.push(e.amount);
       }
@@ -130,7 +213,7 @@ describe("player attacking", () => {
     spawnAt(game, "shambler", { x: 2.1, y: 1.5 });
     for (let i = 0; i < 200; i++) stepSolo(game, {});
     expect(player(game).dead).toBe(false);
-    expect(player(game).zoneId).toBe("overworld");
+    expect(player(game).zoneId).toBe("surface");
     expect(player(game).life).toBe(player(game).maxLife);
   });
 });
@@ -141,7 +224,7 @@ describe("swing events", () => {
     const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
     let swings = 0;
     for (let i = 0; i < 30; i++) {
-      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, { attack: m.id });
       swings += game.events.filter((e) => e.type === "player_swing").length;
     }
     // swingEvery is 12 ticks: at least two swings in 30
@@ -228,7 +311,7 @@ describe("contact frames", () => {
     const swingTicks: number[] = [];
     const hitTicks: number[] = [];
     for (let i = 0; i < 120; i++) {
-      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      stepSolo(game, { attack: m.id });
       for (const e of game.events) {
         if (e.type === "player_swing") swingTicks.push(game.tick);
         if (e.type === "monster_hit") hitTicks.push(game.tick);
@@ -273,5 +356,43 @@ describe("contact frames", () => {
     expect(swingTick).toBeGreaterThan(-1);
     expect(hurtTick).toBeGreaterThan(swingTick);
     expect(hurtTick - swingTick).toBeLessThanOrEqual(8);
+  });
+});
+
+describe("dropSpot", () => {
+  test("leaves the scattered point alone when its own cell is walkable", () => {
+    const floor: [number, number][] = [];
+    for (let y = 0; y < 12; y++) for (let x = 0; x < 12; x++) floor.push([x, y]);
+    const map = wallMap(12, 12, floor);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    const check = createRng(1);
+    const expected = {
+      x: pos.x + (check.next() - 0.5) * 1.4,
+      y: pos.y + (check.next() - 0.5) * 1.4,
+    };
+    expect(result).toEqual(expected);
+    // Confirm the scatter actually moved it off the cell center — this is
+    // pinning "unchanged", not a snap that happens to land nearby.
+    expect(result).not.toEqual({ x: 5.5, y: 5.5 });
+  });
+
+  test("snaps to the nearest walkable cell when the scatter lands in a wall", () => {
+    // Seed 1's first two draws scatter (5.5, 5.5) into cell (5, 4), which is
+    // wall here; the only floor is (7, 4).
+    const map = wallMap(12, 12, [[7, 4]]);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    expect(result).toEqual({ x: 7.5, y: 4.5 });
+  });
+
+  test("falls back to the origin position when no walkable cell exists nearby", () => {
+    const map = wallMap(12, 12, []);
+    const pos = { x: 5.5, y: 5.5 };
+    const rng = createRng(1);
+    const result = dropSpot(rng, map, pos);
+    expect(result).toEqual(pos);
   });
 });

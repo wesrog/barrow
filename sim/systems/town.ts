@@ -1,4 +1,4 @@
-import { BASES } from "../items/bases";
+import { BASES, potionKind } from "../items/bases";
 import { rollItem, type Item, type Rarity } from "../items/generate";
 import {
   getZone,
@@ -10,25 +10,29 @@ import {
   type ZoneId,
   type ZoneState,
 } from "../state";
-import { BELT_SIZE, placeItem, removeEntry } from "../character";
-import { repairAll } from "./inventory";
+import { placeItem, removeEntry } from "../character";
+import { repairAll, stowPotion } from "./inventory";
 import { findPath, smoothPath } from "../path";
-import { inCamp, isWalkable } from "../map";
-
-/** How close you must stand to Maren before he'll talk shop. */
-const TALK_RANGE = 1.4;
+import { approachPath } from "./movement";
+import { isWalkable } from "../map";
+import { inRect, worldCampRect } from "../surface";
 
 /** How close you must stand to a portal before it whisks you away. */
 const PORTAL_RANGE = 0.6;
 
-/** Standing on the camp's safe ground — where trading, healing, and repairs live. */
-export function onCampGround(state: GameState, p: Player): boolean {
-  return p.zoneId === "overworld" && inCamp(zoneOf(state, p).map, p.pos);
+/**
+ * Standing on the moors camp's safe ground — where trading, healing, and repairs
+ * live. The outposts have safe ground too, but no stalls, so the rect is named
+ * rather than taken from whichever camp the player happens to be standing in.
+ */
+export function onCampGround(p: Player): boolean {
+  return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
 }
 
 /** What the vendor thinks an item is worth. Selling pays a quarter of this. */
 export function itemValue(item: Item): number {
   const base = BASES[item.baseId]!;
+  if (base.slot === "quest") return 0;
   if (base.slot === "potion") return 25;
   const rarityMult: Record<Rarity, number> = { normal: 1, magic: 2.5, rare: 5, unique: 8 };
   return Math.floor((12 + base.levelReq * 8 + item.mods.length * 22) * rarityMult[item.rarity]);
@@ -49,126 +53,65 @@ const SHOP_BASES = [
   "chain_greaves",
   "bone_ring",
   "grave_amulet",
+  "dire_flail",
+  "moon_glaive",
+  "kingsbane",
+  "iron_barbute",
+  "wyrm_skull",
+  "lamellar_coat",
+  "bogsteel_plate",
+  "marsh_striders",
+  "cragwalkers",
+  "wight_band",
+  "howler_charm",
 ];
 
-/** Refill Maren's stall for the arriving player. Runs when they walk into an empty camp. */
+/** Refill Maren's stall for the arriving player. Runs when they walk into an
+ * empty camp. Gear only — potions are Sera's trade now. */
 export function restock(state: GameState, p: Player): void {
   const rng = state.rng;
   const ilvl = Math.max(1, p.level);
   const stock: GameState["shop"] = [];
-  for (let i = 0; i < 2; i++) {
-    stock.push({ item: rollItem(rng, "minor_potion", 1, "normal"), price: 25 });
-  }
-  for (let i = 0; i < 4; i++) {
-    const baseId = SHOP_BASES[rng.int(0, SHOP_BASES.length - 1)]!;
+  // Maren stocks what the buyer can grow into soon — not endgame steel at level 2.
+  const pool = SHOP_BASES.filter((id) => BASES[id]!.levelReq <= p.level + 3);
+  for (let i = 0; i < 6; i++) {
+    const baseId = pool[rng.int(0, pool.length - 1)]!;
     // The last slot always carries something magic — the window-shopping hook.
-    const rarity: Rarity = i === 3 || rng.next() < 0.35 ? "magic" : "normal";
+    const rarity: Rarity = i === 5 || rng.next() < 0.35 ? "magic" : "normal";
     const item = rollItem(rng, baseId, ilvl, rarity);
     stock.push({ item, price: itemValue(item) });
   }
   state.shop = stock;
 }
 
-/** Click on Maren: start walking over to trade. */
-export function applyTalkVendorInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkVendor || p.zoneId !== "overworld") return;
-  p.vendorTarget = true;
-  p.healerTarget = false;
-  p.attackTarget = null;
-  p.pickupTarget = null;
-  p.smashTarget = null;
-  p.portalTarget = null;
-  p.reclaimTarget = null;
-  p.path = [];
-}
+/** Sera's fixed potion prices — her supply never runs dry. */
+export const POTION_PRICES = { health: 25, mana: 30 } as const;
 
-/** Click on Sera: start walking over for a mending. */
-export function applyTalkHealerInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.talkHealer || p.zoneId !== "overworld") return;
-  p.healerTarget = true;
-  p.vendorTarget = false;
-  p.attackTarget = null;
-  p.pickupTarget = null;
-  p.smashTarget = null;
-  p.portalTarget = null;
-  p.reclaimTarget = null;
-  p.path = [];
-}
-
-/** Walk toward the H marker; within talking range, life and mana come back in full. */
-export function healerSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  const map = zone.map;
-  const marker = map.markers.find((m) => m.ch === "H");
-  for (const p of players) {
-    if (!p.healerTarget) continue;
-    if (!marker) {
-      p.healerTarget = false;
-      continue;
-    }
-    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
-    if (d <= TALK_RANGE) {
-      p.healerTarget = false;
-      p.path = [];
-      p.life = p.maxLife;
-      p.mana = p.maxMana;
-      state.events.push({ type: "healed", playerId: p.id });
-    } else if (p.path.length === 0) {
-      const cells = findPath(
-        map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
-      );
-      if (cells === null) {
-        p.healerTarget = false;
-        continue;
-      }
-      p.path = smoothPath(map, p.pos, cells);
-      p.path.push({ x: marker.x, y: marker.y });
-    }
+/** Buy a potion from Sera: straight onto the belt, or into the pack if the row is full. */
+export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerInput): void {
+  const kind = input.buyPotion;
+  if (!kind || !onCampGround(p)) return;
+  const price = POTION_PRICES[kind];
+  if (p.gold < price) return;
+  const baseId = kind === "mana" ? "minor_mana_potion" : "minor_potion";
+  const item = rollItem(state.rng, baseId, 1, "normal");
+  if (!stowPotion(p, kind) && !placeItem(p.inventory, state.nextId++, item)) {
+    state.events.push({ type: "inventory_full", playerId: p.id });
+    return;
   }
-}
-
-/** Walk toward the V marker; within talking range, the shop opens. */
-export function vendorSystem(state: GameState, zone: ZoneState, players: Player[]): void {
-  const map = zone.map;
-  const marker = map.markers.find((m) => m.ch === "V");
-  for (const p of players) {
-    if (!p.vendorTarget) continue;
-    if (!marker) {
-      p.vendorTarget = false;
-      continue;
-    }
-    const d = Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y);
-    if (d <= TALK_RANGE) {
-      p.vendorTarget = false;
-      p.path = [];
-      state.events.push({ type: "shop_opened", playerId: p.id });
-    } else if (p.path.length === 0) {
-      const cells = findPath(
-        map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(marker.x), y: Math.floor(marker.y) },
-      );
-      if (cells === null) {
-        p.vendorTarget = false;
-        continue;
-      }
-      p.path = smoothPath(map, p.pos, cells);
-      p.path.push({ x: marker.x, y: marker.y });
-    }
-  }
+  p.gold -= price;
+  state.events.push({ type: "bought", playerId: p.id, name: item.name, price });
 }
 
 export function applyShopInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!onCampGround(state, p)) return;
+  if (!onCampGround(p)) return;
 
   if (input.buy !== undefined) {
     const entry = state.shop[input.buy];
     if (entry && p.gold >= entry.price) {
-      const isPotion = BASES[entry.item.baseId]!.slot === "potion";
+      const kind = potionKind(entry.item.baseId);
       let delivered = false;
-      if (isPotion && p.belt < BELT_SIZE) {
-        p.belt++;
+      if (kind && stowPotion(p, kind)) {
         delivered = true;
       } else {
         delivered = placeItem(p.inventory, state.nextId++, entry.item);
@@ -187,8 +130,9 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
   }
 
   if (input.sell !== undefined) {
-    const entry = removeEntry(p.inventory, input.sell);
-    if (entry) {
+    const entry = p.inventory.entries.find((e) => e.id === input.sell);
+    if (entry && BASES[entry.item.baseId]!.slot !== "quest") {
+      removeEntry(p.inventory, entry.id);
       const price = Math.max(1, Math.floor(itemValue(entry.item) / 4));
       p.gold += price;
       state.events.push({ type: "sold", playerId: p.id, name: entry.item.name, price });
@@ -213,12 +157,12 @@ export function removePortalsOwnedBy(state: GameState, owner: number): void {
  * Deterministic scan for the camp end's cell: spawn, then +x, -x, +y, -y offsets.
  * Only avoids other portals — camp ground has no monsters or breakables to dodge.
  */
-function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
-  const spawn = overworld.map.spawn;
+function findCampPortalSpot(surface: ZoneState): { x: number; y: number } {
+  const spawn = surface.map.spawn; // the moors camp — the surface map's spawn
   const cx = Math.floor(spawn.x);
   const cy = Math.floor(spawn.y);
   const occupied = new Set(
-    [...overworld.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
+    [...surface.portals.values()].map((p) => `${Math.floor(p.pos.x)},${Math.floor(p.pos.y)}`),
   );
   const candidates: [number, number][] = [
     [cx, cy],
@@ -228,7 +172,7 @@ function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
     [cx, cy - 1],
   ];
   for (const [x, y] of candidates) {
-    if (!isWalkable(overworld.map, x, y)) continue;
+    if (!isWalkable(surface.map, x, y)) continue;
     if (occupied.has(`${x},${y}`)) continue;
     return { x, y };
   }
@@ -238,11 +182,11 @@ function findCampPortalSpot(overworld: ZoneState): { x: number; y: number } {
 
 /** `t`: cast a two-way portal pair between here and camp. No-op on camp ground or while dead. */
 export function applyCastPortalInput(state: GameState, p: Player, input: PlayerInput): void {
-  if (!input.townPortal || p.dead || onCampGround(state, p)) return;
+  if (!input.townPortal || p.dead || onCampGround(p)) return;
   removePortalsOwnedBy(state, p.id);
 
   const here = zoneOf(state, p);
-  const camp = getZone(state, "overworld");
+  const camp = getZone(state, "surface");
   const spot = findCampPortalSpot(camp);
   const campPos = { x: spot.x + 0.5, y: spot.y + 0.5 };
   const herePos = { x: Math.floor(p.pos.x) + 0.5, y: Math.floor(p.pos.y) + 0.5 };
@@ -253,7 +197,7 @@ export function applyCastPortalInput(state: GameState, p: Player, input: PlayerI
     id: hereId,
     owner: p.id,
     pos: herePos,
-    link: { zone: "overworld", pos: campPos },
+    link: { zone: "surface", pos: campPos },
   };
   const campPortal: Portal = {
     id: campId,
@@ -274,9 +218,9 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;
-  p.vendorTarget = false;
-  p.healerTarget = false;
+  p.npcTarget = null;
   p.reclaimTarget = null;
+  p.castTarget = null;
   p.path = [];
 }
 
@@ -284,7 +228,7 @@ export function applyUsePortalInput(state: GameState, p: Player, input: PlayerIn
  * Walk toward a targeted portal; riding it teleports to the linked end (persistent —
  * not consumed). `travel` is injected by the caller (defined in `tick.ts`, which is
  * also where this system is wired in) so this module never has to import upward from
- * the orchestrator — the same reason `stairsSystem`/`travelPadSystem` live in tick.ts
+ * the orchestrator — the same reason `stairsSystem` lives in tick.ts
  * itself rather than here.
  */
 export function portalSystem(
@@ -308,17 +252,12 @@ export function portalSystem(
       travel(state, p, link.zone);
       p.pos = { ...link.pos };
     } else if (p.path.length === 0) {
-      const cells = findPath(
-        zone.map,
-        { x: Math.floor(p.pos.x), y: Math.floor(p.pos.y) },
-        { x: Math.floor(target.pos.x), y: Math.floor(target.pos.y) },
-      );
-      if (cells === null) {
+      const path = approachPath(zone.map, p.pos, target.pos);
+      if (path === null || path.length === 0) {
         p.portalTarget = null;
         continue;
       }
-      p.path = smoothPath(zone.map, p.pos, cells);
-      p.path.push({ ...target.pos });
+      p.path = path;
     }
   }
 }

@@ -121,6 +121,29 @@ describe("equip", () => {
     expect(player(state).inventory.entries).toHaveLength(1);
   });
 
+  test("equip is rejected for another class's weapon", () => {
+    const state = bareGame(1); // warrior by default
+    const id = state.nextId++;
+    placeItem(player(state).inventory, id, plain("gnarled_staff")); // witch-only
+    stepSolo(state, { equip: id });
+    expect(player(state).equipment.weapon).toBeNull();
+    expect(player(state).inventory.entries).toHaveLength(1);
+  });
+
+  test("a witch equips her own class's weapon but not a warrior's", () => {
+    const state = bareGame(1);
+    player(state).klass = "witch";
+    player(state).level = 10;
+    const maulId = state.nextId++;
+    placeItem(player(state).inventory, maulId, plain("war_maul")); // warrior-only
+    stepSolo(state, { equip: maulId });
+    expect(player(state).equipment.weapon).toBeNull();
+    const staffId = state.nextId++;
+    placeItem(player(state).inventory, staffId, plain("gnarled_staff"));
+    stepSolo(state, { equip: staffId });
+    expect(player(state).equipment.weapon?.baseId).toBe("gnarled_staff");
+  });
+
   test("a +life mod raises max life without healing", () => {
     const state = createGameOn(1, openMap());
     player(state).life = 30;

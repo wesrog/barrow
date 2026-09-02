@@ -105,6 +105,59 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     mlvl: 3,
     explode: { radius: 1.8, dmgMin: 6, dmgMax: 12 },
   },
+  fen_howler: {
+    id: "fen_howler",
+    name: "Fen Howler",
+    maxLife: 26,
+    speed: 4.2 / 25,
+    dmgMin: 3,
+    dmgMax: 7,
+    attackRating: 55,
+    defense: 14,
+    aggro: 8,
+    range: 1.1,
+    radius: 0.3,
+    swingEvery: 18,
+    xp: 14,
+    tc: "standard",
+    mlvl: 6,
+  },
+  bog_maw: {
+    id: "bog_maw",
+    name: "Bog Maw",
+    maxLife: 42,
+    speed: 1.6 / 25,
+    dmgMin: 3,
+    dmgMax: 6,
+    attackRating: 50,
+    defense: 22,
+    aggro: 9,
+    range: 1.0,
+    radius: 0.35,
+    swingEvery: 45,
+    xp: 18,
+    tc: "standard",
+    mlvl: 7,
+    ranged: 6.0,
+  },
+  cairn_wight: {
+    id: "cairn_wight",
+    name: "Cairn Wight",
+    maxLife: 60,
+    speed: 2.4 / 25,
+    dmgMin: 6,
+    dmgMax: 12,
+    attackRating: 70,
+    defense: 30,
+    aggro: 7,
+    range: 1.2,
+    radius: 0.35,
+    swingEvery: 30,
+    xp: 30,
+    tc: "standard",
+    mlvl: 9,
+    windup: 15,
+  },
   barrow_lord: {
     id: "barrow_lord",
     name: "The Barrow Lord",
@@ -137,8 +190,12 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
     dmgMax: Math.round(t.dmgMax * pow(1.22)),
     attackRating: Math.round(t.attackRating * pow(1.15)),
     defense: Math.round(t.defense * pow(1.15)),
-    xp: Math.round(t.xp * pow(1.4)),
-    mlvl: t.mlvl + d * 3,
+    // Threat compounds; reward doesn't. Linear xp against a geometric level
+    // curve is what makes deeper zones slow leveling down instead of speeding
+    // it up. mlvl tracks the area ladder 1:1 so the xpPenalty gap and item
+    // gating stay in step with where the player is meant to be.
+    xp: Math.round(t.xp * (1 + 0.25 * d)),
+    mlvl: t.mlvl + d,
     explode: t.explode
       ? {
           radius: t.explode.radius,
@@ -149,7 +206,7 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
   };
 }
 
-export type MonsterAi = "idle" | "chasing";
+export type MonsterAi = "idle" | "chasing" | "returning";
 
 export interface Monster {
   id: number;

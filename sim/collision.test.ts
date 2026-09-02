@@ -75,7 +75,7 @@ describe("player vs monster", () => {
 describe("player vs camp NPC", () => {
   test("the vendor body-blocks: the player cannot stand inside V", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
+    travel(game, player(game), "surface");
     const v = playerZone(game).map.markers.find((m) => m.ch === "V")!;
     player(game).pos = { x: v.x + 0.1, y: v.y };
     collisionSystem(game, playerZone(game), [player(game)]);
@@ -85,7 +85,7 @@ describe("player vs camp NPC", () => {
 
   test("the player cannot walk through the vendor", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
+    travel(game, player(game), "surface");
     const v = playerZone(game).map.markers.find((m) => m.ch === "V")!;
     player(game).pos = { x: v.x - 2, y: v.y };
     stepSolo(game, { moveTo: { x: v.x + 2, y: v.y } });
@@ -96,13 +96,14 @@ describe("player vs camp NPC", () => {
     }
   });
 
-  test("the travel pad is where descent starts — standing on P departs", () => {
+  test("the campfire is solid — a player in the flames is pushed out", () => {
     const game = createGameOn(1, cryptZone());
-    travel(game, player(game), "overworld");
-    const pad = playerZone(game).map.markers.find((m) => m.ch === "P")!;
-    player(game).pos = { x: pad.x, y: pad.y };
+    travel(game, player(game), "surface");
+    const fire = playerZone(game).map.markers.find((m) => m.ch === "F")!;
+    player(game).pos = { x: fire.x, y: fire.y };
     collisionSystem(game, playerZone(game), [player(game)]);
-    expect(player(game).pos).toEqual({ x: pad.x, y: pad.y });
+    const d = Math.hypot(player(game).pos.x - fire.x, player(game).pos.y - fire.y);
+    expect(d).toBeGreaterThanOrEqual(PLAYER_RADIUS + NPC_RADIUS - 1e-6);
   });
 });
 

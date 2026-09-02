@@ -1,9 +1,10 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
-import { CLASS_SKILLS, SKILLS, type SkillId } from "../../sim/skills";
-import { zoneDepth, zoneOf, type GameState } from "../../sim/state";
-import { inCamp } from "../../sim/map";
+import { SKILLS, type SkillId } from "../../sim/skills";
+import { zoneDepth, type GameState } from "../../sim/state";
+import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
+import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
 
 const mono = "ui-monospace, monospace";
 
@@ -79,21 +80,24 @@ function Globe({
   );
 }
 
-const SKILL_SHORT: Record<SkillId, string> = {
+export const SKILL_SHORT: Record<SkillId, string> = {
   cleave: "clv",
   crush: "crs",
   warcry: "cry",
   leap: "leap",
+  stomp: "stmp",
+  deathblow: "dblw",
   firebolt: "bolt",
   frostnova: "nova",
   focus: "foc",
   blink: "blnk",
+  fireball: "fbal",
+  chainbolt: "chn",
 };
 
-export type HudAction = "inventory" | "skills" | "drink" | "portal" | "vendor";
+export type HudAction = "inventory" | "skills" | "drinkHealth" | "drinkMana" | "portal" | "vendor";
 
 const ACTION_BUTTONS: { action: HudAction; key: string; label: string; townOnly?: boolean }[] = [
-  { action: "drink", key: "q", label: "drink" },
   { action: "inventory", key: "i", label: "inv" },
   { action: "skills", key: "s", label: "skills" },
   { action: "portal", key: "t", label: "portal" },
@@ -113,11 +117,55 @@ const barStyle: CSSProperties = {
   fontFamily: mono,
 };
 
+/** One belt row: its drink key, four charge slots, click to drink. */
+function BeltRow({
+  count,
+  keyLabel,
+  full,
+  empty,
+  glow,
+  title,
+  onDrink,
+}: {
+  count: number;
+  keyLabel: string;
+  full: string;
+  empty: string;
+  glow: string;
+  title: string;
+  onDrink: () => void;
+}) {
+  return (
+    <div
+      onClick={onDrink}
+      title={title}
+      style={{ display: "flex", gap: 4, alignItems: "center", pointerEvents: "auto", cursor: "pointer" }}
+    >
+      <span style={{ color: "#6b6455", fontSize: 10, width: 8 }}>{keyLabel}</span>
+      {Array.from({ length: BELT_SIZE }, (_, i) => (
+        <div
+          key={i}
+          style={{
+            width: 24,
+            height: 13,
+            border: "1px solid #3a3442",
+            borderRadius: "3px 3px 5px 5px",
+            background: i < count ? full : empty,
+            boxShadow: i < count ? `0 0 6px ${glow}` : "none",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function BottomBar({
   game,
+  hotbar,
   onAction,
 }: {
   game: GameState;
+  hotbar: Hotbar;
   onAction: (action: HudAction) => void;
 }) {
   const p = localPlayer(game);
@@ -130,18 +178,16 @@ export function BottomBar({
       <Globe value={p.life} max={p.maxLife} color="#a32222" dark="#2a0d0d" label="life" />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-        {/* Skill hotbar */}
+        {/* Skill hotbar — assignments live in the skill panel */}
         <div style={{ display: "flex", gap: 5 }}>
-          {CLASS_SKILLS(p.klass).map((def, i) => {
-            const id = def.id;
-            const key = String(i + 1);
-            const short = SKILL_SHORT[id];
-            const rank = p.skills[id];
-            const usable = rank > 0 && p.mana >= SKILLS[id].manaCost;
+          {HOTBAR_KEYS.map((key, i) => {
+            const id = hotbar[i] ?? null;
+            const rank = id ? p.skills[id] : 0;
+            const usable = id !== null && rank > 0 && p.mana >= SKILLS[id].manaCost;
             return (
               <div
-                key={id}
-                title={`${SKILLS[id].name} — rank ${rank}`}
+                key={key}
+                title={id ? `${SKILLS[id].name} — rank ${rank}` : "assign a skill in the skill panel (s)"}
                 style={{
                   width: 46,
                   height: 40,
@@ -158,38 +204,40 @@ export function BottomBar({
                 }}
               >
                 <span style={{ color: "#6b6455" }}>{key}</span>
-                <span>{short}</span>
+                <span>{id ? SKILL_SHORT[id] : "·"}</span>
               </div>
             );
           })}
         </div>
 
-        {/* Belt + action buttons */}
+        {/* Belt rows + action buttons */}
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 4 }}>
-            {Array.from({ length: BELT_SIZE }, (_, i) => (
-              <div
-                key={i}
-                style={{
-                  width: 24,
-                  height: 28,
-                  border: "1px solid #3a3442",
-                  borderRadius: "3px 3px 6px 6px",
-                  background:
-                    i < p.belt
-                      ? "linear-gradient(to top, #a32222 75%, #4a1010 75%)"
-                      : "rgba(12,11,15,.8)",
-                  boxShadow: i < p.belt ? "0 0 6px rgba(163,34,34,.5)" : "none",
-                }}
-              />
-            ))}
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <BeltRow
+              count={p.belt}
+              keyLabel="1"
+              full="linear-gradient(to top, #a32222 70%, #4a1010 70%)"
+              empty="rgba(12,11,15,.8)"
+              glow="rgba(163,34,34,.5)"
+              title={`healing potions ${p.belt}/${BELT_SIZE} — click or press 1`}
+              onDrink={() => onAction("drinkHealth")}
+            />
+            <BeltRow
+              count={p.manaBelt}
+              keyLabel="2"
+              full="linear-gradient(to top, #22409a 70%, #101c4a 70%)"
+              empty="rgba(12,11,15,.8)"
+              glow="rgba(34,64,154,.55)"
+              title={`mana potions ${p.manaBelt}/${BELT_SIZE} — click or press 2`}
+              onDrink={() => onAction("drinkMana")}
+            />
           </div>
           <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
             {ACTION_BUTTONS.filter(
               (b) =>
                 !b.townOnly ||
-                (localPlayer(game).zoneId === "overworld" &&
-                  inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)),
+                (localPlayer(game).zoneId === "surface" &&
+                  inRect(worldCampRect("overworld"), localPlayer(game).pos)),
             ).map(
               ({ action, key, label }) => (
                 <button
@@ -242,10 +290,10 @@ export function BottomBar({
         </div>
         <div style={{ color: "#8f8778", fontSize: 11, textShadow: "0 1px 3px #000" }}>
           lvl {p.level} ·{" "}
-          {localPlayer(game).zoneId === "overworld"
-            ? inCamp(zoneOf(game, localPlayer(game)).map, localPlayer(game).pos)
-              ? "the camp"
-              : "the moors"
+          {localPlayer(game).zoneId === "surface"
+            ? inRect(worldCampRect("overworld"), localPlayer(game).pos)
+              ? "safe ground"
+              : locationTitle("surface", localPlayer(game).pos).toLowerCase()
             : `depth ${zoneDepth(localPlayer(game).zoneId)}`}{" "}
           ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>

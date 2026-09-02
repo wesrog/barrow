@@ -22,18 +22,44 @@ type SoundName =
   | "spit"
   | "windup"
   | "coin"
-  | "portal";
+  | "portal"
+  | "nomana";
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 const lastPlayed = new Map<SoundName, number>();
+
+const MASTER_GAIN = 0.4;
+const MUTE_KEY = "barrow-muted";
+
+let muted = false;
+try {
+  muted = localStorage.getItem(MUTE_KEY) === "1";
+} catch {
+  // no storage (tests) — sound stays on
+}
+
+export function isMuted(): boolean {
+  return muted;
+}
+
+export function setMuted(m: boolean): void {
+  muted = m;
+  try {
+    if (m) localStorage.setItem(MUTE_KEY, "1");
+    else localStorage.removeItem(MUTE_KEY);
+  } catch {
+    // no storage — the choice just doesn't persist
+  }
+  if (master) master.gain.value = m ? 0 : MASTER_GAIN;
+}
 
 function ensure(): AudioContext | null {
   if (typeof AudioContext === "undefined") return null;
   if (!ctx) {
     ctx = new AudioContext();
     master = ctx.createGain();
-    master.gain.value = 0.4;
+    master.gain.value = muted ? 0 : MASTER_GAIN;
     master.connect(ctx.destination);
   }
   return ctx;
@@ -42,6 +68,11 @@ function ensure(): AudioContext | null {
 export function unlock(): void {
   const c = ensure();
   if (c && c.state === "suspended") void c.resume();
+}
+
+/** Random value in [lo, hi) — presentation-only jitter, never touches sim determinism. */
+function rnd(lo: number, hi: number): number {
+  return lo + Math.random() * (hi - lo);
 }
 
 function noiseBuffer(c: AudioContext, seconds: number): AudioBuffer {
@@ -104,18 +135,27 @@ function noise(
 }
 
 const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
-  swing: (c) => noise(c, { dur: 0.09, gain: 0.16, filterFrom: 2600, filterTo: 600 }),
+  swing: (c) => {
+    const p = rnd(0.8, 1.25);
+    noise(c, { dur: rnd(0.07, 0.12), gain: rnd(0.12, 0.2), filterFrom: 2600 * p, filterTo: 600 * p });
+  },
   hit: (c) => {
-    noise(c, { dur: 0.07, gain: 0.3, filterFrom: 1800, filterTo: 500 });
-    tone(c, { type: "sine", from: 160, to: 70, dur: 0.09, gain: 0.4 });
+    const p = rnd(0.85, 1.2);
+    // sharp attack transient so the impact has snap instead of just thud
+    noise(c, { dur: 0.02, gain: rnd(0.18, 0.3), filterFrom: 5200 * p, filterType: "highpass" });
+    noise(c, { dur: rnd(0.05, 0.09), gain: rnd(0.25, 0.36), filterFrom: 1800 * p, filterTo: 480 * p });
+    tone(c, { type: "sine", from: 160 * p, to: 70 * p, dur: rnd(0.07, 0.11), gain: rnd(0.32, 0.46) });
+    tone(c, { type: "square", from: 340 * p, to: 140 * p, dur: 0.035, gain: 0.07 });
   },
   hurt: (c) => {
-    tone(c, { type: "sine", from: 110, to: 50, dur: 0.16, gain: 0.5 });
-    noise(c, { dur: 0.1, gain: 0.2, filterFrom: 900, filterTo: 300 });
+    const p = rnd(0.88, 1.15);
+    tone(c, { type: "sine", from: 110 * p, to: 50 * p, dur: rnd(0.13, 0.19), gain: rnd(0.4, 0.55) });
+    noise(c, { dur: 0.1, gain: rnd(0.15, 0.25), filterFrom: 900 * p, filterTo: 300 * p });
   },
   die: (c) => {
-    tone(c, { type: "sine", from: 130, to: 35, dur: 0.3, gain: 0.45 });
-    noise(c, { dur: 0.22, gain: 0.25, filterFrom: 1200, filterTo: 200 });
+    const p = rnd(0.9, 1.12);
+    tone(c, { type: "sine", from: 130 * p, to: 35 * p, dur: 0.3, gain: 0.45 });
+    noise(c, { dur: 0.22, gain: 0.25, filterFrom: 1200 * p, filterTo: 200 * p });
   },
   drop: (c) => tone(c, { type: "triangle", from: 660, to: 440, dur: 0.1, gain: 0.18 }),
   drop_rare: (c) => {
@@ -139,8 +179,13 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     noise(c, { dur: 0.45, gain: 0.4, filterFrom: 1400, filterTo: 80, filterType: "lowpass" });
   },
   warcry: (c) => {
-    tone(c, { type: "sawtooth", from: 90, to: 180, dur: 0.35, gain: 0.3 });
-    tone(c, { type: "sawtooth", from: 92, to: 178, dur: 0.35, gain: 0.2 });
+    // breath transient — the "H" of the shout
+    noise(c, { dur: 0.07, gain: 0.16, filterFrom: 1400, filterTo: 2800 });
+    // rising call an octave up from the old version, with a fifth stacked on top
+    tone(c, { type: "square", from: 165, to: 290, dur: 0.3, gain: 0.2 });
+    tone(c, { type: "square", from: 248, to: 435, dur: 0.3, gain: 0.1, at: 0.02 });
+    // low sine thump for chest weight (a saw down here reads as flatulence)
+    tone(c, { type: "sine", from: 170, to: 85, dur: 0.16, gain: 0.32 });
   },
   leap: (c) => {
     noise(c, { dur: 0.3, gain: 0.2, filterFrom: 500, filterTo: 2400 });
@@ -150,12 +195,15 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     noise(c, { dur: 0.12, gain: 0.22, filterFrom: 900, filterTo: 150 });
   },
   cleave: (c) => {
-    noise(c, { dur: 0.14, gain: 0.28, filterFrom: 3200, filterTo: 500 });
-    tone(c, { type: "sine", from: 180, to: 80, dur: 0.1, gain: 0.3, at: 0.03 });
+    const p = rnd(0.85, 1.18);
+    noise(c, { dur: 0.02, gain: rnd(0.15, 0.25), filterFrom: 6000 * p, filterType: "highpass" });
+    noise(c, { dur: rnd(0.11, 0.17), gain: rnd(0.24, 0.32), filterFrom: 3200 * p, filterTo: 500 * p });
+    tone(c, { type: "sine", from: 180 * p, to: 80 * p, dur: 0.1, gain: rnd(0.25, 0.35), at: 0.03 });
   },
   crush: (c) => {
-    tone(c, { type: "sine", from: 120, to: 40, dur: 0.22, gain: 0.6 });
-    noise(c, { dur: 0.12, gain: 0.3, filterFrom: 1000, filterTo: 200 });
+    const p = rnd(0.88, 1.15);
+    tone(c, { type: "sine", from: 120 * p, to: 40 * p, dur: rnd(0.18, 0.26), gain: rnd(0.5, 0.68) });
+    noise(c, { dur: 0.12, gain: rnd(0.24, 0.36), filterFrom: 1000 * p, filterTo: 200 * p });
   },
   spit: (c) => tone(c, { type: "sine", from: 700, to: 240, dur: 0.12, gain: 0.14 }),
   windup: (c) => {
@@ -165,6 +213,12 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
   coin: (c) => {
     tone(c, { type: "triangle", from: 988, dur: 0.06, gain: 0.14 });
     tone(c, { type: "triangle", from: 1319, dur: 0.14, gain: 0.14, at: 0.05 });
+  },
+  nomana: (c) => {
+    // A dry, deflating fizzle — the spell sputters out instead of firing.
+    tone(c, { type: "square", from: 220, to: 110, dur: 0.09, gain: 0.12 });
+    tone(c, { type: "sine", from: 180, to: 70, dur: 0.16, gain: 0.22, at: 0.03 });
+    noise(c, { dur: 0.08, gain: 0.06, filterFrom: 1200, filterTo: 300 });
   },
   portal: (c) => {
     tone(c, { type: "sine", from: 220, to: 880, dur: 0.5, gain: 0.25 });

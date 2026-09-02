@@ -2,11 +2,12 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
 import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
-import { inCamp } from "../sim/map";
+import { locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
-import { CLASS_SKILLS } from "../sim/skills";
+import { SKILLS, type SkillId } from "../sim/skills";
+import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
@@ -16,20 +17,30 @@ import { Lobby } from "./ui/Lobby";
 import { MiniMap } from "./ui/MiniMap";
 import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
+import { HealerPanel } from "./ui/HealerPanel";
+import { DialoguePanel } from "./ui/DialoguePanel";
+import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
+import { QuestTracker } from "./ui/QuestTracker";
+import { QuestLogPanel } from "./ui/QuestLogPanel";
+import { QUESTS, type QuestId } from "../sim/quests";
 import { SkillPanel } from "./ui/SkillPanel";
+import { SystemMenu } from "./ui/SystemMenu";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
+import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
+import { ZoneIntro, type ZoneIntroMsg } from "./ui/ZoneIntro";
 import { Reveal } from "./ui/Reveal";
 
 const TICK_MS = 1000 / TICK_RATE;
 
 let nextToastId = 1;
+let nextIntroSeq = 1;
 
 /** Is the local player standing on the camp's safe ground? */
 function onCampGround(game: GameState): boolean {
   const p = localPlayer(game);
-  return p.zoneId === "overworld" && inCamp(zoneOf(game, p).map, p.pos);
+  return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
 }
 
 function Game({
@@ -48,6 +59,24 @@ function Game({
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [healerOpen, setHealerOpen] = useState(false);
+  const [waypointsOpen, setWaypointsOpen] = useState(false);
+  const [questsOpen, setQuestsOpen] = useState(false);
+  // Which quest the journal opens on — set by clicking a tracker entry.
+  const [questFocus, setQuestFocus] = useState<QuestId | null>(null);
+  const [dialogueNpc, setDialogueNpc] = useState<NpcId | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  // The keydown handler is registered once, so it reads open/closed through
+  // refs that re-sync on every render.
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = menuOpen;
+  const panelsOpenRef = useRef(false);
+  panelsOpenRef.current =
+    invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || questsOpen ||
+    dialogueNpc !== null;
+  const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
+  const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
+  const hotbarRef = useRef<Hotbar>([null, null, null, null]);
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [desync, setDesync] = useState(false);
@@ -84,6 +113,8 @@ function Game({
       if (disposed) return;
       const game = session.state!;
       gameRef.current = game;
+      hotbarRef.current = loadHotbar(localPlayer(game).klass);
+      setHotbar(hotbarRef.current);
       setReady(true);
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
@@ -96,10 +127,25 @@ function Game({
         mount,
         zoneOf(game, localPlayer(game)).map,
         assets,
+        [...zoneOf(game, localPlayer(game)).npcs.values()],
         onItemClick,
-        localPlayer(game).zoneId === "overworld",
+        localPlayer(game).zoneId === "surface",
       );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
+
+      // A black veil the zone crossing fades out from, so the world swap under
+      // it reads as walking through, not teleporting.
+      const fadeEl = document.createElement("div");
+      fadeEl.style.cssText =
+        "position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:3;";
+      mount.appendChild(fadeEl);
+      const fadeThrough = () => {
+        fadeEl.style.transition = "none";
+        fadeEl.style.opacity = "1";
+        void fadeEl.offsetHeight; // commit the opaque frame before easing out
+        fadeEl.style.transition = "opacity .6s ease-out";
+        fadeEl.style.opacity = "0";
+      };
 
     let pending: PlayerInput = {};
     // Every player's position as of the last tick — the scene interpolates the
@@ -111,10 +157,22 @@ function Game({
     let lastPointer: { x: number; y: number } | null = null;
 
     let shiftDown = false;
-    const aimFromPointer = (allowAttack: boolean) => {
+    // What the press started as. A held button re-aims every tick, and without
+    // this a click on a portal/waypoint/item got downgraded to a plain walk one
+    // tick later (the camera moves, the re-pick lands on ground) — cancelling
+    // the target the sim had just started walking toward.
+    let holdMode: "move" | "engage" = "move";
+    const aimFromPointer = (initial: boolean) => {
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
       if (!picked) return;
+      if (initial) holdMode = picked.kind === "ground" ? "move" : "engage";
+      // While held, each re-aim stays in its lane: a walk-drag doesn't snag on
+      // passing targets, and an engaged target isn't downgraded to a walk.
+      if (!initial && !shiftDown) {
+        if (holdMode === "move" && picked.kind !== "ground") return;
+        if (holdMode === "engage" && picked.kind === "ground") return;
+      }
       if (shiftDown) {
         // Stand ground and swing toward the cursor, D2-style.
         const at =
@@ -129,27 +187,34 @@ function Game({
         }
         return;
       }
-      if (picked.kind === "monster" && allowAttack) {
+      if (picked.kind === "monster") {
         pending.attack = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "item" && allowAttack) {
+      } else if (picked.kind === "item") {
         pending.pickup = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "breakable" && allowAttack) {
+      } else if (picked.kind === "breakable") {
         pending.smash = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "vendor" && allowAttack) {
-        pending.talkVendor = true;
+      } else if (picked.kind === "npc") {
+        pending.talkNpc = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "healer" && allowAttack) {
-        pending.talkHealer = true;
-        delete pending.moveTo;
-      } else if (picked.kind === "portal" && allowAttack) {
+      } else if (picked.kind === "portal") {
         pending.usePortal = picked.id;
         delete pending.moveTo;
-      } else if (picked.kind === "corpse" && allowAttack) {
+      } else if (picked.kind === "corpse") {
         pending.reclaim = picked.id;
         delete pending.moveTo;
+      } else if (picked.kind === "waypoint") {
+        // Near the clicked ring the panel opens; from afar the click walks you
+        // to it — that ring, not whichever waypoint happens to be listed first.
+        const me = localPlayer(game);
+        if (Math.hypot(me.pos.x - picked.pos.x, me.pos.y - picked.pos.y) <= 2) {
+          setWaypointsOpen(true);
+        } else {
+          pending.moveTo = { ...picked.pos };
+        }
+        delete pending.attack;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
       }
@@ -171,11 +236,13 @@ function Game({
     const onPointerUp = () => {
       mouseDown = false;
     };
-    // Hotkeys 1–4 map to the local class's skills in hotbar order; each
-    // skill's targeting mode decides what the cursor contributes.
+    // Cast keys q/w/e/r fire whatever skill the player bound to each slot;
+    // each skill's targeting mode decides what the cursor contributes.
     const castSlot = (slot: number) => {
-      const def = CLASS_SKILLS(localPlayer(game).klass)[slot];
-      if (!def) return;
+      const id = hotbarRef.current[slot];
+      if (!id) return;
+      const def = SKILLS[id];
+      if (def.klass !== localPlayer(game).klass) return;
       const input = uiInputRef.current;
       if (def.targeting === "none") {
         input.cast = { skill: def.id };
@@ -184,21 +251,39 @@ function Game({
       if (!lastPointer) return;
       const picked = scene.pick(game, lastPointer.x, lastPointer.y);
       if (def.targeting === "target") {
-        // The sim auto-targets whatever is in reach; the pick is only a hint.
-        input.cast = { skill: def.id, target: picked?.kind === "monster" ? picked.id : undefined };
+        // The sim auto-targets whatever is in reach; the pick is only a hint —
+        // except barrels, which are only ever hit on an explicit hover.
+        input.cast = {
+          skill: def.id,
+          target: picked?.kind === "monster" ? picked.id : undefined,
+          breakable: picked?.kind === "breakable" ? picked.id : undefined,
+        };
+      } else if (picked?.kind === "monster") {
+        // Point skills aimed at a monster land on the monster, not underneath it.
+        const m = zoneOf(game, localPlayer(game)).monsters.get(picked.id);
+        if (m) input.cast = { skill: def.id, at: { x: m.pos.x, y: m.pos.y } };
       } else if (picked?.kind === "ground") {
         input.cast = { skill: def.id, at: picked.world };
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setInvOpen(false);
-        setSkillsOpen(false);
-        setShopOpen(false);
+        // Layered like D2: close the menu, else close panels, else open the menu.
+        if (menuOpenRef.current) setMenuOpen(false);
+        else if (panelsOpenRef.current) {
+          setInvOpen(false);
+          setSkillsOpen(false);
+          setShopOpen(false);
+          setHealerOpen(false);
+          setWaypointsOpen(false);
+          setQuestsOpen(false);
+          setDialogueNpc(null);
+        } else setMenuOpen(true);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
       else if (e.key === "s") setSkillsOpen((open) => !open);
-      else if (e.key === "q") uiInputRef.current.drink = true;
+      else if (e.key === "1") uiInputRef.current.drink = "health";
+      else if (e.key === "2") uiInputRef.current.drink = "mana";
       else if (e.key === "n") uiInputRef.current.newGame = true;
       else if (e.key === "t") uiInputRef.current.townPortal = true;
       else if (e.key === "v") setShopOpen((open) => !open);
@@ -207,10 +292,16 @@ function Game({
         wipeStorage();
         window.location.reload();
       }
-      else if (e.key === "1") castSlot(0);
-      else if (e.key === "2") castSlot(1);
-      else if (e.key === "3") castSlot(2);
-      else if (e.key === "4") castSlot(3);
+      // Lowercase q casts hotbar slot 0; the quest journal lives on shift+Q,
+      // same capital-letter convention as N.
+      else if (e.key === "Q") {
+        setQuestFocus(null);
+        setQuestsOpen((open) => !open);
+      }
+      else if (e.key === "q") castSlot(0);
+      else if (e.key === "w") castSlot(1);
+      else if (e.key === "e") castSlot(2);
+      else if (e.key === "r") castSlot(3);
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
@@ -235,6 +326,8 @@ function Game({
     let sawEvents = false;
     let lastSentTick = -1;
 
+    let lastNoMana = -1000;
+
     const pushToast = (text: string) => {
       setToasts((cur) => [...cur, { id: nextToastId++, text }]);
     };
@@ -256,12 +349,15 @@ function Game({
             case "player_died": {
               const depth = zoneDepth(e.zone);
               pushToast(
-                e.zone === "overworld"
-                  ? `P${e.playerId + 1} fell in the moors`
+                e.zone === "surface"
+                  ? `P${e.playerId + 1} fell in ${locationTitle(e.zone, e.pos)}`
                   : depth > 0
                     ? `P${e.playerId + 1} fell on floor ${depth}`
                     : `P${e.playerId + 1} died`,
               );
+              // A death moves gear onto a corpse; persist it now so a crash
+              // before the next autosave tick can't lose the body.
+              if (e.playerId === localId()) save();
               break;
             }
             case "portal_cast":
@@ -270,6 +366,17 @@ function Game({
           }
           // Another zone entirely: neither the scene nor the HUD cares.
           if ("zone" in e && e.zone !== localZone) continue;
+          // One shared surface zone means zone-filtering no longer localizes
+          // events; anything with a position that isn't ours gets range-culled.
+          const me = localPlayer(game);
+          if (
+            "pos" in e &&
+            !("playerId" in e && e.playerId === localId()) &&
+            e.type !== "player_died" &&
+            Math.hypot(e.pos.x - me.pos.x, e.pos.y - me.pos.y) > 24
+          ) {
+            continue;
+          }
           // The scene animates every hero on screen; the HUD and the sound
           // effects only react to the local one.
           scene.handleEvent(e, game);
@@ -305,9 +412,23 @@ function Game({
               play("pickup");
               break;
             case "potion_drunk":
-              scene.addDamageNumber(localPlayer(game).pos, `+${e.healed}`, "#7fd97f");
+              scene.addDamageNumber(
+                localPlayer(game).pos,
+                `+${e.healed}`,
+                e.kind === "mana" ? "#7fa3f5" : "#7fd97f",
+              );
               play("potion");
               break;
+            case "cast_failed": {
+              // Held buttons retry every tick; one fizzle per half-second is plenty.
+              const now = performance.now();
+              if (now - lastNoMana >= 500) {
+                lastNoMana = now;
+                scene.addDamageNumber(localPlayer(game).pos, "no mana", "#7fa3f5");
+                play("nomana");
+              }
+              break;
+            }
             case "level_up":
               scene.addDamageNumber(localPlayer(game).pos, `level ${e.level}!`, "#f0c96a");
               play("levelup");
@@ -321,14 +442,63 @@ function Game({
               break;
             case "traveled":
               play("portal");
-              if (e.to !== "overworld") setShopOpen(false);
+              // Any travel leaves the camp behind.
+              setShopOpen(false);
+              setHealerOpen(false);
+              setDialogueNpc(null);
+              if (e.playerId === localId()) {
+                setWaypointsOpen(false);
+                // Every `traveled` is a teleport — stairs, portals, waypoints,
+                // a death respawn — so veil the jump here rather than leaning on
+                // the scene rebuild below: one stitched surface means a waypoint
+                // hop keeps the same map and would otherwise cut with no fade.
+                // A stairs descent hits both, in the same frame, so it still
+                // reads as a single fade.
+                fadeThrough();
+                // The big "entering a new land" card, D2-style.
+                const title = locationTitle(e.to, localPlayer(game).pos);
+                const sub = e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`;
+                setIntro((prev) =>
+                  prev?.title === title && prev?.sub === sub ? prev : { seq: nextIntroSeq++, title, sub },
+                );
+                save(); // a zone crossing is a moment worth keeping
+              }
               break;
-            case "shop_opened":
-              setShopOpen(true);
+            case "region_entered":
+              if (e.playerId === localId()) {
+                const title = regionTitle(e.area);
+                setIntro((prev) =>
+                  prev?.title === title && prev?.sub === undefined
+                    ? prev
+                    : { seq: nextIntroSeq++, title },
+                );
+                save(); // a border crossing is a moment worth keeping
+              }
+              break;
+            case "waypoint_found":
+              if (e.playerId === localId()) {
+                pushToast(`waypoint found: ${regionTitle(e.area)}`);
+                play("levelup");
+                save(); // the new checkpoint survives even an immediate crash
+              }
               break;
             case "healed":
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
               play("potion");
+              break;
+            case "npc_talk":
+              setDialogueNpc(e.npcId);
+              play("potion"); // any soft cue; a dedicated "talk" sound is optional
+              break;
+            case "quest_accepted":
+              pushToast(`quest taken: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              break;
+            case "quest_completed":
+              scene.addDamageNumber(localPlayer(game).pos, "quest complete!", "#f0c96a");
+              pushToast(`quest complete: ${QUESTS[e.quest].name}`);
+              play("levelup");
+              save(); // a finished quest survives even an immediate crash
               break;
             case "inventory_full":
               scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
@@ -356,7 +526,11 @@ function Game({
               } else if (e.skill === "cleave") play("cleave");
               else if (e.skill === "crush") play("crush");
               else if (e.skill === "leap") play("leap");
+              else if (e.skill === "stomp") play("leapland");
+              else if (e.skill === "deathblow") play("crush");
               else if (e.skill === "firebolt") play("spit");
+              else if (e.skill === "fireball") play("spit");
+              else if (e.skill === "chainbolt") play("spit");
               else if (e.skill === "frostnova") play("cleave");
               else if (e.skill === "blink") play("leap");
               else if (e.skill === "focus") {
@@ -373,7 +547,9 @@ function Game({
      * this tick hasn't arrived yet, so the world holds where it is. */
     const runTick = (gatherInput: boolean): boolean => {
       if (gatherInput) {
-        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(shiftDown);
+        // Holding the button re-aims every tick; the sim clears its target
+        // after each swing, so this re-send is what makes hold = auto-attack.
+        if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(false);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
       }
@@ -413,7 +589,8 @@ function Game({
       // Waiting on the network: don't let the accumulator hoard the stall.
       if (starved) acc = Math.min(acc, TICK_MS);
       if (sawEvents) setVersion((v) => v + 1);
-      // Traveling swaps the zone map — rebuild the whole scene around it.
+      // Traveling swaps the zone map — rebuild the whole scene around it,
+      // hidden behind a quick fade so the crossing feels continuous.
       const currentMap = zoneOf(game, localPlayer(game)).map;
       if (currentMap !== sceneMap) {
         scene.dispose();
@@ -421,11 +598,14 @@ function Game({
           mount,
           currentMap,
           assets,
+          [...zoneOf(game, localPlayer(game)).npcs.values()],
           onItemClick,
-          localPlayer(game).zoneId === "overworld",
+          localPlayer(game).zoneId === "surface",
         );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
+        mount.appendChild(fadeEl); // stay above the fresh canvas
+        fadeThrough();
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPositions, acc / TICK_MS);
@@ -443,6 +623,7 @@ function Game({
         window.removeEventListener("beforeunload", onUnload);
         driver.stop();
         scene.dispose();
+        fadeEl.remove();
         gameRef.current = null;
       };
     })();
@@ -543,14 +724,26 @@ function Game({
         onExpire={(id) => setToasts((cur) => cur.filter((t) => t.id !== id))}
       />
       {gameRef.current && <ZoneBanner game={gameRef.current} />}
+      {gameRef.current && (
+        <QuestTracker
+          game={gameRef.current}
+          onOpen={(id) => {
+            setQuestFocus(id);
+            setQuestsOpen(true);
+          }}
+        />
+      )}
+      {gameRef.current && <ZoneIntro intro={intro} />}
       {gameRef.current && <PartyStrip game={gameRef.current} />}
       {gameRef.current && (
         <BottomBar
           game={gameRef.current}
+          hotbar={hotbar}
           onAction={(action) => {
             if (action === "inventory") setInvOpen((open) => !open);
             else if (action === "skills") setSkillsOpen((open) => !open);
-            else if (action === "drink") uiInputRef.current.drink = true;
+            else if (action === "drinkHealth") uiInputRef.current.drink = "health";
+            else if (action === "drinkMana") uiInputRef.current.drink = "mana";
             else if (action === "portal") uiInputRef.current.townPortal = true;
             else if (action === "vendor") setShopOpen((open) => !open);
           }}
@@ -574,12 +767,67 @@ function Game({
           />
         )}
       </Reveal>
+      <Reveal open={healerOpen && gameRef.current !== null && onCampGround(gameRef.current)}>
+        {gameRef.current && onCampGround(gameRef.current) && (
+          <HealerPanel
+            game={gameRef.current}
+            onBuy={(kind) => {
+              uiInputRef.current.buyPotion = kind;
+            }}
+            onClose={() => setHealerOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={dialogueNpc !== null && gameRef.current !== null}>
+        {gameRef.current && dialogueNpc && (
+          <DialoguePanel
+            game={gameRef.current}
+            npcId={dialogueNpc}
+            onAccept={(q) => { uiInputRef.current.acceptQuest = q; }}
+            onTurnIn={(q) => { uiInputRef.current.turnInQuest = q; }}
+            onTrade={() => { setDialogueNpc(null); setShopOpen(true); }}
+            onWares={() => { setDialogueNpc(null); setHealerOpen(true); }}
+            onClose={() => setDialogueNpc(null)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={questsOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <QuestLogPanel
+            // Remount on focus change so a tracker click always lands on
+            // the clicked quest, even if the journal is already open.
+            key={questFocus ?? "log"}
+            game={gameRef.current}
+            focus={questFocus}
+            onClose={() => setQuestsOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={waypointsOpen && gameRef.current !== null}>
+        {gameRef.current && (
+          <WaypointPanel
+            game={gameRef.current}
+            onTravel={(area) => {
+              uiInputRef.current.waypointTo = area;
+            }}
+            onClose={() => setWaypointsOpen(false)}
+          />
+        )}
+      </Reveal>
       <Reveal open={skillsOpen && gameRef.current !== null}>
         {gameRef.current && (
           <SkillPanel
             game={gameRef.current}
+            hotbar={hotbar}
             onSpend={(skill) => {
               uiInputRef.current.spendSkill = skill;
+            }}
+            onAssign={(slot: number, skill: SkillId) => {
+              const game = gameRef.current;
+              if (!game) return;
+              const bar = assignHotbar(localPlayer(game).klass, slot, skill);
+              hotbarRef.current = bar;
+              setHotbar(bar);
             }}
             onClose={() => setSkillsOpen(false)}
           />
@@ -602,6 +850,15 @@ function Game({
             onClose={() => setInvOpen(false)}
           />
         )}
+      </Reveal>
+      <Reveal open={menuOpen}>
+        <SystemMenu
+          onResume={() => setMenuOpen(false)}
+          onLeave={() => {
+            // beforeunload autosaves; the reload lands back in the lobby.
+            window.location.reload();
+          }}
+        />
       </Reveal>
     </div>
   );
@@ -629,6 +886,7 @@ function App() {
   if (!driver) {
     return (
       <Lobby
+        assets={assets}
         onReady={(d, code) => {
           setDriver(d);
           setRoomCode(code);

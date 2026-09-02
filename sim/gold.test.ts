@@ -45,6 +45,14 @@ describe("gold", () => {
     expect(total / piles).toBeGreaterThanOrEqual(2);
   });
 
+  test("a pile within pickup range is scooped without walking over it", () => {
+    const state = createGameOn(1, arena());
+    playerZone(state).goldPiles.set(1, { id: 1, amount: 10, pos: { x: 2.8, y: 1.5 } });
+    stepSolo(state, {});
+    expect(playerZone(state).goldPiles.size).toBe(0);
+    expect(player(state).gold).toBe(10);
+  });
+
   test("walking over a pile scoops it up automatically", () => {
     const state = createGameOn(1, arena());
     playerZone(state).goldPiles.set(1, { id: 1, amount: 25, pos: { x: 4.5, y: 1.5 } });

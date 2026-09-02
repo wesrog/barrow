@@ -1,6 +1,6 @@
 import { xpForLevel } from "../character";
 import type { Vec } from "../map";
-import { playerIds, type GameState, type PlayerId, type ZoneId } from "../state";
+import { playerIds, type GameState, type Player, type PlayerId, type ZoneId } from "../state";
 import { recomputePlayerStats } from "./inventory";
 
 /** Players within this many cells of a kill (besides the killer) share in its xp. */
@@ -38,27 +38,61 @@ export function xpShares(
 }
 
 /**
+ * Kills far from a player's level fade out as a source of xp: full value
+ * within 5 levels, then -15% per level of gap, floored at 5%. Symmetric —
+ * out-leveled trash stops paying, and rushing an end zone under-leveled pays
+ * almost nothing. Per recipient: party members are penalized separately.
+ */
+export function xpPenalty(playerLevel: number, mlvl: number): number {
+  const gap = Math.abs(playerLevel - mlvl);
+  if (gap <= 5) return 1;
+  return Math.max(0.05, 1 - (gap - 5) * 0.15);
+}
+
+/** Levels past this one are the long tail: xp income tapers off. */
+export const TAPER_START = 30;
+
+/** -5% per level past TAPER_START, floored at 5% — applied to all xp income. */
+export function highLevelTaper(level: number): number {
+  if (level <= TAPER_START) return 1;
+  return Math.max(0.05, 1 - (level - TAPER_START) * 0.05);
+}
+
+/** Add xp and process level-ups; a new level refills life and mana. */
+export function grantXp(state: GameState, p: Player, gained: number): void {
+  gained = Math.floor(gained * highLevelTaper(p.level));
+  if (gained <= 0) return;
+  p.xp += gained;
+  let leveled = false;
+  while (p.xp >= xpForLevel(p.level + 1)) {
+    p.level++;
+    p.skillPoints++;
+    leveled = true;
+    state.events.push({ type: "level_up", playerId: p.id, level: p.level });
+  }
+  recomputePlayerStats(state, p);
+  if (leveled) { p.life = p.maxLife; p.mana = p.maxMana; }
+}
+
+/**
  * Collect xp from this tick's kills and process level-ups. Runs after deathSystem.
- * Each kill's xp splits among the killer and nearby party members via xpShares.
+ * Each kill's xp splits among the killer and nearby party members via xpShares,
+ * then each share fades by that player's xpPenalty against the monster's level.
  */
 export function xpSystem(state: GameState): void {
   const gains = new Map<PlayerId, number>();
   for (const e of state.events) {
     if (e.type !== "monster_died") continue;
     const shares = xpShares(state, e.zone, e.pos, e.killer, e.xp);
-    for (const [id, amount] of shares) gains.set(id, (gains.get(id) ?? 0) + amount);
+    for (const [id, amount] of shares) {
+      const p = state.players.get(id)!;
+      const faded = Math.floor(amount * xpPenalty(p.level, e.mlvl));
+      gains.set(id, (gains.get(id) ?? 0) + faded);
+    }
   }
   if (gains.size === 0) return;
   for (const [id, gained] of gains) {
-    if (gained === 0) continue;
     const p = state.players.get(id);
-    if (!p) continue;
-    p.xp += gained;
-    while (p.xp >= xpForLevel(p.level + 1)) {
-      p.level++;
-      p.skillPoints++;
-      state.events.push({ type: "level_up", playerId: p.id, level: p.level });
-    }
-    recomputePlayerStats(state, p);
+    if (p) grantXp(state, p, gained);
   }
 }

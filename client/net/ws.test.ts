@@ -5,7 +5,7 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import type { Server } from "bun";
 import { startServer } from "../../signal/server";
 import { hostGame, joinGame } from "./ws";
-import { hostCore } from "./driver";
+import { hostCore, joinDriver } from "./driver";
 import { Session } from "../../net/session";
 import { serializeGame } from "../../net/snapshot";
 import type { ClientMsg, HostMsg } from "../../net/protocol";
@@ -66,6 +66,35 @@ describe("websocket transport", () => {
     expect(serializeGame(session.state!)).toBe(serializeGame(core.driver.session.state!));
 
     link.close();
+    room.stop();
+  });
+
+  test("a join cancelled in the same task claims no seat (StrictMode double-effect)", async () => {
+    const core = hostCore(42);
+    const room = await hostGame(url, core.onPeer);
+
+    // React StrictMode runs the lobby's auto-join effect, its cleanup, and the
+    // effect again, all in one task: the first attempt is cancelled before its
+    // lazy import has even resolved, so it must never open a socket — only the
+    // second attempt may claim a seat.
+    let cancelled = false;
+    const doomed = joinDriver(url, room.code, undefined, () => cancelled);
+    cancelled = true;
+    const driver = await joinDriver(url, room.code, undefined, () => false);
+    expect(await doomed).toBeNull();
+    expect(driver).not.toBeNull();
+
+    // Run a few beats so every join in flight rides a frame into the world.
+    for (let t = 0; t < 5; t++) {
+      core.pump();
+      await tick();
+    }
+    while (core.driver.session.tryStep());
+
+    // Exactly two players: the host and one joiner — no zombie second seat.
+    expect(core.driver.session.state!.players.size).toBe(2);
+
+    driver!.stop();
     room.stop();
   });
 

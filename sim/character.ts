@@ -4,6 +4,8 @@ import type { Klass } from "./skills";
 
 export const INV_W = 10;
 export const INV_H = 4;
+export const STASH_W = 10;
+export const STASH_H = 8;
 export const BELT_SIZE = 4;
 export const POTION_HEAL = 35;
 export const POTION_MANA = 25;
@@ -36,28 +38,35 @@ export function itemSize(item: Item): { w: number; h: number } {
   return { w: base.w, h: base.h };
 }
 
-function occupied(inv: Inventory): boolean[] {
-  const cells = new Array<boolean>(INV_W * INV_H).fill(false);
+function occupied(inv: Inventory, gridW: number, gridH: number): boolean[] {
+  const cells = new Array<boolean>(gridW * gridH).fill(false);
   for (const e of inv.entries) {
     const { w, h } = itemSize(e.item);
     for (let dy = 0; dy < h; dy++) {
       for (let dx = 0; dx < w; dx++) {
-        cells[(e.y + dy) * INV_W + (e.x + dx)] = true;
+        cells[(e.y + dy) * gridW + (e.x + dx)] = true;
       }
     }
   }
   return cells;
 }
 
-/** First free top-left position where a w x h item fits, scanning row-major. */
-export function findSpot(inv: Inventory, w: number, h: number): { x: number; y: number } | null {
-  const cells = occupied(inv);
-  for (let y = 0; y + h <= INV_H; y++) {
-    for (let x = 0; x + w <= INV_W; x++) {
+/** First free top-left position where a w x h item fits, scanning row-major.
+ * Grid dims default to the pack; the stash passes its own. */
+export function findSpot(
+  inv: Inventory,
+  w: number,
+  h: number,
+  gridW = INV_W,
+  gridH = INV_H,
+): { x: number; y: number } | null {
+  const cells = occupied(inv, gridW, gridH);
+  for (let y = 0; y + h <= gridH; y++) {
+    for (let x = 0; x + w <= gridW; x++) {
       let fits = true;
       for (let dy = 0; dy < h && fits; dy++) {
         for (let dx = 0; dx < w && fits; dx++) {
-          if (cells[(y + dy) * INV_W + (x + dx)]) fits = false;
+          if (cells[(y + dy) * gridW + (x + dx)]) fits = false;
         }
       }
       if (fits) return { x, y };
@@ -67,9 +76,15 @@ export function findSpot(inv: Inventory, w: number, h: number): { x: number; y: 
 }
 
 /** Place at the first free spot. Returns false if the grid can't fit it. */
-export function placeItem(inv: Inventory, id: number, item: Item): boolean {
+export function placeItem(
+  inv: Inventory,
+  id: number,
+  item: Item,
+  gridW = INV_W,
+  gridH = INV_H,
+): boolean {
   const { w, h } = itemSize(item);
-  const spot = findSpot(inv, w, h);
+  const spot = findSpot(inv, w, h, gridW, gridH);
   if (!spot) return false;
   inv.entries.push({ id, item, x: spot.x, y: spot.y });
   return true;

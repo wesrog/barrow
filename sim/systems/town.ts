@@ -10,7 +10,7 @@ import {
   type ZoneId,
   type ZoneState,
 } from "../state";
-import { placeItem, removeEntry } from "../character";
+import { STASH_H, STASH_W, placeItem, removeEntry } from "../character";
 import { repairAll, stowPotion } from "./inventory";
 import { findPath, smoothPath } from "../path";
 import { approachPath } from "./movement";
@@ -141,6 +141,35 @@ export function applyShopInput(state: GameState, p: Player, input: PlayerInput):
 
   if (input.repair) {
     repairAll(state, p);
+  }
+}
+
+/** Move items between pack and stash. Camp ground only, like the vendor. */
+export function applyStashInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (!onCampGround(p)) return;
+
+  if (input.stashPut !== undefined) {
+    const entry = removeEntry(p.inventory, input.stashPut);
+    if (entry) {
+      if (placeItem(p.stash, entry.id, entry.item, STASH_W, STASH_H)) {
+        state.events.push({ type: "stashed", playerId: p.id, name: entry.item.name });
+      } else {
+        placeItem(p.inventory, entry.id, entry.item);
+        state.events.push({ type: "stash_full", playerId: p.id });
+      }
+    }
+  }
+
+  if (input.stashTake !== undefined) {
+    const entry = removeEntry(p.stash, input.stashTake);
+    if (entry) {
+      if (placeItem(p.inventory, entry.id, entry.item)) {
+        state.events.push({ type: "unstashed", playerId: p.id, name: entry.item.name });
+      } else {
+        placeItem(p.stash, entry.id, entry.item, STASH_W, STASH_H);
+        state.events.push({ type: "inventory_full", playerId: p.id });
+      }
+    }
   }
 }
 

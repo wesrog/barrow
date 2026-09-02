@@ -95,13 +95,21 @@ export const SKILL_SHORT: Record<SkillId, string> = {
   chainbolt: "chn",
 };
 
-export type HudAction = "inventory" | "skills" | "drinkHealth" | "drinkMana" | "portal" | "vendor";
+export type HudAction =
+  | "inventory"
+  | "skills"
+  | "drinkHealth"
+  | "drinkMana"
+  | "portal"
+  | "vendor"
+  | "stash";
 
 const ACTION_BUTTONS: { action: HudAction; key: string; label: string; townOnly?: boolean }[] = [
   { action: "inventory", key: "i", label: "inv" },
   { action: "skills", key: "s", label: "skills" },
   { action: "portal", key: "t", label: "portal" },
   { action: "vendor", key: "v", label: "trade", townOnly: true },
+  { action: "stash", key: "b", label: "stash", townOnly: true },
 ];
 
 const barStyle: CSSProperties = {

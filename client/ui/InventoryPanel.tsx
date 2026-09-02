@@ -65,6 +65,8 @@ export function InventoryPanel({
   onClose,
   sellMode = false,
   onSell,
+  stashMode = false,
+  onStash,
 }: {
   game: GameState;
   assets: GameAssets | null;
@@ -75,6 +77,9 @@ export function InventoryPanel({
   /** While the vendor is open, grid clicks sell instead of equipping. */
   sellMode?: boolean;
   onSell?: (entryId: number) => void;
+  /** While the stash is open, grid clicks stow instead of equipping. */
+  stashMode?: boolean;
+  onStash?: (entryId: number) => void;
 }) {
   const [hovered, setHovered] = useState<{ item: Item; fromGrid: boolean } | null>(null);
   const p = localPlayer(game);
@@ -187,6 +192,9 @@ export function InventoryPanel({
                 if (sellMode && onSell) {
                   setHovered(null);
                   onSell(e.id);
+                } else if (stashMode && onStash) {
+                  setHovered(null);
+                  onStash(e.id);
                 } else {
                   onEquip(e.id);
                 }
@@ -201,7 +209,9 @@ export function InventoryPanel({
               title={
                 sellMode
                   ? `click to sell — ${sellPrice}g`
-                  : classLocked
+                  : stashMode
+                    ? "click to stow in the stash"
+                    : classLocked
                     ? `${base.classReq} only · right-click to drop`
                     : locked
                       ? `requires level ${base.levelReq} · right-click to drop`
@@ -216,7 +226,7 @@ export function InventoryPanel({
                 background: locked ? "rgba(46,26,28,.9)" : "rgba(38,34,46,.9)",
                 border: `1px solid ${locked ? "#8a4640" : color}`,
                 borderRadius: 2,
-                cursor: sellMode || !locked ? "pointer" : "not-allowed",
+                cursor: sellMode || stashMode || !locked ? "pointer" : "not-allowed",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -247,7 +257,9 @@ export function InventoryPanel({
           <div style={{ color: "#55503f" }}>
             {sellMode
               ? "vendor open — click pack items to sell"
-              : "click to equip / unequip · right-click to drop · i or esc to close"}
+              : stashMode
+                ? "stash open — click pack items to stow"
+                : "click to equip / unequip · right-click to drop · i or esc to close"}
           </div>
         )}
       </div>

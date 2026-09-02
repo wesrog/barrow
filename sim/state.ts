@@ -150,6 +150,8 @@ export interface Player {
   manaBelt: number;
   gold: number;
   inventory: Inventory;
+  /** Camp-side storage: a larger grid only reachable on camp ground. */
+  stash: Inventory;
   equipment: Equipment;
   magicFind: number;
   /** Per-hero quest log; absent key = never started. Saves with the character. */
@@ -209,6 +211,9 @@ export type SimEvent =
   | { type: "item_equipped"; playerId: PlayerId; slot: EquipSlot }
   | { type: "item_unequipped"; playerId: PlayerId; slot: EquipSlot }
   | { type: "inventory_full"; playerId: PlayerId }
+  | { type: "stashed"; playerId: PlayerId; name: string }
+  | { type: "unstashed"; playerId: PlayerId; name: string }
+  | { type: "stash_full"; playerId: PlayerId }
   | { type: "player_joined"; playerId: PlayerId }
   | { type: "player_left"; playerId: PlayerId }
   | { type: "player_died"; playerId: PlayerId; zone: ZoneId; pos: Vec }
@@ -284,4 +289,8 @@ export interface PlayerInput {
   sell?: number;
   /** Repair all gear at the vendor (town only). */
   repair?: boolean;
+  /** Move this inventory entry into the stash (town only). */
+  stashPut?: number;
+  /** Move this stash entry back into the inventory (town only). */
+  stashTake?: number;
 }

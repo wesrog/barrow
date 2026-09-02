@@ -24,6 +24,8 @@ export interface CharacterSave {
   manaBelt?: number;
   gold?: number;
   inventory: Inventory;
+  /** Camp stash contents. Missing on saves from before the stash existed. */
+  stash?: Inventory;
   equipment: Equipment;
   /** Seed of the world this character last played; the lobby reuses it. */
   worldSeed?: number;
@@ -61,6 +63,7 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
     manaBelt: p.manaBelt,
     gold: p.gold,
     inventory: p.inventory,
+    stash: p.stash,
     equipment: p.equipment,
     worldSeed: state.seed,
     checkpoint: p.checkpoint,
@@ -156,6 +159,8 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   p.manaBelt = Number.isFinite(save.manaBelt) ? save.manaBelt! : 0;
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;
   p.inventory = save.inventory;
+  // Lenient like checkpoints: older saves simply have no stash yet.
+  p.stash = Array.isArray(save.stash?.entries) ? save.stash! : createInventory();
   // Merge over the empty layout so slots added since the save (e.g. shield)
   // come back null instead of undefined.
   p.equipment = { ...createEquipment(), ...save.equipment };
@@ -193,7 +198,7 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
       : "overworld";
   p.region = p.checkpoint;
   // Keep item ids clear of the fresh state's counter.
-  for (const e of p.inventory.entries) {
+  for (const e of [...p.inventory.entries, ...p.stash.entries]) {
     if (e.id >= state.nextId) state.nextId = e.id + 1;
   }
   recomputePlayerStats(state, p);

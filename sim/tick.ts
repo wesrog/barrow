@@ -52,6 +52,7 @@ import {
   applyBuyPotionInput,
   applyCastPortalInput,
   applyShopInput,
+  applyStashInput,
   applyUsePortalInput,
   portalSystem,
   removePortalsOwnedBy,
@@ -295,6 +296,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     manaBelt: 0,
     gold: 0,
     inventory: createInventory(),
+    stash: createInventory(),
     equipment,
     magicFind: 0,
     quests: {},
@@ -355,6 +357,7 @@ export function step(state: GameState, frame: Frame): void {
     applyAcceptQuestInput(state, p, input);
     applyTurnInQuestInput(state, p, input);
     applyShopInput(state, p, input);
+    applyStashInput(state, p, input);
     applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);
     applyCastPortalInput(state, p, input);

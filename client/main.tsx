@@ -17,6 +17,7 @@ import { Lobby } from "./ui/Lobby";
 import { MiniMap } from "./ui/MiniMap";
 import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
+import { StashPanel } from "./ui/StashPanel";
 import { HealerPanel } from "./ui/HealerPanel";
 import { DialoguePanel } from "./ui/DialoguePanel";
 import type { NpcId } from "../sim/npcs";
@@ -59,6 +60,7 @@ function Game({
   const [invOpen, setInvOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
+  const [stashOpen, setStashOpen] = useState(false);
   const [healerOpen, setHealerOpen] = useState(false);
   const [waypointsOpen, setWaypointsOpen] = useState(false);
   const [questsOpen, setQuestsOpen] = useState(false);
@@ -72,8 +74,8 @@ function Game({
   menuOpenRef.current = menuOpen;
   const panelsOpenRef = useRef(false);
   panelsOpenRef.current =
-    invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || questsOpen ||
-    dialogueNpc !== null;
+    invOpen || skillsOpen || shopOpen || stashOpen || healerOpen || waypointsOpen ||
+    questsOpen || dialogueNpc !== null;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -274,6 +276,7 @@ function Game({
           setInvOpen(false);
           setSkillsOpen(false);
           setShopOpen(false);
+          setStashOpen(false);
           setHealerOpen(false);
           setWaypointsOpen(false);
           setQuestsOpen(false);
@@ -286,7 +289,15 @@ function Game({
       else if (e.key === "2") uiInputRef.current.drink = "mana";
       else if (e.key === "n") uiInputRef.current.newGame = true;
       else if (e.key === "t") uiInputRef.current.townPortal = true;
-      else if (e.key === "v") setShopOpen((open) => !open);
+      else if (e.key === "v") {
+        // The pack panel can only serve one counter at a time.
+        setStashOpen(false);
+        setShopOpen((open) => !open);
+      }
+      else if (e.key === "b") {
+        setShopOpen(false);
+        setStashOpen((open) => !open);
+      }
       else if (e.key === "N") {
         // Bury this character and start fresh.
         wipeStorage();
@@ -444,6 +455,7 @@ function Game({
               play("portal");
               // Any travel leaves the camp behind.
               setShopOpen(false);
+              setStashOpen(false);
               setHealerOpen(false);
               setDialogueNpc(null);
               if (e.playerId === localId()) {
@@ -502,6 +514,14 @@ function Game({
               break;
             case "inventory_full":
               scene.addDamageNumber(localPlayer(game).pos, "inventory full!", "#e05252");
+              play("drop");
+              break;
+            case "stash_full":
+              scene.addDamageNumber(localPlayer(game).pos, "stash full!", "#e05252");
+              play("drop");
+              break;
+            case "stashed":
+            case "unstashed":
               play("drop");
               break;
             case "item_broke":
@@ -745,7 +765,13 @@ function Game({
             else if (action === "drinkHealth") uiInputRef.current.drink = "health";
             else if (action === "drinkMana") uiInputRef.current.drink = "mana";
             else if (action === "portal") uiInputRef.current.townPortal = true;
-            else if (action === "vendor") setShopOpen((open) => !open);
+            else if (action === "vendor") {
+              setStashOpen(false);
+              setShopOpen((open) => !open);
+            } else if (action === "stash") {
+              setShopOpen(false);
+              setStashOpen((open) => !open);
+            }
           }}
         />
       )}
@@ -761,6 +787,17 @@ function Game({
               uiInputRef.current.repair = true;
             }}
             onClose={() => setShopOpen(false)}
+          />
+        )}
+      </Reveal>
+      <Reveal open={stashOpen && gameRef.current !== null && onCampGround(gameRef.current)}>
+        {gameRef.current && onCampGround(gameRef.current) && (
+          <StashPanel
+            game={gameRef.current}
+            onTake={(entryId) => {
+              uiInputRef.current.stashTake = entryId;
+            }}
+            onClose={() => setStashOpen(false)}
           />
         )}
       </Reveal>
@@ -830,12 +867,14 @@ function Game({
           />
         )}
       </Reveal>
-      {/* The vendor sells out of the player's own pack, so opening the shop
-          also reveals the inventory in sell mode. */}
+      {/* The vendor sells (and the stash stows) out of the player's own pack,
+          so opening either also reveals the inventory in that mode. */}
       <Reveal
         open={
           (invOpen ||
-            (shopOpen && gameRef.current !== null && onCampGround(gameRef.current))) &&
+            ((shopOpen || stashOpen) &&
+              gameRef.current !== null &&
+              onCampGround(gameRef.current))) &&
           gameRef.current !== null
         }
       >
@@ -846,6 +885,10 @@ function Game({
             sellMode={shopOpen && onCampGround(gameRef.current)}
             onSell={(entryId) => {
               uiInputRef.current.sell = entryId;
+            }}
+            stashMode={stashOpen && !shopOpen && onCampGround(gameRef.current)}
+            onStash={(entryId) => {
+              uiInputRef.current.stashPut = entryId;
             }}
             onEquip={(entryId) => {
               uiInputRef.current.equip = entryId;
@@ -858,9 +901,10 @@ function Game({
             }}
             onClose={() => {
               // While vendoring the shop forces the panel open, so its X
-              // ends the whole trade session.
+              // ends the whole trade session. Same for the stash.
               setInvOpen(false);
               setShopOpen(false);
+              setStashOpen(false);
             }}
           />
         )}

@@ -2,7 +2,7 @@ import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import type { GameState } from "../../sim/state";
 import type { NpcId } from "../../sim/npcs";
-import { NPCS } from "../../sim/npcs";
+import { NPCS, npcIdleLines } from "../../sim/npcs";
 import type { QuestId } from "../../sim/quests";
 import { QUESTS, questOffered, questReadyToTurnIn, questActiveAt } from "../../sim/quests";
 import { PanelChrome } from "./PanelChrome";
@@ -83,7 +83,8 @@ export function DialoguePanel({
     lines = QUESTS[progress].dialogue.progress;
     questName = QUESTS[progress].name;
   } else {
-    lines = [npc.idle[0]!];
+    // Idle chatter reacts to the state of the world — see npcIdleLines.
+    lines = npcIdleLines(p.quests, npcId);
   }
 
   return (

@@ -344,18 +344,24 @@ describe("contact frames", () => {
   test("monster melee damage trails its swing animation cue", () => {
     const game = createGameOn(1, arena());
     spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
-    let swingTick = -1;
+    // Swings can whiff the hit roll; the damage that does land must trail the
+    // most recent swing cue by the contact delay, not some earlier miss.
+    let lastSwingTick = -1;
+    let swingBeforeHurt = -1;
     let hurtTick = -1;
-    for (let i = 0; i < 120 && hurtTick === -1; i++) {
+    for (let i = 0; i < 300 && hurtTick === -1; i++) {
       stepSolo(game, {});
       for (const e of game.events) {
-        if (e.type === "monster_swing" && swingTick === -1) swingTick = game.tick;
-        if (e.type === "player_hit" && hurtTick === -1) hurtTick = game.tick;
+        if (e.type === "monster_swing") lastSwingTick = game.tick;
+        if (e.type === "player_hit" && hurtTick === -1) {
+          hurtTick = game.tick;
+          swingBeforeHurt = lastSwingTick;
+        }
       }
     }
-    expect(swingTick).toBeGreaterThan(-1);
-    expect(hurtTick).toBeGreaterThan(swingTick);
-    expect(hurtTick - swingTick).toBeLessThanOrEqual(8);
+    expect(swingBeforeHurt).toBeGreaterThan(-1);
+    expect(hurtTick).toBeGreaterThan(swingBeforeHurt);
+    expect(hurtTick - swingBeforeHurt).toBeLessThanOrEqual(8);
   });
 });
 

@@ -1,3 +1,4 @@
+import type { ChampionId } from "./champions";
 import type { Vec } from "./map";
 import type { GameState, PlayerId, ZoneState } from "./state";
 
@@ -238,6 +239,8 @@ export interface Monster {
   explode?: { radius: number; dmgMin: number; dmgMax: number };
   guaranteedDrop?: boolean;
   windup?: number;
+  /** Set when this spawn was promoted to a champion (see champions.ts). */
+  championId?: ChampionId;
   /** Tick when a telegraphed strike lands, or null when not winding up. */
   windingUntil: number | null;
   /** A swing in flight: damage resolves at this tick (contact frame). */

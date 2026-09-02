@@ -202,8 +202,13 @@ function Game({
         pending.talkNpc = picked.id;
         delete pending.moveTo;
       } else if (picked.kind === "portal") {
-        pending.usePortal = picked.id;
-        delete pending.moveTo;
+        // One-shot: the sim keeps walking you to a clicked portal on its own.
+        // A held button spans several ticks, and re-sends landing after the
+        // teleport re-arm the far end — marching you back out of town.
+        if (initial) {
+          pending.usePortal = picked.id;
+          delete pending.moveTo;
+        }
       } else if (picked.kind === "corpse") {
         pending.reclaim = picked.id;
         delete pending.moveTo;

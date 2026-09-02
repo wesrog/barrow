@@ -5,7 +5,7 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
 
 ## Commands
 
-- **Dev:** `bun run dev` (Vite, port 5199)
+- **Dev:** `bun run dev` (Vite, port 5197)
 - **Tests:** `bun test sim client`
 - **Typecheck/build:** `bun run build`
 

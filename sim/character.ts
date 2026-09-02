@@ -170,6 +170,11 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
     if (!item || isBroken(item)) continue;
     const base = BASES[item.baseId]!;
     if (base.slot !== "weapon" && base.defense) defense += base.defense;
+    // Off-hand orbs carry base damage that stacks with the main hand.
+    if (base.slot !== "weapon" && base.dmgMin !== undefined) {
+      dmgMin += base.dmgMin;
+      dmgMax += base.dmgMax ?? base.dmgMin;
+    }
     for (const mod of item.mods) {
       switch (mod.stat) {
         case "dmgMin": dmgMin += mod.value; break;

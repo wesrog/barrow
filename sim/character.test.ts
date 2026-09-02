@@ -78,6 +78,40 @@ describe("slotForItem", () => {
   });
 });
 
+describe("orbs as off-hands", () => {
+  test("orbs equip into the shield slot", () => {
+    const eq = createEquipment();
+    expect(slotForItem(plain("ashen_orb"), eq)).toBe("shield");
+    expect(slotForItem(plain("fen_pearl"), eq)).toBe("shield");
+    expect(slotForItem(plain("grave_star"), eq)).toBe("shield");
+  });
+
+  test("an orb in the off-hand adds its base damage to unarmed damage", () => {
+    const eq = createEquipment();
+    eq.shield = plain("ashen_orb"); // 1-5
+    const s = computeStats(eq);
+    expect(s.dmgMin).toBe(BASE_STATS.dmgMin + 1);
+    expect(s.dmgMax).toBe(BASE_STATS.dmgMax + 5);
+  });
+
+  test("an orb stacks with weapon damage instead of replacing it", () => {
+    const eq = createEquipment();
+    eq.weapon = plain("gnarled_staff"); // 1-4
+    eq.shield = plain("fen_pearl"); // 5-12
+    const s = computeStats(eq);
+    expect(s.dmgMin).toBe(1 + 5);
+    expect(s.dmgMax).toBe(4 + 12);
+  });
+
+  test("a broken orb contributes no damage", () => {
+    const eq = createEquipment();
+    eq.shield = { ...plain("ashen_orb"), durability: { cur: 0, max: 20 } };
+    const s = computeStats(eq);
+    expect(s.dmgMin).toBe(BASE_STATS.dmgMin);
+    expect(s.dmgMax).toBe(BASE_STATS.dmgMax);
+  });
+});
+
 describe("computeStats", () => {
   test("naked stats equal the base stats", () => {
     const s = computeStats(createEquipment());

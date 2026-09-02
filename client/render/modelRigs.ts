@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Equipment } from "../../sim/character";
+import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import {
   findNode,
@@ -130,7 +131,7 @@ class AnimRig implements ModelRig {
 }
 
 /** Weapon base id -> KayKit weapon model + whether it swings two-handed. */
-const WEAPON_LOOKS: Record<string, { model: WeaponName | "orb"; twoHanded: boolean }> = {
+const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = {
   rusted_blade: { model: "sword_1handed", twoHanded: false },
   hatchet: { model: "axe_1handed", twoHanded: false },
   twin_fang: { model: "dagger", twoHanded: false },
@@ -139,9 +140,6 @@ const WEAPON_LOOKS: Record<string, { model: WeaponName | "orb"; twoHanded: boole
   gnarled_staff: { model: "skeleton_staff", twoHanded: false },
   ember_staff: { model: "skeleton_staff", twoHanded: false },
   wyrmwood_staff: { model: "skeleton_staff", twoHanded: false },
-  ashen_orb: { model: "orb", twoHanded: false },
-  fen_pearl: { model: "orb", twoHanded: false },
-  grave_star: { model: "orb", twoHanded: false },
   dire_flail: { model: "axe_1handed", twoHanded: false },
   moon_glaive: { model: "axe_2handed", twoHanded: true },
   kingsbane: { model: "sword_1handed", twoHanded: false },
@@ -301,9 +299,12 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
         addGear(`lowerleg.${side}`, greave, eq.boots);
       }
     }
+    // Orbs share the shield slot but float over the off hand instead of
+    // un-hiding the skinned shield prop.
+    const offhandOrb = eq.shield && BASES[eq.shield.baseId]!.dmgMin !== undefined ? eq.shield : null;
     if (shieldProp) {
-      shieldProp.visible = !!eq.shield;
-      const glow = eq.shield ? RARITY_GLOW[eq.shield.rarity] : undefined;
+      shieldProp.visible = !!eq.shield && !offhandOrb;
+      const glow = eq.shield && !offhandOrb ? RARITY_GLOW[eq.shield.rarity] : undefined;
       shieldProp.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
           child.material.emissive.setHex(glow ?? 0x000000);
@@ -311,11 +312,18 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
         }
       });
     }
+    if (offhandOrb) {
+      const model = makeOrbModel();
+      applyRarityGlow(model, offhandOrb);
+      rig.attach("l", model);
+    } else {
+      rig.attach("l", null);
+    }
 
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const model = look.model === "orb" ? makeOrbModel() : cloneWeapon(assets.weapons[look.model]);
+      const model = cloneWeapon(assets.weapons[look.model]);
       const glow = RARITY_GLOW[eq.weapon.rarity];
       if (glow !== undefined) {
         model.traverse((obj) => {

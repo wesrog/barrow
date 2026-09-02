@@ -116,11 +116,14 @@ describe("rollItem", () => {
 });
 
 describe("shields", () => {
-  test("shield bases exist across the level curve and carry defense", () => {
-    const shields = Object.values(BASES).filter((b) => b.slot === "shield");
-    expect(shields.length).toBeGreaterThanOrEqual(3);
-    for (const s of shields) expect(s.defense).toBeGreaterThan(0);
-    expect(Math.min(...shields.map((s) => s.levelReq))).toBe(1);
+  test("shield bases exist across the level curve; true shields carry defense, orbs carry damage", () => {
+    const offhands = Object.values(BASES).filter((b) => b.slot === "shield");
+    expect(offhands.length).toBeGreaterThanOrEqual(3);
+    for (const s of offhands) {
+      if (s.dmgMin !== undefined) expect(s.dmgMax).toBeGreaterThan(0); // orb
+      else expect(s.defense).toBeGreaterThan(0); // shield
+    }
+    expect(Math.min(...offhands.map((s) => s.levelReq))).toBe(1);
   });
 
   test("shields drop from treasure classes", () => {
@@ -188,10 +191,12 @@ describe("rollDrop", () => {
 });
 
 describe("class-restricted weapons", () => {
-  test("caster weapons exist across the level curve, all witch-only", () => {
+  test("caster gear exists across the level curve, all witch-only: staves in the weapon slot, orbs off-hand", () => {
     const casters = Object.values(BASES).filter((b) => b.classReq === "witch");
     expect(casters.length).toBeGreaterThanOrEqual(6);
-    for (const c of casters) expect(c.slot).toBe("weapon");
+    for (const c of casters) expect(["weapon", "shield"]).toContain(c.slot);
+    expect(casters.some((c) => c.slot === "weapon")).toBe(true);
+    expect(casters.some((c) => c.slot === "shield")).toBe(true);
     expect(Math.min(...casters.map((c) => c.levelReq))).toBe(1);
     expect(Math.max(...casters.map((c) => c.levelReq))).toBeGreaterThanOrEqual(20);
   });

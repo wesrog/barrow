@@ -39,14 +39,14 @@ describe("crypt reachability", () => {
 });
 
 describe("marker spawns", () => {
-  test("the crypt zone has a boss and all four monster types", () => {
+  test("floor 1 is populated from the Barrow Crypt band; the lord waits deeper", () => {
     const state = soloGame(1);
     const types = new Set([...getZone(state, "floor:1").monsters.values()].map((m) => m.typeId));
-    expect(types.has("barrow_lord")).toBe(true);
-    expect(types.has("shambler")).toBe(true);
-    expect(types.has("skitter")).toBe(true);
-    expect(types.has("gravespit")).toBe(true);
-    expect(types.has("tomb_bloat")).toBe(true);
+    expect(types.size).toBeGreaterThan(0);
+    expect(types.has("barrow_lord")).toBe(false);
+    for (const t of types) {
+      expect(["shambler", "skitter", "gravespit", "tomb_bloat"]).toContain(t);
+    }
   });
 });
 

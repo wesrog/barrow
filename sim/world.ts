@@ -6,6 +6,7 @@ import { AREAS } from "./areas";
 import { spawnBreakables } from "./breakables";
 import { promoteToChampion, rollChampion } from "./champions";
 import type { Monster } from "./monsters";
+import { createRng, type Rng } from "./rng";
 import type { ZoneMap } from "./map";
 import { nearestWalkable } from "./map";
 import { spawnMonster } from "./monsters";
@@ -13,7 +14,8 @@ import { floorZone, type GameState, type ZoneId, type ZoneState } from "./state"
 import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
 import { surfaceLayout } from "./surface";
 import { NPCS, NPC_IDS } from "./npcs";
-import { cryptZone, MARKER_TYPES } from "./zone";
+import { cryptFloor } from "./crypt";
+import { MARKER_TYPES } from "./zone";
 
 export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
   const zone: ZoneState = {
@@ -33,26 +35,31 @@ export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState 
 }
 
 /** Wild spawns have a small shot at greatness; scripted bosses stand alone. */
-function maybePromote(state: GameState, m: Monster): void {
+function maybePromote(rng: Rng, m: Monster): void {
   if (m.typeId === "barrow_lord") return;
-  const id = rollChampion(state.rng);
+  const id = rollChampion(rng);
   if (id) promoteToChampion(m, id);
 }
 
-/** Get-or-generate floor N deterministically from the world rng. */
+/**
+ * Get-or-generate floor N. Each floor draws from its own rng derived from the
+ * world seed and depth, so floor N is the same floor whenever (and in whatever
+ * order) parties reach it — lazy generation can't drift the world rng.
+ */
 export function ensureFloor(state: GameState, n: number): ZoneState {
   const id = floorZone(n);
   const existing = state.zones.get(id);
   if (existing) return existing;
-  const zone = makeZone(state, id, cryptZone());
+  const rng = createRng((state.seed ^ Math.imul(n, 0x9e3779b9)) >>> 0);
+  const zone = makeZone(state, id, cryptFloor(rng, n));
   for (const marker of zone.map.markers) {
     const typeId = MARKER_TYPES[marker.ch];
     if (typeId) {
       const m = spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, n);
-      maybePromote(state, m);
+      maybePromote(rng, m);
     }
   }
-  spawnBreakables(state, zone, n);
+  spawnBreakables(state, zone, n, { rng });
   return zone;
 }
 
@@ -62,7 +69,7 @@ export function ensureSurface(state: GameState): ZoneState {
   if (existing) return existing;
   const { map, monsters } = stitchSurface(state.rng);
   const zone = makeZone(state, "surface", map);
-  for (const s of monsters) maybePromote(state, spawnMonster(state, zone, s.typeId, s.pos, s.level));
+  for (const s of monsters) maybePromote(state.rng, spawnMonster(state, zone, s.typeId, s.pos, s.level));
   for (const id of AREA_ORDER) {
     spawnBreakables(state, zone, AREAS[id].areaLevel, {
       bounds: areaRect(id),

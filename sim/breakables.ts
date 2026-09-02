@@ -1,4 +1,5 @@
 import { isWalkable, type Vec } from "./map";
+import type { Rng } from "./rng";
 import { areaLevelAt, type Rect } from "./surface";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
@@ -27,17 +28,18 @@ const MIN_SPAWN_DIST = 4;
  * Scatter smashable clutter across the floor: barrels and crates rolling the
  * trash class, plus exactly one treasure chest with a guaranteed drop. `opts`
  * confines a batch to one region of a larger map — the stitched surface seeds
- * each region separately, so every outpost gets its own clutter.
+ * each region separately, so every outpost gets its own clutter. Floors pass
+ * their own derived rng so a floor's clutter is as replayable as its walls.
  */
 export function spawnBreakables(
   state: GameState,
   zone: ZoneState,
   depth: number,
-  opts?: { bounds: Rect; avoid: Vec },
+  opts?: { bounds?: Rect; avoid?: Vec; rng?: Rng },
 ): void {
   void depth; // clutter counts don't scale (yet); loot scaling happens on smash
   const { map } = zone;
-  const rng = state.rng;
+  const rng = opts?.rng ?? state.rng;
   const taken = new Set<number>();
   const cell = (x: number, y: number) => y * map.width + x;
   const b = opts?.bounds ?? { x0: 0, y0: 0, x1: map.width, y1: map.height };

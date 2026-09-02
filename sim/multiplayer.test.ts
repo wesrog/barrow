@@ -45,7 +45,9 @@ test("monsters target the nearest living player in their zone", () => {
   travel(g, p0, "floor:1");
   travel(g, p1, "floor:1");
   const m = [...getZone(g, "floor:1").monsters.values()][0]!;
-  p0.pos = { x: m.pos.x + 1.5, y: m.pos.y }; // p0 closest
+  // Stand p0 on the monster's own (guaranteed walkable) cell so tight rooms
+  // can't strand the offset inside a wall; p1 is merely farther away.
+  p0.pos = { x: m.pos.x + 0.3, y: m.pos.y }; // p0 closest
   p1.pos = { x: m.pos.x + 5, y: m.pos.y };
   const life0 = p0.life;
   for (let i = 0; i < 300; i++) step(g, { tick: g.tick, inputs: {} });

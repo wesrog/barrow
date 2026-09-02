@@ -240,8 +240,11 @@ function Game({
     const onPointerDown = (e: PointerEvent) => {
       unlock(); // first gesture wakes the audio engine
       if (e.button !== 0) return;
-      // Only canvas clicks are world clicks — HUD panels handle their own.
-      if (!(e.target instanceof HTMLCanvasElement)) return;
+      // Only clicks on the scene canvas (the lone canvas mounted directly on
+      // the game root) are world clicks — HUD panels, including canvases like
+      // the inventory paperdoll, handle their own.
+      if (!(e.target instanceof HTMLCanvasElement) || e.target.parentElement !== mount)
+        return;
       mouseDown = true;
       shiftDown = e.shiftKey;
       lastPointer = { x: e.clientX, y: e.clientY };

@@ -79,6 +79,10 @@ export function MiniMap({ game }: { game: GameState }) {
           }
           ctx.fillStyle = "#c9a84c";
           ctx.fillRect(px - 2, py - 2, 4, 4);
+        } else if (marker.ch === "L") {
+          // Lore stones: a faint teal fleck marking a landmark worth reading.
+          ctx.fillStyle = "#7fd4c4";
+          ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
         }
       }
       for (const npc of zoneOf(game, localPlayer(game)).npcs.values()) {

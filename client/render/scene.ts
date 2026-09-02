@@ -8,6 +8,7 @@ import {
   type SimEvent,
 } from "../../sim/state";
 import { MONSTER_TYPES } from "../../sim/monsters";
+import { championName } from "../../sim/champions";
 import { potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
@@ -25,7 +26,7 @@ import {
   type ModelRig,
 } from "./modelRigs";
 import type { GameAssets } from "./models";
-import { playerCss, playerTint } from "./tints";
+import { CHAMPION_TINTS, championCss, playerCss, playerTint } from "./tints";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -37,6 +38,7 @@ export type PickResult =
   | { kind: "corpse"; id: number }
   | { kind: "npc"; id: number }
   | { kind: "waypoint"; pos: Vec }
+  | { kind: "lore"; pos: Vec }
   | { kind: "ground"; world: Vec }
   | null;
 
@@ -548,6 +550,22 @@ export function createScene(
     shrineGlow.position.set(marker.x, 1.1, marker.y);
     scene.add(shrineGlow);
   }
+
+  // --- Lore stones: a leaning graven monolith at every landmark's 'L' ---
+  for (const marker of map.markers) {
+    if (marker.ch !== "L") continue;
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.5, 0.32), flatMat(0x4c4c56));
+    stone.position.set(marker.x, 0.7, marker.y);
+    stone.rotation.set(0.06, 0.5, 0.12); // it leans, like everything old here
+    scene.add(stone);
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.18, 0.38), flatMat(0x3c3c46));
+    cap.position.set(marker.x - 0.04, 1.44, marker.y);
+    cap.rotation.set(0.06, 0.5, 0.12);
+    scene.add(cap);
+    const rune = new THREE.PointLight(0x7fd4c4, 1.3, 3.5, 1.8);
+    rune.position.set(marker.x, 1.1, marker.y);
+    scene.add(rune);
+  }
   for (const fn of placePieceLater) fn();
 
   // --- NPCs: one knight-model rig per entity, tinted so each reads apart ---
@@ -815,6 +833,7 @@ export function createScene(
     return current + Math.sign(delta) * maxStep;
   };
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
+  const championLabels = new Map<number, HTMLDivElement>();
 
   // --- Hover tooltip: name + what it is, following the cursor ---
   // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
@@ -1106,6 +1125,18 @@ export function createScene(
         if (!rig) {
           if (Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 28) continue;
           rig = makeMonsterModelRig(assets, monster.typeId);
+          if (monster.championId) {
+            // Champions read at a glance: a fifth bigger, ringed in their color.
+            rig.group.scale.multiplyScalar(1.22);
+            const tint = CHAMPION_TINTS[monster.championId];
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(0.42, 0.56, 20),
+              new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.7, side: THREE.DoubleSide }),
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.07;
+            rig.group.add(ring);
+          }
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
           monsterLerp.set(monster.id, {
@@ -1144,12 +1175,27 @@ export function createScene(
         anim.phase += tickDist * 8 * frameDt * 25;
         rig.animate(frameNow, anim.phase, tickDist * 25);
 
+        // Champions wear their name overhead, in their ring's color.
+        if (monster.championId) {
+          let label = championLabels.get(monster.id);
+          if (!label) {
+            label = document.createElement("div");
+            label.textContent = championName(monster);
+            label.style.cssText = `position:absolute;transform:translate(-50%,-100%);font:600 10px ui-monospace,monospace;color:${championCss(monster.championId)};text-shadow:0 1px 2px #000;white-space:nowrap;pointer-events:none;`;
+            overlay.appendChild(label);
+            championLabels.set(monster.id, label);
+          }
+          const at = worldToScreen({ x: mx, y: my }, 1.7);
+          label.style.left = `${at.x}px`;
+          label.style.top = `${at.y}px`;
+        }
+
         // Overhead health bar once wounded
         if (monster.life < monster.maxLife) {
           let bar = healthBars.get(monster.id);
           if (!bar) {
             const wrap = document.createElement("div");
-            const boss = monster.typeId === "barrow_lord";
+            const boss = monster.typeId === "barrow_lord" || monster.championId !== undefined;
             wrap.style.cssText = `position:absolute;width:${boss ? 60 : 34}px;height:4px;background:rgba(10,8,10,.85);border:1px solid #000;transform:translate(-50%,-50%);`;
             const fill = document.createElement("div");
             fill.style.cssText = "height:100%;background:linear-gradient(to right,#8a1e1e,#c04040);width:100%;";
@@ -1171,6 +1217,13 @@ export function createScene(
         if (!zoneOf(state, me).monsters.has(id) || !monsterRigs.has(id)) {
           bar.wrap.remove();
           healthBars.delete(id);
+        }
+      }
+      for (const [id, label] of championLabels) {
+        // Nameplates follow the same lifetime as the rig window.
+        if (!zoneOf(state, me).monsters.has(id) || !monsterRigs.has(id)) {
+          label.remove();
+          championLabels.delete(id);
         }
       }
 
@@ -1478,18 +1531,25 @@ export function createScene(
           consider({ kind: "item", id: gi.id }, gi.pos, 0.2, 24);
         }
         for (const marker of zone.map.markers) {
-          if (marker.ch !== "W") continue;
-          const pos = { x: marker.x, y: marker.y };
-          consider({ kind: "waypoint", pos }, pos, 0.1, 26);
+          if (marker.ch === "W") {
+            const pos = { x: marker.x, y: marker.y };
+            consider({ kind: "waypoint", pos }, pos, 0.1, 26);
+          } else if (marker.ch === "L") {
+            const pos = { x: marker.x, y: marker.y };
+            consider({ kind: "lore", pos }, pos, 0.8, 24);
+          }
         }
         if (best) return best;
       }
       if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
       // The waypoint ring lies flat on the ground — claim clicks landing on it.
+      // A lore stone claims its own footprint the same way.
       for (const marker of zone.map.markers) {
-        if (marker.ch !== "W") continue;
-        if (Math.hypot(hit.x - marker.x, hit.z - marker.y) < 1.2) {
+        if (marker.ch === "W" && Math.hypot(hit.x - marker.x, hit.z - marker.y) < 1.2) {
           return { kind: "waypoint", pos: { x: marker.x, y: marker.y } };
+        }
+        if (marker.ch === "L" && Math.hypot(hit.x - marker.x, hit.z - marker.y) < 0.9) {
+          return { kind: "lore", pos: { x: marker.x, y: marker.y } };
         }
       }
       return { kind: "ground", world: { x: hit.x, y: hit.z } };
@@ -1537,7 +1597,13 @@ export function createScene(
       } else if (picked?.kind === "monster") {
         const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
         const type = m && MONSTER_TYPES[m.typeId];
-        if (m && type) tip = { name: type.name, role: `Monster — level ${m.mlvl}` };
+        if (m && type) {
+          tip = m.championId
+            ? { name: championName(m), role: `Champion — level ${m.mlvl}` }
+            : { name: type.name, role: `Monster — level ${m.mlvl}` };
+        }
+      } else if (picked?.kind === "lore") {
+        tip = { name: "Weathered Stone", role: "Something is written here" };
       } else if (picked?.kind === "portal") {
         const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
         if (portal) tip = { name: "Town Portal", role: `To ${locationTitle(portal.link.zone, portal.link.pos)}` };

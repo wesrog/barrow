@@ -19,6 +19,8 @@ import { PartyStrip } from "./ui/PartyStrip";
 import { ShopPanel } from "./ui/ShopPanel";
 import { HealerPanel } from "./ui/HealerPanel";
 import { DialoguePanel } from "./ui/DialoguePanel";
+import { LorePanel, type LoreText } from "./ui/LorePanel";
+import { landmarkAt } from "../sim/landmarks";
 import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { QuestTracker } from "./ui/QuestTracker";
@@ -65,6 +67,8 @@ function Game({
   // Which quest the journal opens on — set by clicking a tracker entry.
   const [questFocus, setQuestFocus] = useState<QuestId | null>(null);
   const [dialogueNpc, setDialogueNpc] = useState<NpcId | null>(null);
+  // A landmark's lore, opened by clicking its weathered stone up close.
+  const [lore, setLore] = useState<{ site: string; text: LoreText } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   // The keydown handler is registered once, so it reads open/closed through
   // refs that re-sync on every render.
@@ -73,7 +77,7 @@ function Game({
   const panelsOpenRef = useRef(false);
   panelsOpenRef.current =
     invOpen || skillsOpen || shopOpen || healerOpen || waypointsOpen || questsOpen ||
-    dialogueNpc !== null;
+    dialogueNpc !== null || lore !== null;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
   const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
   const hotbarRef = useRef<Hotbar>([null, null, null, null]);
@@ -215,6 +219,16 @@ function Game({
           pending.moveTo = { ...picked.pos };
         }
         delete pending.attack;
+      } else if (picked.kind === "lore") {
+        // Same shape as waypoints: read it up close, walk to it from afar.
+        const me = localPlayer(game);
+        if (Math.hypot(me.pos.x - picked.pos.x, me.pos.y - picked.pos.y) <= 2.2) {
+          const def = landmarkAt(zoneOf(game, me).map.landmarks ?? [], picked.pos);
+          if (def) setLore({ site: def.name, text: def.lore });
+        } else {
+          pending.moveTo = { ...picked.pos };
+        }
+        delete pending.attack;
       } else if (picked.kind === "ground") {
         pending.moveTo = picked.world;
       }
@@ -278,6 +292,7 @@ function Game({
           setWaypointsOpen(false);
           setQuestsOpen(false);
           setDialogueNpc(null);
+          setLore(null);
         } else setMenuOpen(true);
       }
       else if (e.key === "i") setInvOpen((open) => !open);
@@ -790,6 +805,9 @@ function Game({
             onClose={() => setDialogueNpc(null)}
           />
         )}
+      </Reveal>
+      <Reveal open={lore !== null}>
+        {lore && <LorePanel lore={lore.text} site={lore.site} onClose={() => setLore(null)} />}
       </Reveal>
       <Reveal open={questsOpen && gameRef.current !== null}>
         {gameRef.current && (

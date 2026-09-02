@@ -202,6 +202,17 @@ describe("blink", () => {
     expect(player(state).pos).toEqual({ x: 6.2, y: 1.8 });
   });
 
+  test("emits its cast event with departure pos and aim point so the hero can face the blink", () => {
+    const state = createGameOn(1, arena());
+    makeWitch(state);
+    stepSolo(state, { spendSkill: "blink" });
+    const start = { ...player(state).pos };
+    stepSolo(state, { cast: { skill: "blink", at: { x: 6.5, y: 1.5 } } });
+    const ev = state.events.find((e) => e.type === "skill_cast") as any;
+    expect(ev.pos).toEqual(start);
+    expect(ev.at).toEqual({ x: 6.5, y: 1.5 });
+  });
+
   test("refuses walls and spots beyond range", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);

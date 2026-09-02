@@ -448,6 +448,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
       if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > BLINK_RANGE) return;
       if (!spendMana(state, p, "blink")) return;
+      // pos is the departure point, at the arrival — the renderer faces along that line.
+      const from = { ...p.pos };
       p.pos = { x: cast.at.x, y: cast.at.y };
       p.path = [];
       p.attackTarget = null;
@@ -455,7 +457,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         type: "skill_cast",
         playerId: p.id,
         skill: "blink",
-        pos: { ...p.pos },
+        pos: from,
+        at: { ...p.pos },
         zone: zone.id,
       });
       break;

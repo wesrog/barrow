@@ -1760,8 +1760,20 @@ export function createScene(
             ring(event.pos, 2.2, 0xb08ad1, 500);
           } else if (event.skill === "blink") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6, cancelOnMove: false });
-            ring(event.pos, 1.4, 0xb08ad1, 240);
-            fx.burst(event.pos.x, 0.15, event.pos.y, 0xb08ad1, 10, 2.0);
+            // pos is the departure point, at the arrival — face the direction traveled.
+            const to = event.at ?? event.pos;
+            if (casterEntry) {
+              const dx = to.x - event.pos.x;
+              const dy = to.y - event.pos.y;
+              if (dx * dx + dy * dy > 1e-6) {
+                // The jump is instant, so the turn is too — no easing across the gap.
+                casterEntry.targetYaw = Math.atan2(dx, dy);
+                casterEntry.rig.group.rotation.y = casterEntry.targetYaw;
+              }
+            }
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0xb08ad1, 6, 1.6);
+            ring(to, 1.4, 0xb08ad1, 240);
+            fx.burst(to.x, 0.15, to.y, 0xb08ad1, 10, 2.0);
             shake(0.1);
           }
           break;

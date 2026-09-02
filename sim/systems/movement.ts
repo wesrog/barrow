@@ -1,5 +1,5 @@
 import { isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
-import { findPath, smoothPath } from "../path";
+import { findPath, furthestWalkable, smoothPath } from "../path";
 import { zoneOf, type GameState, type Player, type PlayerInput } from "../state";
 
 /**
@@ -22,13 +22,35 @@ export function approachPath(map: ZoneMap, from: Vec, target: Vec): Vec[] | null
   return path;
 }
 
+// A move click whose route around a barrier costs more than this factor of the
+// straight-line distance (plus slack for short hops) is treated as blocked:
+// the player walks toward the click and stops at the barrier instead of being
+// committed to a long detour they can't see the cost of.
+const DETOUR_FACTOR = 2;
+const DETOUR_SLACK = 3;
+
+function pathLength(from: Vec, path: Vec[]): number {
+  let len = 0;
+  let prev = from;
+  for (const wp of path) {
+    len += Math.hypot(wp.x - prev.x, wp.y - prev.y);
+    prev = wp;
+  }
+  return len;
+}
+
 export function applyMoveInput(state: GameState, p: Player, input: PlayerInput): void {
   const dest = input.moveTo;
   if (!dest) return;
   if (p.leap) return; // committed to the air until landing
   const map = zoneOf(state, p).map;
-  const path = approachPath(map, p.pos, dest);
+  let path = approachPath(map, p.pos, dest);
   if (path === null) return;
+  const direct = Math.hypot(dest.x - p.pos.x, dest.y - p.pos.y);
+  if (pathLength(p.pos, path) > direct * DETOUR_FACTOR + DETOUR_SLACK) {
+    const stop = furthestWalkable(map, p.pos, dest);
+    path = Math.hypot(stop.x - p.pos.x, stop.y - p.pos.y) > 1e-3 ? [stop] : [];
+  }
   p.attackTarget = null;
   p.pickupTarget = null;
   p.smashTarget = null;

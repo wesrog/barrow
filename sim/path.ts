@@ -28,6 +28,35 @@ function walkableLine(map: ZoneMap, a: Vec, b: Vec): boolean {
 }
 
 /**
+ * The farthest point along the segment from `a` toward `b` that a body-wide
+ * corridor reaches: the walk stops at the first blocked sample. Returns `b`
+ * when the whole line is clear, and a point at (or just past) `a` when the
+ * very first step is blocked.
+ */
+export function furthestWalkable(map: ZoneMap, a: Vec, b: Vec): Vec {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  if (dist < 1e-6) return { ...b };
+  const nx = (-(b.y - a.y) / dist) * 0.3;
+  const ny = ((b.x - a.x) / dist) * 0.3;
+  const steps = Math.max(1, Math.ceil(dist * 5));
+  let last = { ...a };
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const x = a.x + (b.x - a.x) * t;
+    const y = a.y + (b.y - a.y) * t;
+    if (
+      !isWalkable(map, Math.floor(x), Math.floor(y)) ||
+      !isWalkable(map, Math.floor(x + nx), Math.floor(y + ny)) ||
+      !isWalkable(map, Math.floor(x - nx), Math.floor(y - ny))
+    ) {
+      return last;
+    }
+    last = { x, y };
+  }
+  return last;
+}
+
+/**
  * String-pulling: drop every waypoint that can be skipped in a straight,
  * body-wide line. Turns A*'s staircase into a few clean legs.
  */

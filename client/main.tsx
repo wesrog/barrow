@@ -1004,6 +1004,9 @@ function App() {
   return <Game driver={driver} assets={assets} roomCode={roomCode} />;
 }
 
+// Right-click belongs to the game everywhere; never open the browser menu.
+window.addEventListener("contextmenu", (e) => e.preventDefault());
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

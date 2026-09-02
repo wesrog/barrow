@@ -5,7 +5,8 @@
       "name": "dev",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "dev"],
-      "port": 5197
+      "port": 5197,
+      "autoPort": true
     }
   ]
 }

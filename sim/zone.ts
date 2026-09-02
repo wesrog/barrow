@@ -1,4 +1,5 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
+import { LANDMARKS, LANDMARK_IDS, type PlacedLandmark } from "./landmarks";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
 import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
@@ -136,6 +137,56 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     }
   }
 
+  // Landmark set-pieces: stamp a few of the region's eligible ruins into the
+  // wilds, clear of the camp, quest givers, exits, and each other. Their
+  // markers (chest, lore stone, champion guard) ride the map like any others,
+  // and the gate-trail pass below keeps each site's center column connected.
+  const placedLandmarks: PlacedLandmark[] = [];
+  const landmarkMarkers: MapMarker[] = [];
+  {
+    const mouths = def.exits.map((e) => exitMouth(def, e));
+    const npcHomesEarly = NPC_IDS.map((n) => NPCS[n]).filter((n) => n.area === def.id);
+    const eligible = LANDMARK_IDS.filter((id) => LANDMARKS[id].regions.includes(def.id));
+    const wanted = Math.min(def.gen.landmarks, eligible.length);
+    // Draw without repeats so one region never hosts the same ruin twice.
+    const pool = [...eligible];
+    for (let n = 0; n < wanted && pool.length > 0; n++) {
+      const lm = LANDMARKS[pool.splice(rng.int(0, pool.length - 1), 1)[0]!];
+      const lw = lm.rows[0]!.length;
+      const lh = lm.rows.length;
+      for (let tries = 0; tries < 300; tries++) {
+        const x0 = rng.int(3, w - lw - 3);
+        const y0 = rng.int(3, h - lh - 3);
+        const cx = x0 + lw / 2;
+        const cy = y0 + lh / 2;
+        if (
+          def.safe &&
+          x0 < def.safe.x1 + 3 && def.safe.x0 - 3 < x0 + lw &&
+          y0 < def.safe.y1 + 3 && def.safe.y0 - 3 < y0 + lh
+        ) continue;
+        if (anchors.some((a) => Math.hypot(cx - a.x, cy - a.y) < 8)) continue;
+        if (mouths.some((mo) => Math.hypot(cx - mo.x, cy - mo.y) < 10)) continue;
+        if (npcHomesEarly.some((np) => Math.hypot(cx - np.pos.x, cy - np.pos.y) < NPC_CLEARING + 3)) continue;
+        if (placedLandmarks.some((p) => {
+          const od = LANDMARKS[p.id];
+          return Math.hypot(cx - (p.x0 + od.rows[0]!.length / 2), cy - (p.y0 + od.rows.length / 2)) < 14;
+        })) continue;
+        for (let y = 0; y < lh; y++) {
+          for (let x = 0; x < lw; x++) {
+            const ch = lm.rows[y]![x]!;
+            if (ch === " ") continue;
+            cells[idx(x0 + x, y0 + y)] = ch === "#" ? 0 : 1;
+            if (ch !== "#" && ch !== ".") {
+              landmarkMarkers.push({ ch, x: x0 + x + 0.5, y: y0 + y + 0.5 });
+            }
+          }
+        }
+        placedLandmarks.push({ id: lm.id, x0, y0 });
+        break;
+      }
+    }
+  }
+
   // Safe ground: the palisade ring sits on the rect's edges, floor inside,
   // open to the wilds through a gap in its east wall at the spawn row.
   const safe = def.safe;
@@ -193,6 +244,11 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
       .map((n) => ({ x: Math.floor(n.pos.x), y: Math.floor(n.pos.y) }))
       .filter((t) => !inSafe(t.x, t.y)),
     ...def.exits.map((e) => exitMouth(def, e)),
+    // Each landmark's center cell — its stamp keeps that column open.
+    ...placedLandmarks.map((p) => ({
+      x: p.x0 + Math.floor(LANDMARKS[p.id].rows[0]!.length / 2),
+      y: p.y0 + Math.floor(LANDMARKS[p.id].rows.length / 2),
+    })),
   ];
   for (const t of targets) {
     for (let x = Math.min(gate.x, t.x); x <= Math.max(gate.x, t.x); x++) cells[idx(x, gate.y)] = 1;
@@ -287,8 +343,10 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   // Monster packs scattered over the open ground, never crowding safe ground
   // or an NPC's clearing. The scatter retries until the full pack budget is
   // placed, so clearings shift packs elsewhere — they never shrink the count.
-  const markers: MapMarker[] = def.markers.map((m) => ({ ...m }));
-  const taken = new Set<number>();
+  const markers: MapMarker[] = [...def.markers.map((m) => ({ ...m })), ...landmarkMarkers];
+  const taken = new Set<number>(
+    landmarkMarkers.map((m) => idx(Math.floor(m.x), Math.floor(m.y))),
+  );
   const nearNpcHome = (x: number, y: number) =>
     npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING);
 
@@ -343,7 +401,15 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     placed++;
   }
 
-  return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: safe ? [{ ...safe }] : [] };
+  return {
+    width: w,
+    height: h,
+    cells,
+    spawn: { ...def.spawn },
+    markers,
+    camps: safe ? [{ ...safe }] : [],
+    landmarks: placedLandmarks,
+  };
 }
 
 /** The moors above the barrow — the overworld row of the area registry. */

@@ -37,6 +37,8 @@ export interface AreaDef {
     lenMax: number;
     /** Monster pack markers to scatter over the open ground. */
     packs: number;
+    /** Landmark set-pieces stamped into the wilds (see landmarks.ts). */
+    landmarks: number;
   };
   /** Weighted marker chars packs are drawn from. */
   spawnTable: string[];
@@ -62,7 +64,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     width: 64,
     height: 64,
     biome: "moor",
-    gen: { density: 0.66, smooth: 4, blobs: 60, lenMin: 3, lenMax: 10, packs: 55 },
+    gen: { density: 0.66, smooth: 4, blobs: 60, lenMin: 3, lenMax: 10, packs: 55, landmarks: 2 },
     spawnTable: ["z", "z", "z", "s", "s", "r", "e"],
     safe: { x0: 2, y0: 26, x1: 13, y1: 39 },
     spawn: { x: 7.5, y: 32.5 },
@@ -83,7 +85,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     width: 80,
     height: 56,
     biome: "fen",
-    gen: { density: 0.64, smooth: 4, blobs: 90, lenMin: 2, lenMax: 7, packs: 60 },
+    gen: { density: 0.64, smooth: 4, blobs: 90, lenMin: 2, lenMax: 7, packs: 60, landmarks: 2 },
     spawnTable: ["h", "h", "s", "m", "r", "z", "e"],
     spawn: { x: 6.5, y: 29.5 },
     markers: [],
@@ -100,7 +102,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     width: 56,
     height: 88,
     biome: "mire",
-    gen: { density: 0.62, smooth: 4, blobs: 70, lenMin: 2, lenMax: 8, packs: 60 },
+    gen: { density: 0.62, smooth: 4, blobs: 70, lenMin: 2, lenMax: 8, packs: 60, landmarks: 2 },
     spawnTable: ["h", "m", "m", "w", "r", "e"],
     spawn: { x: 6.5, y: 45.5 },
     markers: [],
@@ -117,7 +119,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     width: 72,
     height: 64,
     biome: "crag",
-    gen: { density: 0.67, smooth: 4, blobs: 120, lenMin: 4, lenMax: 12, packs: 60 },
+    gen: { density: 0.67, smooth: 4, blobs: 120, lenMin: 4, lenMax: 12, packs: 60, landmarks: 2 },
     spawnTable: ["w", "w", "h", "m", "m", "r"],
     spawn: { x: 6.5, y: 33.5 },
     markers: [],
@@ -125,6 +127,8 @@ export const AREAS: Record<AreaId, AreaDef> = {
     bandCap: 2,
   },
 };
+
+export const AREA_IDS = Object.keys(AREAS) as AreaId[];
 
 export function isAreaId(id: string): id is AreaId {
   return id in AREAS;

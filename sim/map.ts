@@ -19,6 +19,8 @@ export interface ZoneMap {
   markers: MapMarker[];
   /** Safe-ground rectangles (half-open, in cells). Empty below ground. */
   camps: { x0: number; y0: number; x1: number; y1: number }[];
+  /** Landmark set-pieces stamped into this map (surface only; see landmarks.ts). */
+  landmarks?: { id: string; x0: number; y0: number }[];
 }
 
 /** Is this position on any of the map's safe camp grounds? */

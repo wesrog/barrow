@@ -4,14 +4,14 @@
 
 import { AREAS } from "./areas";
 import { spawnBreakables } from "./breakables";
-import { promoteToChampion, rollChampion } from "./champions";
+import { CHAMPION_IDS, promoteToChampion, rollChampion } from "./champions";
 import type { Monster } from "./monsters";
 import { createRng, type Rng } from "./rng";
 import type { ZoneMap } from "./map";
 import { nearestWalkable } from "./map";
 import { spawnMonster } from "./monsters";
 import { floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
-import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
+import { AREA_ORDER, areaAt, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
 import { surfaceLayout } from "./surface";
 import { NPCS, NPC_IDS } from "./npcs";
 import { cryptFloor } from "./crypt";
@@ -75,6 +75,20 @@ export function ensureSurface(state: GameState): ZoneState {
       bounds: areaRect(id),
       avoid: worldAreaSpawn(id),
     });
+  }
+  // Landmark furnishings: '$' markers become treasure chests, 'X' markers a
+  // champion guard drawn from the local region's own table.
+  for (const m of zone.map.markers) {
+    if (m.ch === "$") {
+      const id = state.nextId++;
+      zone.breakables.set(id, { id, kind: "chest", pos: { x: m.x, y: m.y } });
+    } else if (m.ch === "X") {
+      const area = AREAS[areaAt({ x: m.x, y: m.y })];
+      const table = area.spawnTable;
+      const typeId = MARKER_TYPES[table[state.rng.int(0, table.length - 1)]!]!;
+      const guard = spawnMonster(state, zone, typeId, { x: m.x, y: m.y }, area.areaLevel);
+      promoteToChampion(guard, CHAMPION_IDS[state.rng.int(0, CHAMPION_IDS.length - 1)]!);
+    }
   }
   // NPCs: fixed spots from the registry, nudged onto this seed's walkable ground.
   const offsets = surfaceLayout().offsets;

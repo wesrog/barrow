@@ -189,6 +189,7 @@ export function stitchSurface(rng: Rng): { map: ZoneMap; monsters: SurfaceMonste
   const markers: MapMarker[] = [];
   const camps: Rect[] = [];
   const monsters: SurfaceMonsterSpawn[] = [];
+  const landmarks: { id: string; x0: number; y0: number }[] = [];
   for (const id of AREA_ORDER) {
     const def = AREAS[id];
     const off = layout.offsets[id];
@@ -212,6 +213,9 @@ export function stitchSurface(rng: Rng): { map: ZoneMap; monsters: SurfaceMonste
     for (const c of region.camps) {
       camps.push({ x0: c.x0 + off.x, y0: c.y0 + off.y, x1: c.x1 + off.x, y1: c.y1 + off.y });
     }
+    for (const l of region.landmarks ?? []) {
+      landmarks.push({ id: l.id, x0: l.x0 + off.x, y0: l.y0 + off.y });
+    }
   }
   const o = layout.offsets[AREA_ORDER[0]!];
   const s = AREAS[AREA_ORDER[0]!].spawn;
@@ -223,6 +227,7 @@ export function stitchSurface(rng: Rng): { map: ZoneMap; monsters: SurfaceMonste
       spawn: { x: s.x + o.x, y: s.y + o.y },
       markers,
       camps,
+      landmarks,
     },
     monsters,
   };

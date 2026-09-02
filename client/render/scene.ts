@@ -374,6 +374,7 @@ export function createScene(
       ground.receiveShadow = true;
       scene.add(ground);
 
+      const baseMats: THREE.Matrix4[] = [];
       const rockMats: THREE.Matrix4[] = [];
       const pineMats: THREE.Matrix4[] = [];
       const trunkMats: THREE.Matrix4[] = [];
@@ -385,19 +386,33 @@ export function createScene(
           const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
           if (!isWalkable(map, x, y)) {
             if (stairCells.has(`${x},${y}`)) continue;
+            // Full-tile raised base under every blocked cell: contiguous
+            // blockers merge into one continuous ridge, so barriers read as
+            // terrain mass instead of scattered props on open ground.
+            const bh = 0.24 + ((h >> 9) % 14) / 100;
+            m.compose(
+              pos.set(x + 0.5, bh / 2, y + 0.5),
+              quat.setFromEuler(eul.set(0, 0, 0)),
+              scl.set(1.04, bh, 1.04),
+            );
+            baseMats.push(m.clone());
             const border =
               x === rect.x0 || y === rect.y0 || x === rect.x1 - 1 || y === rect.y1 - 1;
             if (border || h % 5 < 3) {
-              const s = 0.6 + ((h >> 6) % 45) / 100;
+              const s = 0.85 + ((h >> 6) % 45) / 100;
               eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
-              m.compose(pos.set(jx, 0.3 * s, jz), quat.setFromEuler(eul), scl.set(s, s * 0.75, s));
+              m.compose(
+                pos.set(jx, bh + 0.22 * s, jz),
+                quat.setFromEuler(eul),
+                scl.set(s, s * 0.75, s),
+              );
               rockMats.push(m.clone());
             } else {
               const s = 0.75 + ((h >> 6) % 55) / 100;
               quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-              m.compose(pos.set(jx, 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
+              m.compose(pos.set(jx, bh + 0.3 + 0.85 * s, jz), quat, scl.set(s, s, s));
               pineMats.push(m.clone());
-              m.compose(pos.set(jx, 0.22, jz), quat, scl.set(1, 1, 1));
+              m.compose(pos.set(jx, bh + 0.22, jz), quat, scl.set(1, 1, 1));
               trunkMats.push(m.clone());
             }
           } else if (h % 11 === 0) {
@@ -408,6 +423,8 @@ export function createScene(
           }
         }
       }
+      const baseColor = new THREE.Color(pal.rock).multiplyScalar(0.55).getHex();
+      addInstanced(new THREE.BoxGeometry(1, 1, 1), baseColor, baseMats, true);
       addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
       addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
       addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);

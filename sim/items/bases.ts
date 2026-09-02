@@ -69,6 +69,8 @@ export const BASES: Record<string, ItemBase> = {
   // --- quest items ---
   grave_moss: base({ id: "grave_moss", name: "Grave-Moss", slot: "quest", w: 1, h: 1, levelReq: 1 }),
   fen_heart: base({ id: "fen_heart", name: "Fen Heart", slot: "quest", w: 1, h: 1, levelReq: 1 }),
+  bile_sac: base({ id: "bile_sac", name: "Bile Sac", slot: "quest", w: 1, h: 1, levelReq: 1 }),
+  ninth_sigil: base({ id: "ninth_sigil", name: "Sigil of the Ninth", slot: "quest", w: 1, h: 1, levelReq: 1 }),
 };
 
 /** Which belt row a potion base belongs to; null for anything undrinkable. */

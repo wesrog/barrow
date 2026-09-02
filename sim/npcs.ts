@@ -24,12 +24,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
   maren: {
     id: "maren", name: "Maren", title: "Camp Trader", area: "overworld",
     pos: { x: 4.5, y: 29.5 }, // the V marker's spot
-    quests: ["moor_wights", "find_redfen"], idle: ["Buying or selling, it's all the same coin."],
+    quests: ["moor_wights", "find_redfen", "clearing_roads"], idle: ["Buying or selling, it's all the same coin."],
   },
   sera: {
     id: "sera", name: "Sera", title: "Camp Healer", area: "overworld",
     pos: { x: 4.5, y: 35.5 }, // the H marker's spot
-    quests: ["grave_moss"], idle: ["Hold still. There. Good as dawn."],
+    quests: ["grave_moss", "bloat_harvest"], idle: ["Hold still. There. Good as dawn."],
   },
   betha: {
     id: "betha", name: "Odd Betha", title: "Hermit of the Redfen", area: "redfen",
@@ -39,12 +39,12 @@ export const NPCS: Record<NpcId, NpcDef> = {
   corvin: {
     id: "corvin", name: "Corvin", title: "Last of the Ninth", area: "gallowmire",
     pos: { x: 30.5, y: 22.5 },
-    quests: ["soldiers_due"], idle: ["Keep your voice down. They hear everything here."],
+    quests: ["soldiers_due", "ninth_sigils"], idle: ["Keep your voice down. They hear everything here."],
   },
   aldous: {
     id: "aldous", name: "Aldous", title: "Sentinel of the Barrow", area: "overworld",
     pos: { x: 55.5, y: 53.5 }, // beside the barrow mouth ('>' at 58.5,56.5)
-    quests: ["descend_barrow", "barrow_lord"], idle: ["None who went down have come back up. Yet."],
+    quests: ["descend_barrow", "barrow_lord", "old_bones"], idle: ["None who went down have come back up. Yet."],
   },
 };
 

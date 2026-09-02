@@ -8,7 +8,9 @@ import { NPCS } from "./npcs";
 export type QuestId =
   | "moor_wights" | "grave_moss" | "find_redfen"
   | "meet_betha" | "howler_cull" | "fen_hearts"
-  | "soldiers_due" | "descend_barrow" | "barrow_lord";
+  | "soldiers_due" | "descend_barrow" | "barrow_lord"
+  // Side work, off the main rail — each opens once its region's story allows.
+  | "clearing_roads" | "bloat_harvest" | "ninth_sigils" | "old_bones";
 
 export type QuestObjective =
   | { kind: "kill"; typeId: string; count: number; zone?: ZoneId }
@@ -149,6 +151,63 @@ export const QUESTS: Record<QuestId, QuestDef> = {
       done: ["You did it. Take this — it's older than the barrow itself, and it's earned."],
     },
     reward: { gold: 600, xp: 900, item: { baseId: "grave_scythe", rarity: "unique" } },
+  },
+  // --- side quests: optional work alongside the main rail ---
+  clearing_roads: {
+    id: "clearing_roads", giver: "maren", turnIn: "maren", name: "Clearing the Roads",
+    requires: "find_redfen",
+    objective: { kind: "kill", typeId: "skitter", count: 12, zone: "surface" },
+    dialogue: {
+      offer: [
+        "Now that you know the way east — the skitters have gotten bold along it.",
+        "A dozen fewer and my runners might start delivering again.",
+      ],
+      progress: ["Roads any quieter? My last runner came back short a boot."],
+      done: ["Twelve, counted and crunched. The roads breathe again. Here's your cut."],
+    },
+    reward: { gold: 150, xp: 130 },
+  },
+  bloat_harvest: {
+    id: "bloat_harvest", giver: "sera", turnIn: "sera", name: "The Bloat Harvest",
+    requires: "grave_moss",
+    objective: { kind: "collect", itemBaseId: "bile_sac", count: 4, dropFrom: "tomb_bloat", chance: 0.5 },
+    dialogue: {
+      offer: [
+        "The bloats that burst — their bile eats through rot like nothing I can brew.",
+        "Four sacs, whole and unpunctured, and mind how you cut.",
+      ],
+      progress: ["Whole, remember. A burst sac helps nobody, least of all you."],
+      done: ["Four, intact. You've a surgeon's hand for a killer. Take this."],
+    },
+    reward: { gold: 180, xp: 160 },
+  },
+  ninth_sigils: {
+    id: "ninth_sigils", giver: "corvin", turnIn: "corvin", name: "Sigils of the Ninth",
+    requires: "soldiers_due",
+    objective: { kind: "collect", itemBaseId: "ninth_sigil", count: 3, dropFrom: "cairn_wight", chance: 0.5 },
+    dialogue: {
+      offer: [
+        "Every soldier of the Ninth carried a sigil. The wights still wear them, tarnished black.",
+        "Bring me three. Their families were promised something to bury.",
+      ],
+      progress: ["Check the collar, under the rot. That's where we pinned them."],
+      done: ["Three names going home at last. That's worth more than the coin — but take the coin too."],
+    },
+    reward: { gold: 280, xp: 260, item: { baseId: "bone_ring", rarity: "rare" } },
+  },
+  old_bones: {
+    id: "old_bones", giver: "aldous", turnIn: "aldous", name: "Old Bones",
+    requires: "descend_barrow",
+    objective: { kind: "kill", typeId: "tomb_bloat", count: 10 },
+    dialogue: {
+      offer: [
+        "The bloats fatten on whatever leaks up from below. That's a bad sign, if you're asking.",
+        "Burst ten of them, wherever you find them, and we learn how deep the rot goes.",
+      ],
+      progress: ["Stand well back when they go. I've seen men wear one."],
+      done: ["Ten burst and you've still got your eyebrows. The rot goes deep, then. Good to know."],
+    },
+    reward: { gold: 320, xp: 320 },
   },
 };
 

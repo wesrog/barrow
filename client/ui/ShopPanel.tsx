@@ -1,9 +1,7 @@
 import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
-import { itemValue } from "../../sim/systems/town";
 import { repairAllCost } from "../../sim/systems/inventory";
 import type { GameState } from "../../sim/state";
 import { RARITY_CSS } from "./InventoryPanel";
@@ -15,7 +13,7 @@ const panelStyle: CSSProperties = {
   top: "50%",
   left: "50%",
   transform: "translate(-50%, -50%)",
-  width: 460,
+  width: 300,
   background: "rgba(12, 11, 15, 0.95)",
   border: "1px solid #3a3442",
   borderRadius: 4,
@@ -40,13 +38,11 @@ const rowStyle: CSSProperties = {
 export function ShopPanel({
   game,
   onBuy,
-  onSell,
   onRepair,
   onClose,
 }: {
   game: GameState;
   onBuy: (index: number) => void;
-  onSell: (entryId: number) => void;
   onRepair: () => void;
   onClose: () => void;
 }) {
@@ -62,63 +58,35 @@ export function ShopPanel({
         onClose={onClose}
       />
 
-      <div style={{ display: "flex", gap: 16 }}>
-        {/* Wares */}
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#8f8778", marginBottom: 4 }}>wares (click to buy)</div>
-          {game.shop.length === 0 && <div style={{ color: "#55503f" }}>sold out</div>}
-          {game.shop.map((entry, i) => {
-            const affordable = p.gold >= entry.price;
-            return (
-              <div
-                key={i}
-                onClick={() => {
-                  if (!affordable) return;
-                  setHovered(null);
-                  onBuy(i);
-                }}
-                onMouseEnter={(ev) => setHovered({ item: entry.item, x: ev.clientX, y: ev.clientY })}
-                onMouseMove={(ev) => setHovered({ item: entry.item, x: ev.clientX, y: ev.clientY })}
-                onMouseLeave={() => setHovered(null)}
-                style={{
-                  ...rowStyle,
-                  opacity: affordable ? 1 : 0.45,
-                  background: "rgba(38,34,46,.5)",
-                  marginBottom: 3,
-                }}
-              >
-                <span style={{ color: RARITY_CSS[entry.item.rarity] }}>{entry.item.name}</span>
-                <span style={{ color: "#c9a84c" }}>{entry.price}g</span>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Your pack */}
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#8f8778", marginBottom: 4 }}>your pack (click to sell)</div>
-          {p.inventory.entries.length === 0 && <div style={{ color: "#55503f" }}>empty</div>}
-          {p.inventory.entries.map((e) => (
+      {/* Wares */}
+      <div>
+        <div style={{ color: "#8f8778", marginBottom: 4 }}>wares (click to buy)</div>
+        {game.shop.length === 0 && <div style={{ color: "#55503f" }}>sold out</div>}
+        {game.shop.map((entry, i) => {
+          const affordable = p.gold >= entry.price;
+          return (
             <div
-              key={e.id}
+              key={i}
               onClick={() => {
+                if (!affordable) return;
                 setHovered(null);
-                onSell(e.id);
+                onBuy(i);
               }}
-              onMouseEnter={(ev) => setHovered({ item: e.item, x: ev.clientX, y: ev.clientY })}
-              onMouseMove={(ev) => setHovered({ item: e.item, x: ev.clientX, y: ev.clientY })}
+              onMouseEnter={(ev) => setHovered({ item: entry.item, x: ev.clientX, y: ev.clientY })}
+              onMouseMove={(ev) => setHovered({ item: entry.item, x: ev.clientX, y: ev.clientY })}
               onMouseLeave={() => setHovered(null)}
-              style={{ ...rowStyle, background: "rgba(30,28,36,.5)", marginBottom: 3 }}
+              style={{
+                ...rowStyle,
+                opacity: affordable ? 1 : 0.45,
+                background: "rgba(38,34,46,.5)",
+                marginBottom: 3,
+              }}
             >
-              <span style={{ color: RARITY_CSS[e.item.rarity] }}>
-                {BASES[e.item.baseId]!.name}
-              </span>
-              <span style={{ color: "#8f8778" }}>
-                +{Math.max(1, Math.floor(itemValue(e.item) / 4))}g
-              </span>
+              <span style={{ color: RARITY_CSS[entry.item.rarity] }}>{entry.item.name}</span>
+              <span style={{ color: "#c9a84c" }}>{entry.price}g</span>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       {hovered && (
@@ -149,7 +117,7 @@ export function ShopPanel({
         {repairCost === 0 ? "gear is in good shape" : `repair all — ${repairCost}g`}
       </div>
       <div style={{ color: "#55503f", marginTop: 8, textAlign: "center" }}>
-        v or esc to close · sister vess sells potions
+        click your pack items to sell · v or esc to close · sister vess sells potions
       </div>
     </div>
   );

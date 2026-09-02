@@ -6,8 +6,9 @@ import type { GameAssets } from "../render/models";
 
 /**
  * Inventory paperdoll: the hero model with current gear, idling on a slow
- * turntable in its own tiny Three.js scene. Purely cosmetic — reads
- * equipment, never touches sim state.
+ * turntable in its own tiny Three.js scene. Dragging on the canvas adds a
+ * manual spin on top of the turntable. Purely cosmetic — reads equipment,
+ * never touches sim state.
  */
 export function CharacterView({
   assets,
@@ -22,6 +23,8 @@ export function CharacterView({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const heroRef = useRef<HeroModelRig | null>(null);
+  const spinRef = useRef(0);
+  const dragRef = useRef<{ pointerId: number; lastX: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current!;
@@ -51,7 +54,7 @@ export function CharacterView({
     const frame = (now: number) => {
       raf = requestAnimationFrame(frame);
       hero.animate(now, 0, 0);
-      hero.group.rotation.y = now / 4000;
+      hero.group.rotation.y = now / 4000 + spinRef.current;
       renderer.render(scene, camera);
     };
     raf = requestAnimationFrame(frame);
@@ -78,6 +81,22 @@ export function CharacterView({
   return (
     <canvas
       ref={canvasRef}
+      onPointerDown={(ev) => {
+        dragRef.current = { pointerId: ev.pointerId, lastX: ev.clientX };
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }}
+      onPointerMove={(ev) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== ev.pointerId) return;
+        spinRef.current += (ev.clientX - drag.lastX) * 0.012;
+        drag.lastX = ev.clientX;
+      }}
+      onPointerUp={(ev) => {
+        if (dragRef.current?.pointerId === ev.pointerId) dragRef.current = null;
+      }}
+      onPointerCancel={() => {
+        dragRef.current = null;
+      }}
       style={{
         width,
         height,
@@ -86,6 +105,8 @@ export function CharacterView({
         background: "radial-gradient(ellipse at 50% 80%, #241f2c 0%, #16141a 75%)",
         border: "1px solid #2c2833",
         borderRadius: 3,
+        cursor: "grab",
+        touchAction: "none",
       }}
     />
   );

@@ -5,6 +5,7 @@ import { INV_H, INV_W, computeStats, type EquipSlot } from "../../sim/character"
 import { BASES, potionKind } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
+import { itemValue } from "../../sim/systems/town";
 import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
@@ -62,6 +63,8 @@ export function InventoryPanel({
   onUnequip,
   onDrop,
   onClose,
+  sellMode = false,
+  onSell,
 }: {
   game: GameState;
   assets: GameAssets | null;
@@ -69,6 +72,9 @@ export function InventoryPanel({
   onUnequip: (slot: EquipSlot) => void;
   onDrop: (entryId: number) => void;
   onClose: () => void;
+  /** While the vendor is open, grid clicks sell instead of equipping. */
+  sellMode?: boolean;
+  onSell?: (entryId: number) => void;
 }) {
   const [hovered, setHovered] = useState<{ item: Item; fromGrid: boolean } | null>(null);
   const p = localPlayer(game);
@@ -173,10 +179,18 @@ export function InventoryPanel({
           const color = RARITY_CSS[e.item.rarity]!;
           const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
           const locked = base.levelReq > p.level || classLocked;
+          const sellPrice = Math.max(1, Math.floor(itemValue(e.item) / 4));
           return (
             <div
               key={e.id}
-              onClick={() => onEquip(e.id)}
+              onClick={() => {
+                if (sellMode && onSell) {
+                  setHovered(null);
+                  onSell(e.id);
+                } else {
+                  onEquip(e.id);
+                }
+              }}
               onContextMenu={(ev) => {
                 ev.preventDefault();
                 setHovered(null);
@@ -185,11 +199,13 @@ export function InventoryPanel({
               onMouseEnter={() => setHovered({ item: e.item, fromGrid: true })}
               onMouseLeave={() => setHovered(null)}
               title={
-                classLocked
-                  ? `${base.classReq} only · right-click to drop`
-                  : locked
-                    ? `requires level ${base.levelReq} · right-click to drop`
-                    : "click to equip · right-click to drop"
+                sellMode
+                  ? `click to sell — ${sellPrice}g`
+                  : classLocked
+                    ? `${base.classReq} only · right-click to drop`
+                    : locked
+                      ? `requires level ${base.levelReq} · right-click to drop`
+                      : "click to equip · right-click to drop"
               }
               style={{
                 position: "absolute",
@@ -200,7 +216,7 @@ export function InventoryPanel({
                 background: locked ? "rgba(46,26,28,.9)" : "rgba(38,34,46,.9)",
                 border: `1px solid ${locked ? "#8a4640" : color}`,
                 borderRadius: 2,
-                cursor: locked ? "not-allowed" : "pointer",
+                cursor: sellMode || !locked ? "pointer" : "not-allowed",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -229,7 +245,9 @@ export function InventoryPanel({
           />
         ) : (
           <div style={{ color: "#55503f" }}>
-            click to equip / unequip · right-click to drop · i or esc to close
+            {sellMode
+              ? "vendor open — click pack items to sell"
+              : "click to equip / unequip · right-click to drop · i or esc to close"}
           </div>
         )}
       </div>

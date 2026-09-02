@@ -757,9 +757,6 @@ function Game({
             onBuy={(index) => {
               uiInputRef.current.buy = index;
             }}
-            onSell={(entryId) => {
-              uiInputRef.current.sell = entryId;
-            }}
             onRepair={() => {
               uiInputRef.current.repair = true;
             }}
@@ -833,11 +830,23 @@ function Game({
           />
         )}
       </Reveal>
-      <Reveal open={invOpen && gameRef.current !== null}>
+      {/* The vendor sells out of the player's own pack, so opening the shop
+          also reveals the inventory in sell mode. */}
+      <Reveal
+        open={
+          (invOpen ||
+            (shopOpen && gameRef.current !== null && onCampGround(gameRef.current))) &&
+          gameRef.current !== null
+        }
+      >
         {gameRef.current && (
           <InventoryPanel
             game={gameRef.current}
             assets={assets}
+            sellMode={shopOpen && onCampGround(gameRef.current)}
+            onSell={(entryId) => {
+              uiInputRef.current.sell = entryId;
+            }}
             onEquip={(entryId) => {
               uiInputRef.current.equip = entryId;
             }}
@@ -847,7 +856,12 @@ function Game({
             onDrop={(entryId) => {
               uiInputRef.current.dropItem = entryId;
             }}
-            onClose={() => setInvOpen(false)}
+            onClose={() => {
+              // While vendoring the shop forces the panel open, so its X
+              // ends the whole trade session.
+              setInvOpen(false);
+              setShopOpen(false);
+            }}
           />
         )}
       </Reveal>

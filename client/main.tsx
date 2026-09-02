@@ -24,7 +24,7 @@ import type { NpcId } from "../sim/npcs";
 import { InventoryPanel } from "./ui/InventoryPanel";
 import { QuestTracker } from "./ui/QuestTracker";
 import { QuestLogPanel } from "./ui/QuestLogPanel";
-import { QUESTS, type QuestId } from "../sim/quests";
+import { QUESTS, questOffered, questReadyToTurnIn, questActiveAt, type QuestId } from "../sim/quests";
 import { SkillPanel } from "./ui/SkillPanel";
 import { SystemMenu } from "./ui/SystemMenu";
 import { Toasts, type ToastMsg } from "./ui/Toasts";
@@ -514,10 +514,20 @@ function Game({
               scene.addDamageNumber(localPlayer(game).pos, "restored", "#7de08a");
               play("potion");
               break;
-            case "npc_talk":
-              setDialogueNpc(e.npcId);
+            case "npc_talk": {
+              // A vendor with nothing quest-related to say skips the chatter
+              // and opens their shop directly.
+              const p = localPlayer(game);
+              const questTalk =
+                questReadyToTurnIn(p, e.npcId) ??
+                questOffered(p, e.npcId) ??
+                questActiveAt(p, e.npcId);
+              if (!questTalk && e.npcId === "maren") setShopOpen(true);
+              else if (!questTalk && e.npcId === "sera") setHealerOpen(true);
+              else setDialogueNpc(e.npcId);
               play("potion"); // any soft cue; a dedicated "talk" sound is optional
               break;
+            }
             case "quest_accepted":
               pushToast(`quest taken: ${QUESTS[e.quest].name}`);
               play("levelup");

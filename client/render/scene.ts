@@ -36,6 +36,7 @@ export type PickResult =
   | { kind: "portal"; id: number }
   | { kind: "corpse"; id: number }
   | { kind: "npc"; id: number }
+  | { kind: "stash"; pos: Vec }
   | { kind: "waypoint"; pos: Vec }
   | { kind: "ground"; world: Vec }
   | null;
@@ -540,6 +541,22 @@ export function createScene(
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.chest, marker.x + 0.1, marker.y + 0.9, Math.PI, { x: 0.35, y: 0.35, z: 0.35 });
     });
+  }
+  // --- Stash chest (town): the player's storage, clickable at the S marker ---
+  const stashChests: { pos: Vec; obj: THREE.Object3D }[] = [];
+  for (const marker of map.markers) {
+    if (marker.ch !== "S") continue;
+    placePieceLater.push(() => {
+      const obj = placePiece(assets.dungeon.chest_gold, marker.x, marker.y, -Math.PI / 3, {
+        x: 0.5,
+        y: 0.5,
+        z: 0.5,
+      });
+      stashChests.push({ pos: { x: marker.x, y: marker.y }, obj });
+    });
+    const glow = new THREE.PointLight(0xc9a84c, 1.2, 3.5, 1.8);
+    glow.position.set(marker.x, 0.9, marker.y);
+    scene.add(glow);
   }
   // --- Candlelit shrine (town): a quiet glow beside the H marker ---
   for (const marker of map.markers) {
@@ -1424,6 +1441,19 @@ export function createScene(
           if (rig.group === obj) return { kind: "npc", id };
         }
       }
+      if (stashChests.length > 0) {
+        const chestHits = raycaster.intersectObjects(
+          stashChests.map((c) => c.obj),
+          true,
+        );
+        if (chestHits.length > 0) {
+          let obj: THREE.Object3D | null = chestHits[0]!.object;
+          // Chest clones live inside the env group, not directly under scene.
+          while (obj && !stashChests.some((c) => c.obj === obj)) obj = obj.parent;
+          const hitChest = stashChests.find((c) => c.obj === obj);
+          if (hitChest) return { kind: "stash", pos: { ...hitChest.pos } };
+        }
+      }
       const itemMeshes: THREE.Object3D[] = [];
       for (const v of groundItemVisuals.values()) itemMeshes.push(v.mesh);
       const itemHits = raycaster.intersectObjects(itemMeshes, false);
@@ -1481,6 +1511,9 @@ export function createScene(
           if (marker.ch !== "W") continue;
           const pos = { x: marker.x, y: marker.y };
           consider({ kind: "waypoint", pos }, pos, 0.1, 26);
+        }
+        for (const chest of stashChests) {
+          consider({ kind: "stash", pos: { ...chest.pos } }, chest.pos, 0.4, 26);
         }
         if (best) return best;
       }
@@ -1541,6 +1574,8 @@ export function createScene(
       } else if (picked?.kind === "portal") {
         const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
         if (portal) tip = { name: "Town Portal", role: `To ${locationTitle(portal.link.zone, portal.link.pos)}` };
+      } else if (picked?.kind === "stash") {
+        tip = { name: "Stash", role: "Your storage chest" };
       } else if (!picked || picked.kind === "ground") {
         // Stairs, pads, and gates are flat rings — match by cursor proximity.
         let bestD = 22; // px

@@ -207,6 +207,17 @@ function Game({
       } else if (picked.kind === "corpse") {
         pending.reclaim = picked.id;
         delete pending.moveTo;
+      } else if (picked.kind === "stash") {
+        // Same manners as the waypoint: near the chest it opens, from afar
+        // the click walks you over.
+        const me = localPlayer(game);
+        if (Math.hypot(me.pos.x - picked.pos.x, me.pos.y - picked.pos.y) <= 2) {
+          setShopOpen(false);
+          setStashOpen(true);
+        } else {
+          pending.moveTo = { ...picked.pos };
+        }
+        delete pending.attack;
       } else if (picked.kind === "waypoint") {
         // Near the clicked ring the panel opens; from afar the click walks you
         // to it — that ring, not whichever waypoint happens to be listed first.

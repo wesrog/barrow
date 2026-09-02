@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { player, soloGame } from "./test-helpers";
+import { player, playerZone, soloGame } from "./test-helpers";
 import { stepSolo, travel } from "./tick";
 import { STASH_H, STASH_W, placeItem } from "./character";
 import { rollItem } from "./items/generate";
 import { applyCharacter, serializeCharacter } from "./save";
+import { inCamp } from "./map";
+import { collisionSystem, NPC_RADIUS, PLAYER_RADIUS } from "./systems/collision";
 import type { GameState } from "./state";
 
 /** A fresh normal item dropped straight into the solo player's pack. */
@@ -91,6 +93,22 @@ describe("the stash", () => {
     expect(applyCharacter(fresh, 0, raw)).toBe(true);
     expect(player(fresh).stash.entries.length).toBe(1);
     expect(player(fresh).stash.entries[0]!.item.baseId).toBe("rusted_blade");
+  });
+
+  test("the camp holds a stash chest marker on safe ground", () => {
+    const state = soloGame(1);
+    const chest = playerZone(state).map.markers.find((m) => m.ch === "S")!;
+    expect(chest).toBeDefined();
+    expect(inCamp(playerZone(state).map, chest)).toBe(true);
+  });
+
+  test("the chest is solid — a player inside it is pushed out", () => {
+    const state = soloGame(1);
+    const chest = playerZone(state).map.markers.find((m) => m.ch === "S")!;
+    player(state).pos = { x: chest.x + 0.1, y: chest.y };
+    collisionSystem(state, playerZone(state), [player(state)]);
+    const d = Math.hypot(player(state).pos.x - chest.x, player(state).pos.y - chest.y);
+    expect(d).toBeGreaterThanOrEqual(PLAYER_RADIUS + NPC_RADIUS - 1e-6);
   });
 
   test("a save from before stashes existed loads with an empty stash", () => {

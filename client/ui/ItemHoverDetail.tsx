@@ -26,7 +26,7 @@ const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
   magicFind: (v) => `+${v}% better chance of magic items`,
 };
 
-export function itemDetail(item: Item, playerLevel: number): {
+export function itemDetail(item: Item, playerLevel: number, playerKlass?: Klass): {
   lines: { text: string; color?: string }[];
   color: string;
 } {
@@ -38,6 +38,13 @@ export function itemDetail(item: Item, playerLevel: number): {
     const unmet = base.levelReq > playerLevel;
     lines.push({
       text: `requires level ${base.levelReq}${unmet ? " — cannot equip yet" : ""}`,
+      color: unmet ? "#d6675c" : undefined,
+    });
+  }
+  if (base.classReq) {
+    const unmet = playerKlass !== undefined && playerKlass !== base.classReq;
+    lines.push({
+      text: `${base.classReq} only${unmet ? " — your class cannot equip this" : ""}`,
       color: unmet ? "#d6675c" : undefined,
     });
   }
@@ -128,7 +135,7 @@ export function ItemHoverDetail({
   klass: Klass;
   compare: boolean;
 }) {
-  const detail = itemDetail(item, level);
+  const detail = itemDetail(item, level, klass);
   const base = BASES[item.baseId]!;
   const comparable = compare && isComparable(item);
   const replaces = comparable ? equipment[slotForItem(item, equipment)] : null;

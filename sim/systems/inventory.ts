@@ -286,7 +286,7 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
       placeItem(p.inventory, entry.id, entry.item);
       return;
     }
-    if (base.levelReq > p.level) {
+    if (base.levelReq > p.level || (base.classReq && base.classReq !== p.klass)) {
       placeItem(p.inventory, entry.id, entry.item);
       return;
     }

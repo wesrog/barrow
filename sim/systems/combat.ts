@@ -420,12 +420,11 @@ export function deathSystem(
       zone: zone.id,
       killer: m.lastHitBy,
     });
-    const item = rollDrop(
-      state.rng,
-      m.tc,
-      m.mlvl,
-      m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" } : {},
-    );
+    const biasClass = m.lastHitBy !== null ? state.players.get(m.lastHitBy)?.klass : undefined;
+    const item = rollDrop(state.rng, m.tc, m.mlvl, {
+      biasClass,
+      ...(m.guaranteedDrop ? { guaranteed: true, minRarity: "magic" as const } : {}),
+    });
     if (item) {
       const pos = dropSpot(state.rng, zone.map, m.pos);
       const id = state.nextId++;

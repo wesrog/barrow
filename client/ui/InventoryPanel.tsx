@@ -171,7 +171,8 @@ export function InventoryPanel({
         {p.inventory.entries.map((e) => {
           const base = BASES[e.item.baseId]!;
           const color = RARITY_CSS[e.item.rarity]!;
-          const locked = base.levelReq > p.level;
+          const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
+          const locked = base.levelReq > p.level || classLocked;
           return (
             <div
               key={e.id}
@@ -184,9 +185,11 @@ export function InventoryPanel({
               onMouseEnter={() => setHovered({ item: e.item, fromGrid: true })}
               onMouseLeave={() => setHovered(null)}
               title={
-                locked
-                  ? `requires level ${base.levelReq} · right-click to drop`
-                  : "click to equip · right-click to drop"
+                classLocked
+                  ? `${base.classReq} only · right-click to drop`
+                  : locked
+                    ? `requires level ${base.levelReq} · right-click to drop`
+                    : "click to equip · right-click to drop"
               }
               style={{
                 position: "absolute",

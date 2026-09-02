@@ -130,17 +130,35 @@ class AnimRig implements ModelRig {
 }
 
 /** Weapon base id -> KayKit weapon model + whether it swings two-handed. */
-const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = {
+const WEAPON_LOOKS: Record<string, { model: WeaponName | "orb"; twoHanded: boolean }> = {
   rusted_blade: { model: "sword_1handed", twoHanded: false },
   hatchet: { model: "axe_1handed", twoHanded: false },
   twin_fang: { model: "dagger", twoHanded: false },
   war_maul: { model: "axe_2handed", twoHanded: true },
   grave_scythe: { model: "sword_2handed", twoHanded: true },
   gnarled_staff: { model: "skeleton_staff", twoHanded: false },
+  ember_staff: { model: "skeleton_staff", twoHanded: false },
+  wyrmwood_staff: { model: "skeleton_staff", twoHanded: false },
+  ashen_orb: { model: "orb", twoHanded: false },
+  fen_pearl: { model: "orb", twoHanded: false },
+  grave_star: { model: "orb", twoHanded: false },
   dire_flail: { model: "axe_1handed", twoHanded: false },
   moon_glaive: { model: "axe_2handed", twoHanded: true },
   kingsbane: { model: "sword_1handed", twoHanded: false },
 };
+
+/** Held caster orb: a flat-shaded sphere floating just above the fist. */
+function makeOrbModel(): THREE.Group {
+  const g = new THREE.Group();
+  const orb = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.11, 1),
+    flatMat(0x9db8d9, 0.4),
+  );
+  orb.castShadow = true;
+  orb.position.y = -0.12;
+  g.add(orb);
+  return g;
+}
 
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
@@ -297,7 +315,7 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     if (eq.weapon) {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const model = cloneWeapon(assets.weapons[look.model]);
+      const model = look.model === "orb" ? makeOrbModel() : cloneWeapon(assets.weapons[look.model]);
       const glow = RARITY_GLOW[eq.weapon.rarity];
       if (glow !== undefined) {
         model.traverse((obj) => {

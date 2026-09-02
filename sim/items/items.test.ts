@@ -186,3 +186,59 @@ describe("rollDrop", () => {
     expect(magicPlus("boss")).toBeGreaterThan(magicPlus("trash"));
   });
 });
+
+describe("class-restricted weapons", () => {
+  test("caster weapons exist across the level curve, all witch-only", () => {
+    const casters = Object.values(BASES).filter((b) => b.classReq === "witch");
+    expect(casters.length).toBeGreaterThanOrEqual(6);
+    for (const c of casters) expect(c.slot).toBe("weapon");
+    expect(Math.min(...casters.map((c) => c.levelReq))).toBe(1);
+    expect(Math.max(...casters.map((c) => c.levelReq))).toBeGreaterThanOrEqual(20);
+  });
+
+  test("heavy two-wide weapons are warrior-only, one-wide blades unrestricted", () => {
+    expect(BASES["war_maul"]!.classReq).toBe("warrior");
+    expect(BASES["grave_scythe"]!.classReq).toBe("warrior");
+    expect(BASES["dire_flail"]!.classReq).toBe("warrior");
+    expect(BASES["moon_glaive"]!.classReq).toBe("warrior");
+    expect(BASES["rusted_blade"]!.classReq).toBeUndefined();
+    expect(BASES["hatchet"]!.classReq).toBeUndefined();
+    expect(BASES["twin_fang"]!.classReq).toBeUndefined();
+    expect(BASES["kingsbane"]!.classReq).toBeUndefined();
+  });
+
+  test("caster weapons drop from every treasure class", () => {
+    for (const tcId of ["trash", "standard", "boss"]) {
+      const rng = createRng(31);
+      let casters = 0;
+      for (let i = 0; i < 4000; i++) {
+        const item = rollDrop(rng, tcId, 30);
+        if (item && BASES[item.baseId]!.classReq === "witch") casters++;
+      }
+      expect(casters).toBeGreaterThan(0);
+    }
+  });
+
+  test("biasClass slightly favors that class's weapons without excluding others", () => {
+    const count = (biasClass: "warrior" | "witch") => {
+      const rng = createRng(32);
+      let witch = 0;
+      let warrior = 0;
+      for (let i = 0; i < 8000; i++) {
+        const item = rollDrop(rng, "standard", 30, { biasClass });
+        if (!item) continue;
+        const req = BASES[item.baseId]!.classReq;
+        if (req === "witch") witch++;
+        if (req === "warrior") warrior++;
+      }
+      return { witch, warrior };
+    };
+    const asWitch = count("witch");
+    const asWarrior = count("warrior");
+    expect(asWitch.witch).toBeGreaterThan(asWarrior.witch);
+    expect(asWarrior.warrior).toBeGreaterThan(asWitch.warrior);
+    // Slight bias: the off-class gear still drops.
+    expect(asWitch.warrior).toBeGreaterThan(0);
+    expect(asWarrior.witch).toBeGreaterThan(0);
+  });
+});

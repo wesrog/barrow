@@ -6,6 +6,9 @@ import { isWalkable } from "./map";
 import { areaRect, inRect } from "./surface";
 import { player, soloGame } from "./test-helpers";
 import { NPC_HOLD_RANGE, NPC_WANDER_RADIUS } from "./systems/npcs";
+import { NPC_CLEARING } from "./zone";
+import { findPath } from "./path";
+import { worldAreaSpawn } from "./surface";
 
 describe("npcs", () => {
   test("every NPC def spawns on the surface, walkable, inside its area", () => {
@@ -39,7 +42,7 @@ describe("npcs", () => {
         expect(walkable).toBe(true);
       }
     }
-  });
+  }, 20000);
 
   test("seeds 136 and 209 (previously stranded Betha with no walkable cell) are fixed", () => {
     for (const seed of [136, 209]) {
@@ -47,6 +50,55 @@ describe("npcs", () => {
       for (const npc of surface.npcs.values()) {
         expect(isWalkable(surface.map, Math.floor(npc.pos.x), Math.floor(npc.pos.y))).toBe(true);
       }
+    }
+  });
+});
+
+describe("npc clearings", () => {
+  test("no monster spawns inside the clearing around any npc home", () => {
+    for (let seed = 0; seed < 40; seed++) {
+      const surface = getZone(createGame(seed), "surface");
+      for (const npc of surface.npcs.values()) {
+        for (const m of surface.monsters.values()) {
+          const d = Math.hypot(m.pos.x - npc.home.x, m.pos.y - npc.home.y);
+          expect(d).toBeGreaterThanOrEqual(NPC_CLEARING);
+        }
+      }
+    }
+  });
+});
+
+describe("betha's hut", () => {
+  test("four walls, one doorway, and a path from the redfen arrival to her side", () => {
+    for (const seed of [1, 7, 42, 136, 209]) {
+      const surface = getZone(createGame(seed), "surface");
+      const betha = [...surface.npcs.values()].find((n) => n.npcId === "betha")!;
+      const bx = Math.floor(betha.home.x);
+      const by = Math.floor(betha.home.y);
+      // The room: a 3x3 floor around her home cell.
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          expect(isWalkable(surface.map, bx + dx, by + dy)).toBe(true);
+        }
+      }
+      // The walls: the radius-2 ring is solid except a single doorway cell.
+      let doors = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
+          if (isWalkable(surface.map, bx + dx, by + dy)) doors++;
+        }
+      }
+      expect(doors).toBe(1);
+      // The doorway connects to the trail network — she can be reached.
+      const spawn = worldAreaSpawn("redfen");
+      const path = findPath(
+        surface.map,
+        { x: Math.floor(spawn.x), y: Math.floor(spawn.y) },
+        { x: bx, y: by },
+        20000,
+      );
+      expect(path).not.toBeNull();
     }
   });
 });

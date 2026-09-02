@@ -3,7 +3,6 @@
 
 import { AREAS, type AreaId } from "./areas";
 import { inCamp, isWalkable, type MapMarker, type Vec, type ZoneMap } from "./map";
-import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
 import { zoneDepth, type ZoneId } from "./state";
 import { areaZone, MARKER_TYPES, zoneName } from "./zone";
@@ -197,24 +196,6 @@ export function stitchSurface(rng: Rng): { map: ZoneMap; monsters: SurfaceMonste
     for (let y = 0; y < def.height; y++) {
       for (let x = 0; x < def.width; x++) {
         cells[(y + off.y) * layout.width + (x + off.x)] = region.cells[y * def.width + x]!;
-      }
-    }
-    // Carve every NPC's cell and its 8-neighbor ring to guaranteed floor: an NPC
-    // spot is a fixed data point (like a marker), not a roll — terrain must never
-    // be allowed to strand one unreachable and softlock the campaign that depends
-    // on talking to it. Pure lookup against NPCS; consumes no RNG.
-    for (const npcId of NPC_IDS) {
-      const npcDef = NPCS[npcId];
-      if (npcDef.area !== id) continue;
-      const nx = Math.floor(npcDef.pos.x) + off.x;
-      const ny = Math.floor(npcDef.pos.y) + off.y;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          const x = nx + dx;
-          const y = ny + dy;
-          if (x < off.x || x >= off.x + def.width || y < off.y || y >= off.y + def.height) continue;
-          cells[y * layout.width + x] = 1;
-        }
       }
     }
     for (const m of region.markers) {

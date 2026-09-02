@@ -16,6 +16,8 @@ export interface NpcDef {
   quests: QuestId[];
   /** Lines when they have nothing for you. */
   idle: string[];
+  /** Stamped structure at `home`: a hut gets four walls and a doorway. */
+  dwelling?: "hut";
 }
 
 export const NPCS: Record<NpcId, NpcDef> = {
@@ -31,7 +33,7 @@ export const NPCS: Record<NpcId, NpcDef> = {
   },
   betha: {
     id: "betha", name: "Odd Betha", title: "Hermit of the Redfen", area: "redfen",
-    pos: { x: 42.5, y: 22.5 },
+    pos: { x: 42.5, y: 22.5 }, dwelling: "hut",
     quests: ["meet_betha", "howler_cull", "fen_hearts"], idle: ["The fen keeps what it takes."],
   },
   corvin: {

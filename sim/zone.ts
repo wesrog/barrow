@@ -1,6 +1,11 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
+import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
+
+/** No monster pack lands within this many cells of an NPC's home — a cleared
+ * pocket around each quest giver, without the wilds needing safe ground. */
+export const NPC_CLEARING = 8;
 
 /** Map marker characters -> monster types. */
 export const MARKER_TYPES: Record<string, string> = {
@@ -157,6 +162,24 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     }
   }
 
+  // NPC homes are fixed data points, like markers — terrain must never strand
+  // one unreachable and softlock the campaign that depends on talking to them.
+  // Carve each home cell and its 8-neighbor ring to guaranteed floor here, and
+  // trail to it below. Pure lookup against NPCS; consumes no RNG.
+  const npcHomes = NPC_IDS.map((n) => NPCS[n]).filter((n) => n.area === def.id);
+  for (const n of npcHomes) {
+    const nx = Math.floor(n.pos.x);
+    const ny = Math.floor(n.pos.y);
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = nx + dx;
+        const y = ny + dy;
+        if (x < 0 || x >= w || y < 0 || y >= h) continue;
+        cells[idx(x, y)] = 1;
+      }
+    }
+  }
+
   // Worn trails from the gate keep every far feature and exit mouth open.
   // Without safe ground there is no gate — the spawn anchor plays its part.
   const gate = safe ? { x: safe.x1, y: gy } : { x: Math.floor(def.spawn.x), y: gy };
@@ -165,6 +188,9 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   const targets = [
     ...def.markers
       .map((m) => ({ x: Math.floor(m.x), y: Math.floor(m.y) }))
+      .filter((t) => !inSafe(t.x, t.y)),
+    ...npcHomes
+      .map((n) => ({ x: Math.floor(n.pos.x), y: Math.floor(n.pos.y) }))
       .filter((t) => !inSafe(t.x, t.y)),
     ...def.exits.map((e) => exitMouth(def, e)),
   ];
@@ -219,6 +245,26 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     }
   }
 
+  // Hut dwellers get four walls: the radius-2 ring around home turns solid,
+  // except a doorway on the side the gate trail arrives from. Stamped after
+  // every carve so nothing breaches the walls; the seal below then treats the
+  // interior like any other floor — reachable through the doorway.
+  for (const n of npcHomes) {
+    if (n.dwelling !== "hut") continue;
+    const nx = Math.floor(n.pos.x);
+    const ny = Math.floor(n.pos.y);
+    const doorY = ny + (gate.y >= ny ? 2 : -2);
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
+        const x = nx + dx;
+        const y = ny + dy;
+        if (x < 0 || x >= w || y < 0 || y >= h) continue;
+        cells[idx(x, y)] = x === nx && y === doorY ? 1 : 0;
+      }
+    }
+  }
+
   // Seal off any pocket cut away from the trail network.
   const reachable = new Set<number>([idx(sx, sy)]);
   const queue = [{ x: sx, y: sy }];
@@ -238,9 +284,13 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     if (cells[i] === 1 && !reachable.has(i)) cells[i] = 0;
   }
 
-  // Monster packs scattered over the open ground, never crowding safe ground.
+  // Monster packs scattered over the open ground, never crowding safe ground
+  // or an NPC's clearing. The scatter retries until the full pack budget is
+  // placed, so clearings shift packs elsewhere — they never shrink the count.
   const markers: MapMarker[] = def.markers.map((m) => ({ ...m }));
   const taken = new Set<number>();
+  const nearNpcHome = (x: number, y: number) =>
+    npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING);
 
   // The hidden waypoint: regions without a fixed W pad roll one onto a random
   // reachable cell far from every entrance, so finding it is the region's
@@ -253,7 +303,9 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     for (let tries = 0; spot === null && tries < 4000; tries++) {
       const x = rng.int(3, w - 4);
       const y = rng.int(3, h - 4);
-      if (reachable.has(idx(x, y)) && clearOfMouths(x, y, 20)) spot = { x, y };
+      if (reachable.has(idx(x, y)) && clearOfMouths(x, y, 20) && !nearNpcHome(x, y)) {
+        spot = { x, y };
+      }
     }
     if (spot === null) {
       // Cramped landmass: settle for the reachable cell farthest into the wilds.
@@ -281,6 +333,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
     if (!reachable.has(key) || taken.has(key)) continue;
     if (inSafe(x + 0.5, y + 0.5)) continue;
     if (Math.hypot(x + 0.5 - def.spawn.x, y + 0.5 - def.spawn.y) < 10) continue;
+    if (nearNpcHome(x, y)) continue;
     taken.add(key);
     markers.push({
       ch: def.spawnTable[rng.int(0, def.spawnTable.length - 1)]!,

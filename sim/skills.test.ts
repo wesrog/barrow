@@ -213,6 +213,18 @@ describe("cast aim point", () => {
     const cast = state.events.find((e) => e.type === "skill_cast") as any;
     expect(cast.at).toEqual(near.pos);
   });
+
+  test("stomp's cast event aims at the nearest monster struck", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 20, 10);
+    stepSolo(state, { spendSkill: "leap" });
+    stepSolo(state, { spendSkill: "stomp" });
+    const near = spawnAt(state, "skitter", { x: 1.9, y: 1.5 });
+    spawnAt(state, "skitter", { x: 1.5, y: 2.9 });
+    stepSolo(state, { cast: { skill: "stomp" } });
+    const cast = state.events.find((e) => e.type === "skill_cast") as any;
+    expect(cast.at).toEqual(near.pos);
+  });
 });
 
 describe("warcry", () => {

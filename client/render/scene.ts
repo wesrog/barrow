@@ -1763,7 +1763,11 @@ export function createScene(
           if (casterEntry && casterPos && event.at) {
             const dx = event.at.x - casterPos.x;
             const dy = event.at.y - casterPos.y;
-            if (dx * dx + dy * dy > 1e-6) casterEntry.targetYaw = Math.atan2(dx, dy);
+            if (dx * dx + dy * dy > 1e-6) {
+              // The cast fires this tick, so the turn is instant — no easing.
+              casterEntry.targetYaw = Math.atan2(dx, dy);
+              casterEntry.rig.group.rotation.y = casterEntry.targetYaw;
+            }
           }
           // Only the local hero's casts rattle the camera.
           const shake = (amount: number) => {

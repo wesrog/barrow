@@ -279,6 +279,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         playerId: p.id,
         skill: "stomp",
         pos: { ...p.pos },
+        at: { ...nearestTo(p.pos, targets)!.pos },
         zone: zone.id,
       });
       break;
@@ -426,6 +427,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         playerId: p.id,
         skill: "frostnova",
         pos: { ...p.pos },
+        at: { ...nearestTo(p.pos, targets)!.pos },
         zone: zone.id,
       });
       break;

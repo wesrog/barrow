@@ -163,6 +163,17 @@ describe("frost nova", () => {
     expect(far.life).toBe(far.maxLife);
   });
 
+  test("cast event aims at the nearest monster struck so the witch faces the blast", () => {
+    const state = createGameOn(1, arena());
+    makeWitch(state);
+    stepSolo(state, { spendSkill: "frostnova" });
+    const near = spawnAt(state, "skitter", { x: 2.5, y: 1.5 });
+    spawnAt(state, "skitter", { x: 1.5, y: 3.4 });
+    stepSolo(state, { cast: { skill: "frostnova" } });
+    const cast = state.events.find((e) => e.type === "skill_cast") as any;
+    expect(cast.at).toEqual(near.pos);
+  });
+
   test("numbers scale with rank", () => {
     expect(frostnovaDamage(1)).toEqual({ min: 3, max: 6 });
     expect(frostnovaDamage(2).min).toBeGreaterThan(3);

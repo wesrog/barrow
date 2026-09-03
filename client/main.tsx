@@ -2,13 +2,16 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
 import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
-import { locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
+import { areaAt, locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
+import { AREAS } from "../sim/areas";
 import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
+import { setAmbience } from "./ambience";
+import { updateMusic } from "./music";
 import { loadAssets, type GameAssets } from "./render/models";
 import { createScene } from "./render/scene";
 import { saveToStorage, wipeStorage } from "./save";
@@ -424,13 +427,13 @@ function Game({
               play("swing");
               break;
             case "monster_swing":
-              if (e.ranged) play("spit");
+              if (e.ranged) play("spit", zoneOf(game, localPlayer(game)).monsters.get(e.id)?.typeId);
               break;
             case "monster_windup":
               play("windup");
               break;
             case "monster_died":
-              play("die");
+              play("die", e.typeId);
               break;
             case "breakable_broken":
               play("hit");
@@ -658,6 +661,21 @@ function Game({
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPositions, acc / TICK_MS);
+      // Ambient bed for the ground underfoot, and the combat-aware music
+      // layer. Both start with the same user-gesture unlock as the SFX.
+      const me2 = localPlayer(game);
+      setAmbience(me2.zoneId === "surface" ? AREAS[areaAt(me2.pos)].biome : "crypt");
+      let hunted = false;
+      for (const m of zoneOf(game, me2).monsters.values()) {
+        if (
+          m.ai === "chasing" &&
+          Math.hypot(m.pos.x - me2.pos.x, m.pos.y - me2.pos.y) < 18
+        ) {
+          hunted = true;
+          break;
+        }
+      }
+      updateMusic(hunted);
     };
     raf = requestAnimationFrame(frame);
 

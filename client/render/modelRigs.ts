@@ -409,6 +409,44 @@ const MONSTER_LOOKS: Record<
     weapon: "skeleton_axe",
     tint: 0xc9b880,
   },
+  cinder_shade: {
+    model: "skeleton_minion",
+    idle: "Idle",
+    walk: "Running_A",
+    scale: 0.5,
+    tint: 0xc45a30,
+  },
+  ash_revenant: {
+    model: "skeleton_warrior",
+    idle: "Idle_Combat",
+    walk: "Walking_A",
+    scale: 0.8,
+    weapon: "skeleton_blade",
+    tint: 0x8a4a3a,
+  },
+  ember_hulk: {
+    model: "skeleton_warrior",
+    idle: "Idle",
+    walk: "Walking_D_Skeletons",
+    scale: 1.0,
+    tint: 0xd06428,
+  },
+  veil_screamer: {
+    model: "skeleton_mage",
+    idle: "Idle",
+    walk: "Walking_A",
+    scale: 0.68,
+    weapon: "skeleton_staff",
+    tint: 0x8a6ab8,
+  },
+  crown_sentinel: {
+    model: "skeleton_warrior",
+    idle: "Idle_Combat",
+    walk: "Walking_A",
+    scale: 1.0,
+    weapon: "skeleton_axe",
+    tint: 0x6a7ab0,
+  },
   // The camp vendor: an old knight minding the stall.
   __vendor__: {
     model: "knight",
@@ -445,8 +483,11 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
 
 /** Attack clip for a monster swing. */
 export function monsterAttackClip(typeId: string): string {
-  if (typeId === "gravespit" || typeId === "bog_maw") return "Spellcast_Shoot";
-  if (typeId === "barrow_lord" || typeId === "cairn_wight") return "2H_Melee_Attack_Slice";
-  if (typeId === "skitter" || typeId === "fen_howler") return "Unarmed_Melee_Attack_Punch_A";
+  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer")
+    return "Spellcast_Shoot";
+  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel")
+    return "2H_Melee_Attack_Slice";
+  if (typeId === "skitter" || typeId === "fen_howler" || typeId === "cinder_shade" || typeId === "ember_hulk")
+    return "Unarmed_Melee_Attack_Punch_A";
   return "1H_Melee_Attack_Slice_Horizontal";
 }

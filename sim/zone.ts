@@ -17,6 +17,11 @@ export const MARKER_TYPES: Record<string, string> = {
   m: "bog_maw",
   w: "cairn_wight",
   B: "barrow_lord",
+  c: "cinder_shade",
+  a: "ash_revenant",
+  k: "ember_hulk",
+  v: "veil_screamer",
+  n: "crown_sentinel",
 };
 
 /**

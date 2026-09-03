@@ -37,18 +37,20 @@ const questXp = Object.values(QUESTS).reduce((sum, q) => sum + (q.reward.xp ?? 0
 // The guardrail for the whole rebalance: if new content or retuned numbers
 // push these bands, pacing has changed — decide on purpose, not by accident.
 describe("campaign pacing", () => {
-  test("clearing every surface region lands in the late teens", () => {
+  // Rebanded on purpose when the ashfell and hollowcrown extended the surface
+  // east: two more level 10-13 regions grow the fixed pool by a few levels.
+  test("clearing every surface region lands in the low-to-mid twenties", () => {
     const clear = levelAt(surfacePool("near"));
-    expect(clear).toBeGreaterThanOrEqual(16);
-    expect(clear).toBeLessThanOrEqual(21);
+    expect(clear).toBeGreaterThanOrEqual(20);
+    expect(clear).toBeLessThanOrEqual(25);
   });
 
-  test("even a maximal clear plus every quest stays low twenties", () => {
-    expect(levelAt(surfacePool("far") + questXp)).toBeLessThanOrEqual(23);
+  test("even a maximal clear plus every quest stays mid twenties", () => {
+    expect(levelAt(surfacePool("far") + questXp)).toBeLessThanOrEqual(27);
   });
 
-  test("level 28 demands crypt grinding beyond the fixed pool", () => {
-    expect(xpForLevel(28)).toBeGreaterThan(surfacePool("far") + questXp);
+  test("level 31 demands crypt grinding beyond the fixed pool", () => {
+    expect(xpForLevel(31)).toBeGreaterThan(surfacePool("far") + questXp);
   });
 
   test("quests fund a meaningful but minority share of the campaign", () => {

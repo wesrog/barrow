@@ -31,10 +31,13 @@ const lastPlayed = new Map<SoundName, number>();
 
 const MASTER_GAIN = 0.4;
 const MUTE_KEY = "barrow-muted";
+const AMBIENCE_MUTE_KEY = "barrow-ambience-muted";
 
 let muted = false;
+let ambienceMuted = false;
 try {
   muted = localStorage.getItem(MUTE_KEY) === "1";
+  ambienceMuted = localStorage.getItem(AMBIENCE_MUTE_KEY) === "1";
 } catch {
   // no storage (tests) — sound stays on
 }
@@ -54,6 +57,21 @@ export function setMuted(m: boolean): void {
   if (master) master.gain.value = m ? 0 : MASTER_GAIN;
 }
 
+/** The ambience+music layers' own quiet switch; SFX stay on the master mute. */
+export function isAmbienceMuted(): boolean {
+  return ambienceMuted;
+}
+
+export function setAmbienceMuted(m: boolean): void {
+  ambienceMuted = m;
+  try {
+    if (m) localStorage.setItem(AMBIENCE_MUTE_KEY, "1");
+    else localStorage.removeItem(AMBIENCE_MUTE_KEY);
+  } catch {
+    // no storage — the choice just doesn't persist
+  }
+}
+
 function ensure(): AudioContext | null {
   if (typeof AudioContext === "undefined") return null;
   if (!ctx) {
@@ -68,6 +86,54 @@ function ensure(): AudioContext | null {
 export function unlock(): void {
   const c = ensure();
   if (c && c.state === "suspended") void c.resume();
+}
+
+/** The shared context and master gain, for the ambience and music layers.
+ * Routing through `master` keeps every layer behind the one mute switch. */
+export function audioBus(): { ctx: AudioContext; master: GainNode } | null {
+  const c = ensure();
+  if (!c || !master) return null;
+  return { ctx: c, master };
+}
+
+/** A monster family's vocal timbre: pitch multiplier and oscillator shape. */
+export interface Voice {
+  pitch: number;
+  wave: OscillatorType;
+}
+
+/** typeId -> family; families share a throat. */
+const MONSTER_FAMILIES: Record<string, string> = {
+  skitter: "skitter",
+  cinder_shade: "skitter",
+  tomb_bloat: "bloat",
+  ember_hulk: "bloat",
+  shambler: "shambler",
+  cairn_wight: "wight",
+  ash_revenant: "wight",
+  crown_sentinel: "wight",
+  barrow_lord: "wight",
+  fen_howler: "howler",
+  veil_screamer: "screamer",
+  gravespit: "caster",
+  bog_maw: "caster",
+};
+
+const FAMILY_VOICES: Record<string, Voice> = {
+  skitter: { pitch: 2.2, wave: "square" }, // high chitter
+  bloat: { pitch: 0.7, wave: "sine" }, // wet gurgle
+  shambler: { pitch: 1.0, wave: "sine" },
+  wight: { pitch: 0.55, wave: "sine" }, // low moan
+  howler: { pitch: 1.5, wave: "sawtooth" }, // yelp
+  screamer: { pitch: 2.0, wave: "sawtooth" }, // shriek
+  caster: { pitch: 1.2, wave: "triangle" },
+};
+
+/** The vocal timbre for a monster type, or undefined for the neutral voice. */
+export function monsterVoice(typeId: string | undefined): Voice | undefined {
+  if (!typeId) return undefined;
+  const family = MONSTER_FAMILIES[typeId];
+  return family ? FAMILY_VOICES[family] : undefined;
 }
 
 /** Random value in [lo, hi) — presentation-only jitter, never touches sim determinism. */
@@ -134,7 +200,7 @@ function noise(
   src.stop(t0 + dur + 0.05);
 }
 
-const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
+const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice) => void> = {
   swing: (c) => {
     const p = rnd(0.8, 1.25);
     noise(c, { dur: rnd(0.07, 0.12), gain: rnd(0.12, 0.2), filterFrom: 2600 * p, filterTo: 600 * p });
@@ -147,14 +213,16 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     tone(c, { type: "sine", from: 160 * p, to: 70 * p, dur: rnd(0.07, 0.11), gain: rnd(0.32, 0.46) });
     tone(c, { type: "square", from: 340 * p, to: 140 * p, dur: 0.035, gain: 0.07 });
   },
-  hurt: (c) => {
-    const p = rnd(0.88, 1.15);
-    tone(c, { type: "sine", from: 110 * p, to: 50 * p, dur: rnd(0.13, 0.19), gain: rnd(0.4, 0.55) });
+  hurt: (c, v) => {
+    const p = rnd(0.88, 1.15) * (v?.pitch ?? 1);
+    tone(c, { type: v?.wave ?? "sine", from: 110 * p, to: 50 * p, dur: rnd(0.13, 0.19), gain: rnd(0.4, 0.55) });
     noise(c, { dur: 0.1, gain: rnd(0.15, 0.25), filterFrom: 900 * p, filterTo: 300 * p });
   },
-  die: (c) => {
-    const p = rnd(0.9, 1.12);
-    tone(c, { type: "sine", from: 130 * p, to: 35 * p, dur: 0.3, gain: 0.45 });
+  die: (c, v) => {
+    const p = rnd(0.9, 1.12) * (v?.pitch ?? 1);
+    tone(c, { type: v?.wave ?? "sine", from: 130 * p, to: 35 * p, dur: 0.3, gain: 0.45 });
+    // Voiced throats get a second cry a fifth up — the family's last word.
+    if (v) tone(c, { type: v.wave, from: 195 * p, to: 50 * p, dur: 0.22, gain: 0.14, at: 0.04 });
     noise(c, { dur: 0.22, gain: 0.25, filterFrom: 1200 * p, filterTo: 200 * p });
   },
   drop: (c) => tone(c, { type: "triangle", from: 660, to: 440, dur: 0.1, gain: 0.18 }),
@@ -205,7 +273,10 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
     tone(c, { type: "sine", from: 120 * p, to: 40 * p, dur: rnd(0.18, 0.26), gain: rnd(0.5, 0.68) });
     noise(c, { dur: 0.12, gain: rnd(0.24, 0.36), filterFrom: 1000 * p, filterTo: 200 * p });
   },
-  spit: (c) => tone(c, { type: "sine", from: 700, to: 240, dur: 0.12, gain: 0.14 }),
+  spit: (c, v) => {
+    const p = v?.pitch ?? 1;
+    tone(c, { type: v?.wave ?? "sine", from: 700 * p, to: 240 * p, dur: 0.12, gain: 0.14 });
+  },
   windup: (c) => {
     tone(c, { type: "sawtooth", from: 55, to: 110, dur: 0.7, gain: 0.3 });
     noise(c, { dur: 0.7, gain: 0.1, filterFrom: 300, filterTo: 900 });
@@ -227,12 +298,13 @@ const RECIPES: Record<SoundName, (c: AudioContext) => void> = {
   },
 };
 
-/** Play a named sound; same-name calls within 60ms collapse into one. */
-export function play(name: SoundName): void {
+/** Play a named sound; same-name calls within 60ms collapse into one.
+ * Pass the monster's typeId to voice hurt/die/spit in its family's timbre. */
+export function play(name: SoundName, typeId?: string): void {
   const c = ensure();
   if (!c || c.state !== "running" || !master) return;
   const now = performance.now();
   if (now - (lastPlayed.get(name) ?? -1000) < 60) return;
   lastPlayed.set(name, now);
-  RECIPES[name](c);
+  RECIPES[name](c, monsterVoice(typeId));
 }

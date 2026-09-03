@@ -7,7 +7,15 @@ import {
   type PlayerId,
   type SimEvent,
 } from "../../sim/state";
-import { MONSTER_TYPES } from "../../sim/monsters";
+import { MONSTER_TYPES, monsterDisplayName, type ChampionModifier } from "../../sim/monsters";
+
+/** Champion body tints, keyed by modifier — the pack leader reads at a glance. */
+const CHAMPION_TINTS: Record<ChampionModifier, number> = {
+  swift: 0x58b8d8,
+  brutal: 0xc03838,
+  stoneskin: 0x8a8a6a,
+  volatile: 0xd87828,
+};
 import { potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
@@ -1140,6 +1148,15 @@ export function createScene(
         if (!rig) {
           if (Math.hypot(monster.pos.x - me.pos.x, monster.pos.y - me.pos.y) > 28) continue;
           rig = makeMonsterModelRig(assets, monster.typeId);
+          if (monster.rank === "champion") {
+            rig.group.scale.multiplyScalar(1.2);
+            const tint = CHAMPION_TINTS[monster.modifier ?? "swift"];
+            rig.group.traverse((obj) => {
+              if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+                obj.material.color.lerp(new THREE.Color(tint), 0.4);
+              }
+            });
+          }
           monsterRigs.set(monster.id, rig);
           monsterAnim.set(monster.id, { phase: monster.id * 3.7, last: { ...monster.pos } });
           monsterLerp.set(monster.id, {
@@ -1587,7 +1604,12 @@ export function createScene(
       } else if (picked?.kind === "monster") {
         const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
         const type = m && MONSTER_TYPES[m.typeId];
-        if (m && type) tip = { name: type.name, role: `Monster — level ${m.mlvl}` };
+        if (m && type) {
+          tip = {
+            name: monsterDisplayName(m),
+            role: `${m.rank === "champion" ? "Champion" : "Monster"} — level ${m.mlvl}`,
+          };
+        }
       } else if (picked?.kind === "portal") {
         const portal = zoneOf(state, localPlayer(state)).portals.get(picked.id);
         if (portal) tip = { name: "Town Portal", role: `To ${locationTitle(portal.link.zone, portal.link.pos)}` };

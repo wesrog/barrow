@@ -1,9 +1,15 @@
 import type { MapMarker, Vec } from "./map";
 
 /** Named surface regions of the open world. Floors keep their own `floor:N` ids. */
-export type AreaId = "overworld" | "redfen" | "gallowmire" | "cragmaw";
+export type AreaId =
+  | "overworld"
+  | "redfen"
+  | "gallowmire"
+  | "cragmaw"
+  | "ashfell"
+  | "hollowcrown";
 
-export type BiomeId = "moor" | "fen" | "mire" | "crag";
+export type BiomeId = "moor" | "fen" | "mire" | "crag" | "ash" | "hollow";
 
 /** A 3-wide opening in the rim, centered `at` cells along the given edge. */
 export interface AreaExit {
@@ -122,7 +128,41 @@ export const AREAS: Record<AreaId, AreaDef> = {
     spawnTable: ["w", "w", "h", "m", "m", "r"],
     spawn: { x: 6.5, y: 33.5 },
     markers: [],
-    exits: [{ edge: "W", at: 33, to: "gallowmire" }],
+    exits: [
+      { edge: "W", at: 33, to: "gallowmire" },
+      { edge: "E", at: 33, to: "ashfell" },
+    ],
+    bandCap: 2,
+  },
+  ashfell: {
+    id: "ashfell",
+    title: "The Ashfell",
+    areaLevel: 10,
+    width: 80,
+    height: 64,
+    biome: "ash",
+    gen: { density: 0.65, smooth: 4, blobs: 100, lenMin: 3, lenMax: 10, packs: 60 },
+    spawnTable: ["c", "c", "a", "k", "w", "r"],
+    spawn: { x: 6.5, y: 33.5 },
+    markers: [],
+    exits: [
+      { edge: "W", at: 33, to: "cragmaw" },
+      { edge: "E", at: 33, to: "hollowcrown" },
+    ],
+    bandCap: 2,
+  },
+  hollowcrown: {
+    id: "hollowcrown",
+    title: "The Hollowcrown",
+    areaLevel: 12,
+    width: 72,
+    height: 64,
+    biome: "hollow",
+    gen: { density: 0.66, smooth: 4, blobs: 110, lenMin: 3, lenMax: 11, packs: 60 },
+    spawnTable: ["v", "n", "a", "c", "k", "m"],
+    spawn: { x: 6.5, y: 33.5 },
+    markers: [],
+    exits: [{ edge: "W", at: 33, to: "ashfell" }],
     bandCap: 2,
   },
 };

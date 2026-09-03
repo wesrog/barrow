@@ -54,6 +54,32 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     trunk: 0x22201c,
     tuft: 0x2c3a2c,
   },
+  // Burnt grey-red waste, ember light under a smoke-choked sky.
+  ash: {
+    bg: 0x120c0b,
+    fogNear: 20,
+    fogFar: 44,
+    ambient: 0x9a6a52,
+    ambientIntensity: 0.62,
+    ground: 0x2a201c,
+    rock: 0x4a3c34,
+    pine: 0x2c1a12,
+    trunk: 0x261a14,
+    tuft: 0x4a2c1a,
+  },
+  // Cold violet-black summit ruin, starlit and silent.
+  hollow: {
+    bg: 0x0c0a12,
+    fogNear: 18,
+    fogFar: 40,
+    ambient: 0x7a6e94,
+    ambientIntensity: 0.58,
+    ground: 0x201c2a,
+    rock: 0x3c3648,
+    pine: 0x181424,
+    trunk: 0x221c28,
+    tuft: 0x322a44,
+  },
   // Slate and ochre steps, thin dry air.
   crag: {
     bg: 0x100f0d,

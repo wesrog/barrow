@@ -158,6 +158,95 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     mlvl: 9,
     windup: 15,
   },
+  cinder_shade: {
+    id: "cinder_shade",
+    name: "Cinder Shade",
+    maxLife: 28,
+    speed: 5.0 / 25,
+    dmgMin: 4,
+    dmgMax: 8,
+    attackRating: 78,
+    defense: 18,
+    aggro: 8,
+    range: 1.0,
+    radius: 0.28,
+    swingEvery: 15,
+    xp: 22,
+    tc: "trash",
+    mlvl: 10,
+  },
+  ash_revenant: {
+    id: "ash_revenant",
+    name: "Ash Revenant",
+    maxLife: 75,
+    speed: 2.6 / 25,
+    dmgMin: 8,
+    dmgMax: 15,
+    attackRating: 86,
+    defense: 36,
+    aggro: 7,
+    range: 1.2,
+    radius: 0.35,
+    swingEvery: 30,
+    xp: 38,
+    tc: "standard",
+    mlvl: 11,
+    windup: 14,
+  },
+  ember_hulk: {
+    id: "ember_hulk",
+    name: "Ember Hulk",
+    maxLife: 95,
+    speed: 1.7 / 25,
+    dmgMin: 7,
+    dmgMax: 13,
+    attackRating: 80,
+    defense: 40,
+    aggro: 7,
+    range: 1.1,
+    radius: 0.4,
+    swingEvery: 40,
+    xp: 42,
+    tc: "standard",
+    mlvl: 11,
+    explode: { radius: 2.0, dmgMin: 15, dmgMax: 28 },
+  },
+  veil_screamer: {
+    id: "veil_screamer",
+    name: "Veil Screamer",
+    maxLife: 55,
+    speed: 2.8 / 25,
+    dmgMin: 9,
+    dmgMax: 16,
+    attackRating: 94,
+    defense: 30,
+    aggro: 9,
+    range: 1.0,
+    radius: 0.3,
+    swingEvery: 45,
+    xp: 46,
+    tc: "standard",
+    mlvl: 12,
+    ranged: 6.0,
+  },
+  crown_sentinel: {
+    id: "crown_sentinel",
+    name: "Crown Sentinel",
+    maxLife: 130,
+    speed: 2.2 / 25,
+    dmgMin: 10,
+    dmgMax: 18,
+    attackRating: 105,
+    defense: 55,
+    aggro: 7,
+    range: 1.3,
+    radius: 0.4,
+    swingEvery: 32,
+    xp: 58,
+    tc: "standard",
+    mlvl: 13,
+    windup: 16,
+  },
   barrow_lord: {
     id: "barrow_lord",
     name: "The Barrow Lord",
@@ -208,6 +297,25 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
 
 export type MonsterAi = "idle" | "chasing" | "returning";
 
+/** One-in-five surface packs field a champion. */
+export const CHAMPION_CHANCE = 0.2;
+
+export type ChampionModifier = "swift" | "brutal" | "stoneskin" | "volatile";
+
+export const CHAMPION_MODIFIERS: readonly ChampionModifier[] = [
+  "swift",
+  "brutal",
+  "stoneskin",
+  "volatile",
+];
+
+const MODIFIER_TITLES: Record<ChampionModifier, string> = {
+  swift: "Swift",
+  brutal: "Brutal",
+  stoneskin: "Stoneskin",
+  volatile: "Volatile",
+};
+
 export interface Monster {
   id: number;
   typeId: string;
@@ -248,6 +356,46 @@ export interface Monster {
   stunnedUntil: number;
   /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
   lastHitBy: PlayerId | null;
+  /** Champions lead a pack: beefed stats, a modifier, a guaranteed drop. */
+  rank?: "champion";
+  modifier?: ChampionModifier;
+}
+
+/**
+ * Promote a spawned monster to its pack's champion: shared beef (life x2.5,
+ * xp x3, a guaranteed magic-or-better drop) plus one modifier's signature.
+ * Applied after depth scaling, so the multipliers ride the banded stats.
+ */
+export function upgradeToChampion(m: Monster, modifier: ChampionModifier): void {
+  m.rank = "champion";
+  m.modifier = modifier;
+  m.maxLife = Math.round(m.maxLife * 2.5);
+  m.xp *= 3;
+  m.guaranteedDrop = true;
+  switch (modifier) {
+    case "swift":
+      m.speed *= 1.6;
+      m.swingEvery = Math.max(1, Math.round(m.swingEvery * 0.7));
+      break;
+    case "brutal":
+      m.dmgMin = Math.round(m.dmgMin * 1.6);
+      m.dmgMax = Math.round(m.dmgMax * 1.6);
+      break;
+    case "stoneskin":
+      m.defense *= 2;
+      m.maxLife = Math.round(m.maxLife * 1.4);
+      break;
+    case "volatile":
+      m.explode = { radius: 2.0, dmgMin: m.dmgMin * 2, dmgMax: m.dmgMax * 2 };
+      break;
+  }
+  m.life = m.maxLife;
+}
+
+/** Display name: champions carry their modifier as a title. */
+export function monsterDisplayName(m: Monster): string {
+  const base = MONSTER_TYPES[m.typeId]?.name ?? m.typeId;
+  return m.rank === "champion" && m.modifier ? `${MODIFIER_TITLES[m.modifier]} ${base}` : base;
 }
 
 export interface Corpse {

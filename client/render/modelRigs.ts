@@ -117,10 +117,15 @@ class AnimRig implements ModelRig {
     this.inst.mixer.update(dt);
   }
 
+  private attached: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };
+
   attach(slot: "r" | "l", obj: THREE.Object3D | null): void {
     const socket = slot === "r" ? this.inst.handSlotR : this.inst.handSlotL;
     if (!socket) return;
-    socket.clear();
+    // Remove only what we added: the sockets also hold the model's own skinned
+    // props (round shield, bundled axes) that equipment toggles by visibility.
+    this.attached[slot]?.removeFromParent();
+    this.attached[slot] = obj;
     if (!obj) return;
     // KayKit fits main-hand props yaw-flipped 180° in handslot.r (see the
     // bundled 1H_Axe/1H_Sword nodes); without this an axe head faces backward.

@@ -78,7 +78,6 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { ch: "F", x: 7.5, y: 30.5 },
       { ch: "S", x: 10.5, y: 30.5 },
       { ch: "W", x: 10.5, y: 35.5 },
-      { ch: ">", x: 58.5, y: 56.5 },
     ],
     exits: [{ edge: "E", at: 32, to: "redfen" }],
     bandCap: 2,

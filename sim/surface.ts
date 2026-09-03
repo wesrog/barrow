@@ -2,6 +2,7 @@
 // world positions back to region labels. Pure functions of the AREAS registry.
 
 import { AREAS, type AreaId } from "./areas";
+import { DUNGEONS, DUNGEON_ORDER, type DungeonId } from "./dungeons";
 import { inCamp, isWalkable, type MapMarker, type Vec, type ZoneMap } from "./map";
 import type { Rng } from "./rng";
 import { zoneDepth, type ZoneId } from "./state";
@@ -150,6 +151,22 @@ export function worldCampRect(id: AreaId): Rect {
   return { x0: s.x0 + o.x, y0: s.y0 + o.y, x1: s.x1 + o.x, y1: s.y1 + o.y };
 }
 
+/** A dungeon's mouth in world coordinates. */
+export function worldDungeonEntrance(id: DungeonId): Vec {
+  const d = DUNGEONS[id];
+  const o = surfaceLayout().offsets[d.area];
+  return { x: d.entrance.x + o.x, y: d.entrance.y + o.y };
+}
+
+/** Which dungeon's mouth sits at this world position, if any. */
+export function dungeonAtEntrance(pos: Vec): DungeonId | null {
+  for (const id of DUNGEON_ORDER) {
+    const at = worldDungeonEntrance(id);
+    if (Math.hypot(pos.x - at.x, pos.y - at.y) < 1) return id;
+  }
+  return null;
+}
+
 /** An area's arrival spawn in world coordinates. */
 export function worldAreaSpawn(id: AreaId): Vec {
   const o = surfaceLayout().offsets[id];
@@ -192,7 +209,14 @@ export function stitchSurface(rng: Rng): { map: ZoneMap; monsters: SurfaceMonste
   for (const id of AREA_ORDER) {
     const def = AREAS[id];
     const off = layout.offsets[id];
-    const region = areaZone(rng, def);
+    // Crypt mouths from the dungeon registry: carved and trailed like any
+    // fixed marker, so the wilds never strand an entrance unreachable.
+    const mouths: MapMarker[] = DUNGEON_ORDER.filter((d) => DUNGEONS[d].area === id).map((d) => ({
+      ch: ">",
+      x: DUNGEONS[d].entrance.x,
+      y: DUNGEONS[d].entrance.y,
+    }));
+    const region = areaZone(rng, def, mouths);
     for (let y = 0; y < def.height; y++) {
       for (let x = 0; x < def.width; x++) {
         cells[(y + off.y) * layout.width + (x + off.x)] = region.cells[y * def.width + x]!;

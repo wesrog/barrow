@@ -12,7 +12,9 @@ import {
   spawnMonster,
   upgradeToChampion,
 } from "./monsters";
-import { floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
+import { dungeonZoneId, floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
+import { DUNGEONS, type DungeonId } from "./dungeons";
+import { generateDungeonFloor } from "./dungeon-gen";
 import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
 import { surfaceLayout } from "./surface";
 import { NPCS, NPC_IDS } from "./npcs";
@@ -46,6 +48,30 @@ export function ensureFloor(state: GameState, n: number): ZoneState {
     if (typeId) spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, n);
   }
   spawnBreakables(state, zone, n);
+  return zone;
+}
+
+/** Get-or-generate one dungeon floor deterministically from the world rng. */
+export function ensureDungeonFloor(state: GameState, d: DungeonId, floor: number): ZoneState {
+  const id = dungeonZoneId(d, floor);
+  const existing = state.zones.get(id);
+  if (existing) return existing;
+  const def = DUNGEONS[d];
+  const level = def.levelBase + floor - 1;
+  const zone = makeZone(state, id, generateDungeonFloor(state.rng, def, floor));
+  for (const marker of zone.map.markers) {
+    const typeId = MARKER_TYPES[marker.ch];
+    if (typeId) {
+      spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, level);
+    } else if (marker.ch === "!") {
+      const boss = spawnMonster(state, zone, def.boss.typeId, { x: marker.x, y: marker.y }, level);
+      if (def.boss.modifier) upgradeToChampion(boss, def.boss.modifier);
+    } else if (marker.ch === "$") {
+      const bid = state.nextId++;
+      zone.breakables.set(bid, { id: bid, kind: "chest", pos: { x: marker.x, y: marker.y } });
+    }
+  }
+  spawnBreakables(state, zone, level);
   return zone;
 }
 

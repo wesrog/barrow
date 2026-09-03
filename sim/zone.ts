@@ -1,4 +1,5 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
+import { DUNGEONS } from "./dungeons";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
 import { NPCS, NPC_IDS } from "./npcs";
 import type { Rng } from "./rng";
@@ -89,7 +90,8 @@ export function exitMouth(def: AreaDef, e: AreaExit): { x: number; y: number } {
  * monster packs scatter over the open ground beyond. Regions without a fixed W
  * marker hide their waypoint at a seed-random spot deep in the wilds instead.
  */
-export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
+export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = []): ZoneMap {
+  const fixed = [...def.markers, ...extraMarkers];
   const { width: w, height: h } = def;
   const cells = new Uint8Array(w * h); // all wall until the landmass grows
   const idx = (x: number, y: number) => y * w + x;
@@ -118,7 +120,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   }
 
   // Crag/copse blobs: short random walks of wall, steering clear of the anchors.
-  const anchors = [def.spawn, ...def.markers];
+  const anchors = [def.spawn, ...fixed];
   const nearAnchor = (x: number, y: number) =>
     anchors.some((a) => Math.hypot(x - a.x, y - a.y) < 4);
   for (let b = 0; b < def.gen.blobs; b++) {
@@ -191,7 +193,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   const inSafe = (x: number, y: number) =>
     safe !== undefined && x >= safe.x0 && x < safe.x1 && y >= safe.y0 && y < safe.y1;
   const targets = [
-    ...def.markers
+    ...fixed
       .map((m) => ({ x: Math.floor(m.x), y: Math.floor(m.y) }))
       .filter((t) => !inSafe(t.x, t.y)),
     ...npcHomes
@@ -292,7 +294,7 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
   // Monster packs scattered over the open ground, never crowding safe ground
   // or an NPC's clearing. The scatter retries until the full pack budget is
   // placed, so clearings shift packs elsewhere — they never shrink the count.
-  const markers: MapMarker[] = def.markers.map((m) => ({ ...m }));
+  const markers: MapMarker[] = fixed.map((m) => ({ ...m }));
   const taken = new Set<number>();
   const nearNpcHome = (x: number, y: number) =>
     npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING);
@@ -353,5 +355,6 @@ export function areaZone(rng: Rng, def: AreaDef): ZoneMap {
 
 /** The moors above the barrow — the overworld row of the area registry. */
 export function overworldZone(rng: Rng): ZoneMap {
-  return areaZone(rng, AREAS.overworld);
+  const b = DUNGEONS.barrow;
+  return areaZone(rng, AREAS.overworld, [{ ch: ">", x: b.entrance.x, y: b.entrance.y }]);
 }

@@ -13,6 +13,8 @@ import {
 import { mapFromStrings, inCamp, isWalkable } from "./map";
 import { AREAS } from "./areas";
 import { createRng } from "./rng";
+import { DUNGEON_ORDER } from "./dungeons";
+import { dungeonAtEntrance, worldDungeonEntrance } from "./surface";
 import { player, soloGame } from "./test-helpers";
 import { resetRun, stepSolo } from "./tick";
 import { getZone } from "./state";
@@ -139,8 +141,9 @@ describe("stitchSurface", () => {
   });
 
   test("feature markers land at world offsets; monster markers are stripped", () => {
-    expect(map.markers.filter((m) => m.ch === ">").length).toBe(1);
-    expect(map.markers.find((m) => m.ch === ">")).toEqual({ ch: ">", x: 58.5, y: 69.5 });
+    // One crypt mouth per dungeon; the barrow's sits at its historic world spot.
+    expect(map.markers.filter((m) => m.ch === ">").length).toBe(DUNGEON_ORDER.length);
+    expect(map.markers).toContainEqual({ ch: ">", x: 58.5, y: 69.5 });
     expect(map.markers.filter((m) => m.ch === "W").length).toBe(6);
     expect(map.markers.some((m) => m.ch === "z" || m.ch === "h")).toBe(false);
   });
@@ -256,5 +259,28 @@ describe("region_entered", () => {
     stepSolo(state, {});
     expect(p.zoneId).toBe("floor:1");
     expect(p.region).toBe("overworld");
+  });
+});
+
+describe("dungeon entrances on the surface", () => {
+  test("every dungeon's '>' marker lands on the stitched map, walkable", () => {
+    const { map } = stitchSurface(createRng(11));
+    for (const id of DUNGEON_ORDER) {
+      const at = worldDungeonEntrance(id);
+      const m = map.markers.find(
+        (mk) => mk.ch === ">" && Math.hypot(mk.x - at.x, mk.y - at.y) < 0.01,
+      );
+      expect(m).toBeDefined();
+      expect(isWalkable(map, Math.floor(at.x), Math.floor(at.y))).toBe(true);
+    }
+    // Exactly one '>' per dungeon, no strays.
+    expect(map.markers.filter((mk) => mk.ch === ">").length).toBe(DUNGEON_ORDER.length);
+  });
+
+  test("dungeonAtEntrance resolves each entrance and nothing else", () => {
+    for (const id of DUNGEON_ORDER) {
+      expect(dungeonAtEntrance(worldDungeonEntrance(id))).toBe(id);
+    }
+    expect(dungeonAtEntrance({ x: 1.5, y: 1.5 })).toBe(null);
   });
 });

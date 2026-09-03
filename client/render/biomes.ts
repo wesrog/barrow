@@ -1,4 +1,5 @@
 import type { BiomeId } from "../../sim/areas";
+import type { DungeonStyleId } from "../../sim/dungeons";
 
 /** Everything the outdoor scene tints per region: sky, fog, ground, flora. */
 export interface BiomePalette {
@@ -92,5 +93,88 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x201c14,
     trunk: 0x282018,
     tuft: 0x3a3120,
+  },
+};
+
+/** Everything the underground scene tints per crypt style: sky, fog, stone, props. */
+export interface DungeonPalette {
+  bg: number;
+  fogNear: number;
+  fogFar: number;
+  ambient: number;
+  ambientIntensity: number;
+  /** Multiplied into the wall/floor piece materials; white leaves them as authored. */
+  wallTint: number;
+  floorTint: number;
+  /** Relative dressing weights; 0 disables that prop family. */
+  dressing: { coffins: number; bones: number; columns: number };
+}
+
+export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
+  // The barrow's original look: dead black, grey stone, coffins everywhere.
+  barrow_halls: {
+    bg: 0x0a0a0c,
+    fogNear: 20,
+    fogFar: 40,
+    ambient: 0x6a6a80,
+    ambientIntensity: 0.5,
+    wallTint: 0xffffff,
+    floorTint: 0xffffff,
+    dressing: { coffins: 3, bones: 2, columns: 2 },
+  },
+  // Warm rot-brown warrens, close air, root-choked: no coffins down here.
+  root_warren: {
+    bg: 0x120e08,
+    fogNear: 19,
+    fogFar: 37,
+    ambient: 0x9a8a62,
+    ambientIntensity: 0.6,
+    wallTint: 0xd8b48e,
+    floorTint: 0xc9b493,
+    dressing: { coffins: 0, bones: 2, columns: 0 },
+  },
+  // Cold grey-green ossuary light, bone everywhere, ranks of columns.
+  gallow_ossuary: {
+    bg: 0x0c1010,
+    fogNear: 21,
+    fogFar: 42,
+    ambient: 0x8ea399,
+    ambientIntensity: 0.55,
+    wallTint: 0xd2e0cc,
+    floorTint: 0xc4d2be,
+    dressing: { coffins: 1, bones: 5, columns: 3 },
+  },
+  // Raw slate gouges, thin ochre light, bare rock.
+  cragmaw_gouge: {
+    bg: 0x0e0d0b,
+    fogNear: 20,
+    fogFar: 40,
+    ambient: 0x9a9080,
+    ambientIntensity: 0.62,
+    wallTint: 0xd9cbb4,
+    floorTint: 0xccbfa8,
+    dressing: { coffins: 0, bones: 1, columns: 1 },
+  },
+  // Ember-lit scorched vaults, warm dark, cracked columns.
+  ember_catacomb: {
+    bg: 0x130b08,
+    fogNear: 19,
+    fogFar: 38,
+    ambient: 0xb07850,
+    ambientIntensity: 0.58,
+    wallTint: 0xe0b294,
+    floorTint: 0xd0a488,
+    dressing: { coffins: 1, bones: 2, columns: 3 },
+  },
+  // Violet-black cold halls, starlight seeping down.
+  violet_undercroft: {
+    bg: 0x0b0912,
+    fogNear: 21,
+    fogFar: 43,
+    ambient: 0x9484b4,
+    ambientIntensity: 0.56,
+    wallTint: 0xd0c4ec,
+    floorTint: 0xbfb4da,
+    dressing: { coffins: 2, bones: 1, columns: 4 },
   },
 };

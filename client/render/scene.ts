@@ -22,7 +22,8 @@ import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
-import { BIOME_PALETTES } from "./biomes";
+import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
+import type { DungeonStyleId } from "../../sim/dungeons";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
 import {
@@ -80,8 +81,11 @@ export function createScene(
   npcs: Npc[],
   onItemClick?: (id: number) => void,
   surface = false,
+  dungeonStyle?: DungeonStyleId,
 ): SceneHandle {
   const outdoor = surface;
+  // Underground, the crypt's style palette carries the whole atmosphere.
+  const dpal = outdoor ? null : DUNGEON_PALETTES[dungeonStyle ?? "barrow_halls"];
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -100,11 +104,11 @@ export function createScene(
   // Outdoors the sky starts on the spawn region's palette and the per-frame
   // blend (below) corrects to wherever the hero actually stands.
   const startPal = outdoor ? BIOME_PALETTES[AREAS[areaAt(map.spawn)].biome] : null;
-  const bg = startPal ? startPal.bg : 0x0a0a0c;
+  const bg = startPal ? startPal.bg : dpal!.bg;
   scene.background = new THREE.Color(bg);
   scene.fog = startPal
     ? new THREE.Fog(bg, startPal.fogNear, startPal.fogFar)
-    : new THREE.Fog(bg, 20, 40);
+    : new THREE.Fog(bg, dpal!.fogNear, dpal!.fogFar);
   const fx = new Effects(scene);
 
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
@@ -127,7 +131,7 @@ export function createScene(
   // --- Lights ---
   const ambient = startPal
     ? new THREE.AmbientLight(startPal.ambient, startPal.ambientIntensity)
-    : new THREE.AmbientLight(0x6a6a80, 0.5);
+    : new THREE.AmbientLight(dpal!.ambient, dpal!.ambientIntensity);
   scene.add(ambient);
   const moon = new THREE.DirectionalLight(0xb8c4e0, outdoor ? 1.3 : 1.1);
   moon.position.set(18, 30, 8);
@@ -232,6 +236,17 @@ export function createScene(
     env.add(clone);
     return clone;
   };
+  /** Multiply a piece's materials by the style tint; white is a no-op. */
+  const tintPiece = (clone: THREE.Group, tint: number): void => {
+    if (tint === 0xffffff) return;
+    const t = new THREE.Color(tint);
+    clone.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material = obj.material.clone();
+        obj.material.color.multiply(t);
+      }
+    });
+  };
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
@@ -251,16 +266,19 @@ export function createScene(
           const roll = h % 23;
           const floorPiece =
             roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
-          placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE);
+          tintPiece(
+            placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE),
+            dpal!.floorTint,
+          );
         } else {
           // Brick facades on every edge that faces open floor
           const wallRoll = h % 10;
           const piece =
             wallRoll < 7 ? assets.dungeon.wall : wallRoll < 9 ? assets.dungeon.wall_cracked : assets.dungeon.wall_broken;
-          if (isWalkable(map, x, y + 1)) placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE);
-          if (isWalkable(map, x, y - 1)) placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE);
-          if (isWalkable(map, x + 1, y)) placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE);
-          if (isWalkable(map, x - 1, y)) placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE);
+          if (isWalkable(map, x, y + 1)) tintPiece(placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE), dpal!.wallTint);
+          if (isWalkable(map, x, y - 1)) tintPiece(placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE), dpal!.wallTint);
+          if (isWalkable(map, x + 1, y)) tintPiece(placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE), dpal!.wallTint);
+          if (isWalkable(map, x - 1, y)) tintPiece(placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE), dpal!.wallTint);
         }
       }
     }
@@ -331,16 +349,22 @@ export function createScene(
         const h = hash(x, y);
         const jx = x + 0.5 + ((h >> 9) % 5 - 2) * 0.06;
         const jz = y + 0.5 + ((h >> 12) % 5 - 2) * 0.06;
-        if (h % 23 === 3) {
+        // One in ~12 wall-hugging cells gets a prop; the style's weights pick
+        // which family, so warrens read rooty-bare and ossuaries read bone-choked.
+        const w = dpal!.dressing;
+        const total = w.coffins + w.bones + w.columns;
+        if (total === 0 || h % 12 !== 3) continue;
+        const roll = (h >> 4) % total;
+        if (roll < w.coffins) {
           const coffin = makeCoffin(h);
           coffin.position.set(jx, 0, jz);
           coffin.rotation.y = ((h >> 4) % 4) * (Math.PI / 2) + ((h >> 7) % 20 - 10) * 0.02;
           scene.add(coffin);
-        } else if (h % 29 === 5) {
+        } else if (roll < w.coffins + w.bones) {
           const bones = makeBonePile(h);
           bones.position.set(jx, 0, jz);
           scene.add(bones);
-        } else if (h % 61 === 7) {
+        } else {
           placePiece(assets.dungeon.column, x + 0.5, y + 0.5, ((h >> 5) % 4) * (Math.PI / 2), {
             x: 0.3,
             y: 0.34,

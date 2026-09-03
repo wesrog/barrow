@@ -1,7 +1,8 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
-import { zoneFloor, zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { zoneDungeon, zoneFloor, zoneOf, type GameState, type PlayerInput, type ZoneId } from "../sim/state";
+import { DUNGEONS, type DungeonStyleId } from "../sim/dungeons";
 import { areaAt, locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
 import { AREAS } from "../sim/areas";
 import { localId, localPlayer, setLocalId } from "./local";
@@ -37,6 +38,12 @@ import { ZoneIntro, type ZoneIntroMsg } from "./ui/ZoneIntro";
 import { Reveal } from "./ui/Reveal";
 
 const TICK_MS = 1000 / TICK_RATE;
+
+/** The crypt style rendered for a zone; undefined on the surface. */
+function dungeonStyleOf(zoneId: ZoneId): DungeonStyleId | undefined {
+  const d = zoneDungeon(zoneId);
+  return d === null ? undefined : DUNGEONS[d].style;
+}
 
 let nextToastId = 1;
 let nextIntroSeq = 1;
@@ -135,6 +142,7 @@ function Game({
         [...zoneOf(game, localPlayer(game)).npcs.values()],
         onItemClick,
         localPlayer(game).zoneId === "surface",
+        dungeonStyleOf(localPlayer(game).zoneId),
       );
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
@@ -653,6 +661,7 @@ function Game({
           [...zoneOf(game, localPlayer(game)).npcs.values()],
           onItemClick,
           localPlayer(game).zoneId === "surface",
+          dungeonStyleOf(localPlayer(game).zoneId),
         );
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
@@ -664,7 +673,7 @@ function Game({
       // Ambient bed for the ground underfoot, and the combat-aware music
       // layer. Both start with the same user-gesture unlock as the SFX.
       const me2 = localPlayer(game);
-      setAmbience(me2.zoneId === "surface" ? AREAS[areaAt(me2.pos)].biome : "crypt");
+      setAmbience(me2.zoneId === "surface" ? AREAS[areaAt(me2.pos)].biome : DUNGEONS[zoneDungeon(me2.zoneId)!].style);
       let hunted = false;
       for (const m of zoneOf(game, me2).monsters.values()) {
         if (

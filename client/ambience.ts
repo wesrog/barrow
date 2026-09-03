@@ -7,9 +7,10 @@
  */
 
 import type { BiomeId } from "../sim/areas";
+import type { DungeonStyleId } from "../sim/dungeons";
 import { audioBus, isAmbienceMuted } from "./audio";
 
-export type AmbienceBed = BiomeId | "crypt";
+export type AmbienceBed = BiomeId | DungeonStyleId;
 
 const CROSSFADE_S = 2;
 const BED_GAIN = 0.11; // well under the SFX master level
@@ -70,11 +71,46 @@ const BEDS: Record<AmbienceBed, BedSpec> = {
       { freq: 82.5, type: "sine", gain: 0.05 },
     ],
   },
-  // The crypt: dead air and patient drips.
-  crypt: {
+  // The barrow's halls: dead air and patient drips.
+  barrow_halls: {
     noise: { type: "lowpass", freq: 180, gain: 0.5, lfoRate: 0.03, lfoDepth: 40 },
     drones: [{ freq: 46, type: "sine", gain: 0.16 }],
     blips: { minGapMs: 3000, maxGapMs: 11000, from: 1100, to: 700, dur: 0.09, gain: 0.09 },
+  },
+  // The root warren: close wet earth, faster drips through the peat.
+  root_warren: {
+    noise: { type: "bandpass", freq: 240, q: 1.2, gain: 0.46, lfoRate: 0.08, lfoDepth: 70 },
+    drones: [{ freq: 52, type: "sine", gain: 0.15 }],
+    blips: { minGapMs: 1400, maxGapMs: 5000, from: 900, to: 500, dur: 0.11, gain: 0.1 },
+  },
+  // The ossuary: bone-dry stillness, rare hollow knocks.
+  gallow_ossuary: {
+    noise: { type: "lowpass", freq: 150, gain: 0.44, lfoRate: 0.03, lfoDepth: 30 },
+    drones: [
+      { freq: 44, type: "sine", gain: 0.15 },
+      { freq: 88, type: "sine", gain: 0.04 },
+    ],
+    blips: { minGapMs: 6000, maxGapMs: 18000, from: 600, to: 350, dur: 0.07, gain: 0.08 },
+  },
+  // The gouge: dry stone rumble, thin air whistling through cracks.
+  cragmaw_gouge: {
+    noise: { type: "lowpass", freq: 120, gain: 0.58, lfoRate: 0.04, lfoDepth: 45 },
+    drones: [{ freq: 39, type: "sine", gain: 0.18 }],
+  },
+  // The catacomb: warm smolder below, ember pops echoing off the vaults.
+  ember_catacomb: {
+    noise: { type: "lowpass", freq: 260, gain: 0.44, lfoRate: 0.07, lfoDepth: 100 },
+    drones: [{ freq: 50, type: "sine", gain: 0.16 }],
+    blips: { minGapMs: 500, maxGapMs: 2400, from: 2800, to: 1200, dur: 0.04, gain: 0.05 },
+  },
+  // The undercroft: cold shimmer seeping down from the crown.
+  violet_undercroft: {
+    noise: { type: "bandpass", freq: 1050, q: 5, gain: 0.15, lfoRate: 0.1, lfoDepth: 220 },
+    drones: [
+      { freq: 47, type: "sine", gain: 0.13 },
+      { freq: 70.5, type: "sine", gain: 0.05 },
+    ],
+    blips: { minGapMs: 5000, maxGapMs: 15000, from: 1400, to: 900, dur: 0.09, gain: 0.07 },
   },
 };
 

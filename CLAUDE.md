@@ -23,7 +23,8 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 
 ## Layout
 
-- `sim/` — rng, state, tick, systems/ (movement, ai, combat, death, xp),
+- `sim/` — rng, state, tick, dungeons (registry), dungeon-gen (floor generator),
+  systems/ (movement, ai, combat, death, xp),
   items/ (bases, affixes, treasure, generate), character, skills, map
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)

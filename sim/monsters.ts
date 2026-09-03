@@ -297,6 +297,25 @@ export function scaledMonsterStats(t: MonsterType, depth: number): MonsterType {
 
 export type MonsterAi = "idle" | "chasing" | "returning";
 
+/** One-in-five surface packs field a champion. */
+export const CHAMPION_CHANCE = 0.2;
+
+export type ChampionModifier = "swift" | "brutal" | "stoneskin" | "volatile";
+
+export const CHAMPION_MODIFIERS: readonly ChampionModifier[] = [
+  "swift",
+  "brutal",
+  "stoneskin",
+  "volatile",
+];
+
+const MODIFIER_TITLES: Record<ChampionModifier, string> = {
+  swift: "Swift",
+  brutal: "Brutal",
+  stoneskin: "Stoneskin",
+  volatile: "Volatile",
+};
+
 export interface Monster {
   id: number;
   typeId: string;
@@ -337,6 +356,46 @@ export interface Monster {
   stunnedUntil: number;
   /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
   lastHitBy: PlayerId | null;
+  /** Champions lead a pack: beefed stats, a modifier, a guaranteed drop. */
+  rank?: "champion";
+  modifier?: ChampionModifier;
+}
+
+/**
+ * Promote a spawned monster to its pack's champion: shared beef (life x2.5,
+ * xp x3, a guaranteed magic-or-better drop) plus one modifier's signature.
+ * Applied after depth scaling, so the multipliers ride the banded stats.
+ */
+export function upgradeToChampion(m: Monster, modifier: ChampionModifier): void {
+  m.rank = "champion";
+  m.modifier = modifier;
+  m.maxLife = Math.round(m.maxLife * 2.5);
+  m.xp *= 3;
+  m.guaranteedDrop = true;
+  switch (modifier) {
+    case "swift":
+      m.speed *= 1.6;
+      m.swingEvery = Math.max(1, Math.round(m.swingEvery * 0.7));
+      break;
+    case "brutal":
+      m.dmgMin = Math.round(m.dmgMin * 1.6);
+      m.dmgMax = Math.round(m.dmgMax * 1.6);
+      break;
+    case "stoneskin":
+      m.defense *= 2;
+      m.maxLife = Math.round(m.maxLife * 1.4);
+      break;
+    case "volatile":
+      m.explode = { radius: 2.0, dmgMin: m.dmgMin * 2, dmgMax: m.dmgMax * 2 };
+      break;
+  }
+  m.life = m.maxLife;
+}
+
+/** Display name: champions carry their modifier as a title. */
+export function monsterDisplayName(m: Monster): string {
+  const base = MONSTER_TYPES[m.typeId]?.name ?? m.typeId;
+  return m.rank === "champion" && m.modifier ? `${MODIFIER_TITLES[m.modifier]} ${base}` : base;
 }
 
 export interface Corpse {

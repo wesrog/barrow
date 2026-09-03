@@ -6,7 +6,12 @@ import { AREAS } from "./areas";
 import { spawnBreakables } from "./breakables";
 import type { ZoneMap } from "./map";
 import { nearestWalkable } from "./map";
-import { spawnMonster } from "./monsters";
+import {
+  CHAMPION_CHANCE,
+  CHAMPION_MODIFIERS,
+  spawnMonster,
+  upgradeToChampion,
+} from "./monsters";
 import { floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
 import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
 import { surfaceLayout } from "./surface";
@@ -50,7 +55,14 @@ export function ensureSurface(state: GameState): ZoneState {
   if (existing) return existing;
   const { map, monsters } = stitchSurface(state.rng);
   const zone = makeZone(state, "surface", map);
-  for (const s of monsters) spawnMonster(state, zone, s.typeId, s.pos, s.level);
+  // Champion rolls draw from the world rng in spawn order — a stable sequence,
+  // so every peer promotes the identical monsters (the determinism contract).
+  for (const s of monsters) {
+    const m = spawnMonster(state, zone, s.typeId, s.pos, s.level);
+    if (state.rng.next() < CHAMPION_CHANCE) {
+      upgradeToChampion(m, CHAMPION_MODIFIERS[state.rng.int(0, CHAMPION_MODIFIERS.length - 1)]!);
+    }
+  }
   for (const id of AREA_ORDER) {
     spawnBreakables(state, zone, AREAS[id].areaLevel, {
       bounds: areaRect(id),

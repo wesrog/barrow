@@ -122,6 +122,8 @@ describe("npc wander", () => {
     expect(moved).toBe(true);
   });
 
+  // A minute of the full world at 25 Hz — give the soak room beyond the 5s default
+  // (CI machines run it ~4x slower than a laptop).
   test("a wandering npc stays near home and on walkable ground", () => {
     const state = soloGame(9);
     const surface = getZone(state, "surface");
@@ -133,7 +135,7 @@ describe("npc wander", () => {
         .toBeLessThanOrEqual(maxDist);
       expect(isWalkable(surface.map, Math.floor(betha.pos.x), Math.floor(betha.pos.y))).toBe(true);
     }
-  });
+  }, 30_000);
 
   test("an npc holds still while a player stands close", () => {
     const state = soloGame(3);

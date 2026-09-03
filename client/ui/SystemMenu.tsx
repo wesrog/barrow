@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
-import { isMuted, setMuted } from "../audio";
+import { isAmbienceMuted, isMuted, setAmbienceMuted, setMuted } from "../audio";
 import { PanelChrome } from "./PanelChrome";
 
 const panelStyle: CSSProperties = {
@@ -49,6 +49,7 @@ function MenuRow({ label, color = "#e8dcc0", onClick }: { label: string; color?:
 /** The escape menu: resume, mute, or head back to the lobby. */
 export function SystemMenu({ onResume, onLeave }: { onResume: () => void; onLeave: () => void }) {
   const [muted, setMutedState] = useState(isMuted);
+  const [musicMuted, setMusicMutedState] = useState(isAmbienceMuted);
   return (
     <div style={panelStyle}>
       <PanelChrome title="system" onClose={onResume} />
@@ -58,6 +59,13 @@ export function SystemMenu({ onResume, onLeave }: { onResume: () => void; onLeav
         onClick={() => {
           setMuted(!muted);
           setMutedState(!muted);
+        }}
+      />
+      <MenuRow
+        label={musicMuted ? "music: off" : "music: on"}
+        onClick={() => {
+          setAmbienceMuted(!musicMuted);
+          setMusicMutedState(!musicMuted);
         }}
       />
       <MenuRow label="leave game" color="#e07070" onClick={onLeave} />

@@ -123,17 +123,26 @@ interface ActiveBed {
 let active: ActiveBed | null = null;
 let ambienceGate: GainNode | null = null; // the ambience/music toggle's switch
 
-function loopedNoiseBuffer(c: AudioContext, seconds: number): AudioBuffer {
-  const buf = c.createBuffer(1, Math.ceil(c.sampleRate * seconds), c.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  // Soften the seam so the loop doesn't click.
+/**
+ * Fill `data` with white noise that loops seamlessly: the head is an
+ * equal-power crossfade between fresh noise and the samples past the loop
+ * point, so the seam neither clicks nor dips in loudness. (A fade to silence
+ * at the seam reads as a rhythmic chop at the loop period.)
+ */
+export function fillLoopedNoise(data: Float32Array): void {
   const fade = Math.min(2000, data.length >> 2);
+  const tail = new Float32Array(fade);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < fade; i++) tail[i] = Math.random() * 2 - 1;
   for (let i = 0; i < fade; i++) {
     const k = i / fade;
-    data[i]! *= k;
-    data[data.length - 1 - i]! *= k;
+    data[i] = data[i]! * Math.sqrt(k) + tail[i]! * Math.sqrt(1 - k);
   }
+}
+
+function loopedNoiseBuffer(c: AudioContext, seconds: number): AudioBuffer {
+  const buf = c.createBuffer(1, Math.ceil(c.sampleRate * seconds), c.sampleRate);
+  fillLoopedNoise(buf.getChannelData(0));
   return buf;
 }
 

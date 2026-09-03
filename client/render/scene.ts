@@ -1830,6 +1830,10 @@ export function createScene(
             // The leap's own motion spike must not cancel its jump clip.
             caster?.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6); // takeoff kick-up
+          } else if (event.skill === "charge") {
+            // The rush itself renders as running; just kick up dust at the start line.
+            fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6);
+            shake(0.06);
           } else if (event.skill === "crush") {
             caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
             shake(0.12);
@@ -1878,6 +1882,12 @@ export function createScene(
             fx.burst(to.x, 0.15, to.y, 0xb08ad1, 10, 2.0);
             shake(0.1);
           }
+          break;
+        }
+        case "charge_hit": {
+          heroOf(event.playerId)?.rig.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.6 });
+          fx.burst(event.pos.x, 0.3, event.pos.y, 0xd9dde8, 10, 2.2);
+          if (event.playerId === localId()) fx.shake(0.14);
           break;
         }
         case "leap_land": {

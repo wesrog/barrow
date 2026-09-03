@@ -440,6 +440,9 @@ function Game({
             case "monster_windup":
               play("windup");
               break;
+            case "monster_aggro":
+              play("aggro", e.typeId);
+              break;
             case "monster_died":
               play("die", e.typeId);
               break;
@@ -451,6 +454,12 @@ function Game({
               break;
             case "item_picked":
               play("pickup");
+              break;
+            case "item_equipped":
+              play("equip");
+              break;
+            case "item_unequipped":
+              play("unequip");
               break;
             case "potion_drunk":
               scene.addDamageNumber(
@@ -579,12 +588,16 @@ function Game({
             case "leap_land":
               play("leapland");
               break;
+            case "charge_hit":
+              play("crush");
+              break;
             case "skill_cast":
               if (e.skill === "warcry") {
                 scene.addDamageNumber(localPlayer(game).pos, "warcry!", "#9ad1f5");
                 play("warcry");
               } else if (e.skill === "cleave") play("cleave");
               else if (e.skill === "crush") play("crush");
+              else if (e.skill === "charge") play("leap");
               else if (e.skill === "leap") play("leap");
               else if (e.skill === "stomp") play("leapland");
               else if (e.skill === "deathblow") play("crush");

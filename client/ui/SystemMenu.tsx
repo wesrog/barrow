@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import { isAmbienceMuted, isMuted, setAmbienceMuted, setMuted } from "../audio";
+import { MUSIC_VARIANTS, getMusicVariant, setMusicVariant } from "../music";
 import { PanelChrome } from "./PanelChrome";
 
 const panelStyle: CSSProperties = {
@@ -50,6 +51,7 @@ function MenuRow({ label, color = "#e8dcc0", onClick }: { label: string; color?:
 export function SystemMenu({ onResume, onLeave }: { onResume: () => void; onLeave: () => void }) {
   const [muted, setMutedState] = useState(isMuted);
   const [musicMuted, setMusicMutedState] = useState(isAmbienceMuted);
+  const [musicVariant, setMusicVariantState] = useState(getMusicVariant);
   return (
     <div style={panelStyle}>
       <PanelChrome title="system" onClose={onResume} />
@@ -68,6 +70,17 @@ export function SystemMenu({ onResume, onLeave }: { onResume: () => void; onLeav
           setMusicMutedState(!musicMuted);
         }}
       />
+      {!musicMuted && (
+        <MenuRow
+          label={`style: ${MUSIC_VARIANTS.find((v) => v.id === musicVariant)?.label}`}
+          onClick={() => {
+            const i = MUSIC_VARIANTS.findIndex((v) => v.id === musicVariant);
+            const next = MUSIC_VARIANTS[(i + 1) % MUSIC_VARIANTS.length]!.id;
+            setMusicVariant(next);
+            setMusicVariantState(next);
+          }}
+        />
+      )}
       <MenuRow label="leave game" color="#e07070" onClick={onLeave} />
     </div>
   );

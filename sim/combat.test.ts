@@ -349,7 +349,9 @@ describe("contact frames", () => {
     for (let i = 0; i < 120 && hurtTick === -1; i++) {
       stepSolo(game, {});
       for (const e of game.events) {
-        if (e.type === "monster_swing" && swingTick === -1) swingTick = game.tick;
+        // Track the latest swing before the hit: an earlier swing may whiff its
+        // to-hit roll, and the contact frame trails the swing that connects.
+        if (e.type === "monster_swing" && hurtTick === -1) swingTick = game.tick;
         if (e.type === "player_hit" && hurtTick === -1) hurtTick = game.tick;
       }
     }

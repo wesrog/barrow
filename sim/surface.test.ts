@@ -19,7 +19,14 @@ import { getZone } from "./state";
 
 describe("surfaceLayout", () => {
   test("registry order drives iteration", () => {
-    expect(AREA_ORDER).toEqual(["overworld", "redfen", "gallowmire", "cragmaw"]);
+    expect(AREA_ORDER).toEqual([
+      "overworld",
+      "redfen",
+      "gallowmire",
+      "cragmaw",
+      "ashfell",
+      "hollowcrown",
+    ]);
   });
 
   test("current registry stitches to the expected offsets and bounds", () => {
@@ -28,7 +35,9 @@ describe("surfaceLayout", () => {
     expect(layout.offsets.redfen).toEqual({ x: 64, y: 16 });
     expect(layout.offsets.gallowmire).toEqual({ x: 144, y: 0 });
     expect(layout.offsets.cragmaw).toEqual({ x: 200, y: 12 });
-    expect(layout.width).toBe(272);
+    expect(layout.offsets.ashfell).toEqual({ x: 272, y: 12 });
+    expect(layout.offsets.hollowcrown).toEqual({ x: 352, y: 12 });
+    expect(layout.width).toBe(424);
     expect(layout.height).toBe(88);
   });
 
@@ -96,7 +105,7 @@ describe("stitchSurface", () => {
   const { map, monsters } = stitchSurface(createRng(7));
 
   test("bounds and spawn", () => {
-    expect(map.width).toBe(272);
+    expect(map.width).toBe(424);
     expect(map.height).toBe(88);
     expect(map.spawn).toEqual({ x: 7.5, y: 45.5 });
     expect(map.camps.length).toBe(1); // only the moors camp — the wilds are hostile
@@ -132,7 +141,7 @@ describe("stitchSurface", () => {
   test("feature markers land at world offsets; monster markers are stripped", () => {
     expect(map.markers.filter((m) => m.ch === ">").length).toBe(1);
     expect(map.markers.find((m) => m.ch === ">")).toEqual({ ch: ">", x: 58.5, y: 69.5 });
-    expect(map.markers.filter((m) => m.ch === "W").length).toBe(4);
+    expect(map.markers.filter((m) => m.ch === "W").length).toBe(6);
     expect(map.markers.some((m) => m.ch === "z" || m.ch === "h")).toBe(false);
   });
 

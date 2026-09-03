@@ -100,7 +100,7 @@ function exitMouths(id: AreaId): { x: number; y: number }[] {
   );
 }
 
-const OUTPOSTS: AreaId[] = ["redfen", "gallowmire", "cragmaw"];
+const OUTPOSTS: AreaId[] = ["redfen", "gallowmire", "cragmaw", "ashfell", "hollowcrown"];
 
 describe("hidden waypoints", () => {
   test("every region rolls exactly one pad, on walkable ground in its own rect", () => {

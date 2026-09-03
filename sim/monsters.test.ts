@@ -212,3 +212,76 @@ describe("fen and crag monsters", () => {
     expect(ids.has("bog_maw")).toBe(true);
   });
 });
+
+describe("ash and hollow monsters", () => {
+  test("the new rows exist with their signature behaviors", () => {
+    // A fast fragile skirmisher, telegraphed mid hitters, a walking bomb,
+    // a long-range shrieker, and an armored elite at the summit.
+    expect(MONSTER_TYPES.cinder_shade!.speed).toBeGreaterThan(MONSTER_TYPES.fen_howler!.speed);
+    expect(MONSTER_TYPES.ash_revenant!.windup).toBeGreaterThan(0);
+    expect(MONSTER_TYPES.ember_hulk!.explode!.radius).toBeGreaterThan(0);
+    expect(MONSTER_TYPES.veil_screamer!.ranged).toBeGreaterThan(0);
+    expect(MONSTER_TYPES.crown_sentinel!.windup).toBeGreaterThan(0);
+    expect(MONSTER_TYPES.crown_sentinel!.defense).toBeGreaterThan(MONSTER_TYPES.cairn_wight!.defense);
+    // The ladder keeps climbing past the crag so loot keeps unlocking.
+    expect(MONSTER_TYPES.cinder_shade!.mlvl).toBeGreaterThan(MONSTER_TYPES.cairn_wight!.mlvl);
+    expect(MONSTER_TYPES.crown_sentinel!.mlvl).toBeGreaterThan(MONSTER_TYPES.veil_screamer!.mlvl);
+  });
+
+  test("their marker chars populate zones", () => {
+    expect(MARKER_TYPES.c).toBe("cinder_shade");
+    expect(MARKER_TYPES.a).toBe("ash_revenant");
+    expect(MARKER_TYPES.k).toBe("ember_hulk");
+    expect(MARKER_TYPES.v).toBe("veil_screamer");
+    expect(MARKER_TYPES.n).toBe("crown_sentinel");
+  });
+
+  test("the ashfell burns with ash monsters", () => {
+    const g = soloGame(1);
+    const rect = areaRect("ashfell");
+    const ids = new Set(
+      [...getZone(g, "surface").monsters.values()]
+        .filter((mo) => inRect(rect, mo.pos))
+        .map((mo) => mo.typeId),
+    );
+    expect(ids.has("cinder_shade")).toBe(true);
+    expect(ids.has("ember_hulk")).toBe(true);
+  });
+
+  test("the hollowcrown skews hardest", () => {
+    const g = soloGame(1);
+    const rect = areaRect("hollowcrown");
+    const ids = new Set(
+      [...getZone(g, "surface").monsters.values()]
+        .filter((mo) => inRect(rect, mo.pos))
+        .map((mo) => mo.typeId),
+    );
+    expect(ids.has("veil_screamer")).toBe(true);
+    expect(ids.has("crown_sentinel")).toBe(true);
+  });
+
+  test("veil screamer attacks from range without closing to melee", () => {
+    const state = createGameOn(5, openArena());
+    const m = spawnAt(state, "veil_screamer", { x: 6.5, y: 1.5 });
+    let hurt = false;
+    for (let i = 0; i < 200 && !hurt; i++) {
+      stepSolo(state, {});
+      if (state.events.some((e) => e.type === "player_hit")) hurt = true;
+    }
+    expect(hurt).toBe(true);
+    expect(
+      Math.hypot(m.pos.x - player(state).pos.x, m.pos.y - player(state).pos.y),
+    ).toBeGreaterThan(2);
+  });
+
+  test("ember hulk detonates on death, hurting the player", () => {
+    const state = createGameOn(5, openArena());
+    player(state).pos = { x: 2.5, y: 1.5 };
+    const hulk = spawnAt(state, "ember_hulk", { x: 3.4, y: 1.5 });
+    const lifeBefore = player(state).life;
+    hulk.life = 0;
+    stepSolo(state, {});
+    expect(state.events.some((e) => e.type === "exploded")).toBe(true);
+    expect(player(state).life).toBeLessThan(lifeBefore);
+  });
+});

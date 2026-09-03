@@ -25,6 +25,7 @@ export function objectiveText(q: QuestDef): string {
           : o.zone === "surface"
             ? " on the surface"
             : ` in ${DUNGEONS[zoneDungeon(o.zone)!].name}`;
+      if (o.champion) return `Slay the champion ${monsterPlural(o.typeId, 1)}${where}`;
       return `Slay ${o.count === 1 ? "" : `${o.count} `}${monsterPlural(o.typeId, o.count)}${where}`;
     }
     case "collect":

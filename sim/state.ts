@@ -193,6 +193,7 @@ export type SimEvent =
       mlvl: number;
       zone: ZoneId;
       killer: PlayerId | null;
+      champion: boolean;
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
   | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }

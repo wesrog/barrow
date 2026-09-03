@@ -419,6 +419,7 @@ export function deathSystem(
       mlvl: m.mlvl,
       zone: zone.id,
       killer: m.lastHitBy,
+      champion: m.rank === "champion",
     });
     const biasClass = m.lastHitBy !== null ? state.players.get(m.lastHitBy)?.klass : undefined;
     const item = rollDrop(state.rng, m.tc, m.mlvl, {

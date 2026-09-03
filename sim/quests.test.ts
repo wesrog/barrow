@@ -378,3 +378,34 @@ describe("save round-trip", () => {
     expect(p2.equipment.shield).toBeNull();
   });
 });
+
+describe("champion-kill quests", () => {
+  test("champion-kill objectives ignore ordinary kills of the same type", () => {
+    const state = createGame(1);
+    const p = joinPlayer(state, { id: 0 });
+    p.quests.fen_hollow_depths = { stage: "active", count: 0 };
+    travel(state, p, "dungeon:fen_hollow:2");
+    const zone = getZone(state, "dungeon:fen_hollow:2");
+    // A plain bog_maw dies: no credit.
+    const plain = spawnMonster(state, zone, "bog_maw", { x: p.pos.x + 1, y: p.pos.y }, 5);
+    plain.lastHitBy = 0;
+    plain.life = 0;
+    stepSolo(state, {});
+    expect(p.quests.fen_hollow_depths.count).toBe(0);
+    // The champion falls: credit.
+    const boss = [...zone.monsters.values()].find(
+      (m) => m.typeId === "bog_maw" && m.rank === "champion",
+    )!;
+    boss.lastHitBy = 0;
+    boss.life = 0;
+    stepSolo(state, {});
+    expect(p.quests.fen_hollow_depths.count).toBe(1);
+  });
+
+  test("the new quests chain off the existing lines", () => {
+    expect(QUESTS.fen_hollow_depths.requires).toBe("fen_hearts");
+    expect(QUESTS.fen_hollow_depths.giver).toBe("betha");
+    expect(QUESTS.gallow_vault_debt.requires).toBe("soldiers_due");
+    expect(QUESTS.gallow_vault_debt.giver).toBe("corvin");
+  });
+});

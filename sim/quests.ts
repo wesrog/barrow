@@ -9,10 +9,11 @@ import { NPCS } from "./npcs";
 export type QuestId =
   | "moor_wights" | "grave_moss" | "find_redfen"
   | "meet_betha" | "howler_cull" | "fen_hearts"
+  | "fen_hollow_depths" | "gallow_vault_debt"
   | "soldiers_due" | "descend_barrow" | "barrow_lord";
 
 export type QuestObjective =
-  | { kind: "kill"; typeId: string; count: number; zone?: ZoneId }
+  | { kind: "kill"; typeId: string; count: number; zone?: ZoneId; champion?: true }
   | { kind: "collect"; itemBaseId: string; count: number; dropFrom: string; chance: number }
   | { kind: "reach"; area?: AreaId; dungeon?: DungeonId; floor?: number }
   | { kind: "talk"; npc: NpcId };
@@ -108,6 +109,34 @@ export const QUESTS: Record<QuestId, QuestDef> = {
       ],
     },
     reward: { gold: 250, xp: 280 },
+  },
+  fen_hollow_depths: {
+    id: "fen_hollow_depths", giver: "betha", turnIn: "betha", name: "The Hollow Under the Fen",
+    requires: "fen_hearts",
+    objective: { kind: "kill", typeId: "bog_maw", count: 1, zone: dungeonZoneId("fen_hollow", 2), champion: true },
+    dialogue: {
+      offer: [
+        "There's a hollow under the fen where the maws grow fat and old.",
+        "The eldest of them has been dragging travelers down its throat for years. End it.",
+      ],
+      progress: ["The old maw still gurgles down there. I can hear it through the peat."],
+      done: ["So the hollow's gone quiet. Good riddance — take this for the smell alone."],
+    },
+    reward: { gold: 300, xp: 350, item: { baseId: "hatchet", rarity: "rare" } },
+  },
+  gallow_vault_debt: {
+    id: "gallow_vault_debt", giver: "corvin", turnIn: "corvin", name: "What the Vault Keeps",
+    requires: "soldiers_due",
+    objective: { kind: "kill", typeId: "cairn_wight", count: 1, zone: dungeonZoneId("gallow_vault", 3), champion: true },
+    dialogue: {
+      offer: [
+        "They buried the Ninth's paymaster in the vault under the mire, coin and all.",
+        "He's still down there, still counting. Settle his ledger.",
+      ],
+      progress: ["Three floors of bone between you and the paymaster. Keep digging."],
+      done: ["The ledger's closed. The Ninth rests a little easier — and so do I."],
+    },
+    reward: { gold: 400, xp: 450 },
   },
   soldiers_due: {
     id: "soldiers_due", giver: "corvin", turnIn: "corvin", name: "What's Owed the Ninth",

@@ -188,6 +188,7 @@ export function questProgressSystem(state: GameState): void {
           if (!prog || prog.stage !== "active" || o.kind !== "kill") continue;
           if (o.typeId !== e.typeId) continue;
           if (o.zone !== undefined && o.zone !== e.zone) continue;
+          if (o.champion && !e.champion) continue;
           bump(p, id, Math.min(o.count, prog.count + 1), o.count);
         }
       }

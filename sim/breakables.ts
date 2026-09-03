@@ -1,13 +1,17 @@
-import { isWalkable, type Vec } from "./map";
+import { isWalkable, type Vec, type ZoneMap } from "./map";
+import { DUNGEONS } from "./dungeons";
 import { areaLevelAt, type Rect } from "./surface";
 import { findPath, smoothPath } from "./path";
 import { rollDrop } from "./items/treasure";
 import { dropSpot } from "./systems/combat";
 import {
+  zoneDungeon,
+  zoneFloor,
   zoneOf,
   type GameState,
   type Player,
   type PlayerInput,
+  type ZoneId,
   type ZoneState,
 } from "./state";
 
@@ -116,6 +120,14 @@ function smash(state: GameState, zone: ZoneState, p: Player, target: Breakable):
 }
 
 /** Pop a prop and spill its loot — shared by the melee smash and ranged casts. */
+/** Bottom-floor vault chests roll two levels hot; everything else rolls flat. */
+export function chestLevelBonus(zoneId: ZoneId, pos: Vec, map: ZoneMap): number {
+  const d = zoneDungeon(zoneId);
+  if (d === null || zoneFloor(zoneId) !== DUNGEONS[d].floors) return 0;
+  const vault = map.markers.find((m) => m.ch === "$");
+  return vault && Math.hypot(pos.x - vault.x, pos.y - vault.y) < 0.5 ? 2 : 0;
+}
+
 export function breakProp(state: GameState, zone: ZoneState, target: Breakable): void {
   zone.breakables.delete(target.id);
   state.events.push({
@@ -128,7 +140,9 @@ export function breakProp(state: GameState, zone: ZoneState, target: Breakable):
 
   // Tracks the region's monster mlvl band (typeMlvl + areaLevel - 1): chests
   // roll just under the local elites, barrels well under.
-  const depthBonus = areaLevelAt(zone.id, target.pos) - 1;
+  const depthBonus =
+    areaLevelAt(zone.id, target.pos) - 1 +
+    (target.kind === "chest" ? chestLevelBonus(zone.id, target.pos, zone.map) : 0);
   const item =
     target.kind === "chest"
       ? rollDrop(state.rng, "standard", 7 + depthBonus, { guaranteed: true, minRarity: "magic" })

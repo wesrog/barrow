@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { ensureDungeonFloor, stepSolo, travel } from "./tick";
+import { breakProp, chestLevelBonus } from "./breakables";
+import { DUNGEONS } from "./dungeons";
+import { BASES } from "./items/bases";
 import { mapFromStrings } from "./map";
 import { getZone } from "./state";
 import { createGameOn, player, playerZone, soloGame } from "./test-helpers";
@@ -115,5 +118,36 @@ describe("camp trips", () => {
     player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
     expect([...playerZone(state).breakables.values()]).toEqual(saved);
+  });
+});
+
+describe("vault chests", () => {
+  test("chestLevelBonus: +2 on a bottom-floor vault chest, 0 elsewhere", () => {
+    const state = soloGame(1);
+    const bottom = ensureDungeonFloor(state, "barrow", DUNGEONS.barrow.floors);
+    const vault = bottom.map.markers.find((m) => m.ch === "$")!;
+    expect(chestLevelBonus(bottom.id, { x: vault.x, y: vault.y }, bottom.map)).toBe(2);
+    // Same floor, away from the vault: no bonus.
+    expect(chestLevelBonus(bottom.id, bottom.map.spawn, bottom.map)).toBe(0);
+    // Not the bottom floor: no bonus anywhere.
+    const mid = ensureDungeonFloor(state, "barrow", 1);
+    expect(chestLevelBonus(mid.id, mid.map.spawn, mid.map)).toBe(0);
+    // Surface: never.
+    expect(chestLevelBonus("surface", { x: 10, y: 10 }, bottom.map)).toBe(0);
+  });
+
+  test("breaking the vault chest drops magic-or-better loot", () => {
+    const state = soloGame(1);
+    const bottom = ensureDungeonFloor(state, "barrow", DUNGEONS.barrow.floors);
+    const vault = bottom.map.markers.find((m) => m.ch === "$")!;
+    const chest = [...bottom.breakables.values()].find(
+      (b) => b.kind === "chest" && Math.hypot(b.pos.x - vault.x, b.pos.y - vault.y) < 0.5,
+    )!;
+    breakProp(state, bottom, chest);
+    const dropped = [...bottom.groundItems.values()];
+    expect(dropped.length).toBeGreaterThan(0);
+    // Chests guarantee magic-or-better gear; potions are always plain.
+    const gear = dropped[0]!.item;
+    if (BASES[gear.baseId]!.slot !== "potion") expect(gear.rarity).not.toBe("normal");
   });
 });

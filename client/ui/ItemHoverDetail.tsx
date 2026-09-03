@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { slotForItem, type Equipment } from "../../sim/character";
-import { BASES } from "../../sim/items/bases";
+import { BASES, type Slot } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import type { Klass } from "../../sim/skills";
 import { equipDelta, isComparable, type StatDelta } from "./itemCompare";
@@ -12,6 +12,30 @@ export const RARITY_CSS: Record<string, string> = {
   rare: "#f0e68c",
   unique: "#d9a05c",
 };
+
+/** Human-readable category shown under the item name. */
+const SLOT_LABELS: Record<Slot, string> = {
+  weapon: "weapon",
+  shield: "shield",
+  helm: "helm",
+  chest: "body armor",
+  boots: "boots",
+  ring: "ring",
+  amulet: "amulet",
+  potion: "potion",
+  quest: "quest item",
+};
+
+/**
+ * What kind of thing this is: the base type plus its category. Magic, rare and
+ * unique names bury or replace the base name, so spell it out — "Kingsbane"
+ * alone doesn't say whether it's a sword you can even hold.
+ */
+export function typeLine(item: Item): string {
+  const base = BASES[item.baseId]!;
+  const slot = SLOT_LABELS[base.slot];
+  return item.name === base.name ? slot : `${base.name} — ${slot}`;
+}
 
 const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
   dmgMin: (v) => `+${v} to minimum damage`,
@@ -33,6 +57,7 @@ export function itemDetail(item: Item, playerLevel: number, playerKlass?: Klass)
 } {
   const base = BASES[item.baseId]!;
   const lines: { text: string; color?: string }[] = [];
+  lines.push({ text: typeLine(item), color: "#6b6455" });
   if (base.dmgMin !== undefined) lines.push({ text: `damage ${base.dmgMin}–${base.dmgMax}` });
   if (base.defense !== undefined) lines.push({ text: `defense ${base.defense}` });
   if (base.levelReq > 1) {

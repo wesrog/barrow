@@ -2,7 +2,7 @@ import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
-import { zoneDepth, type GameState } from "../../sim/state";
+import { zoneFloor, type GameState } from "../../sim/state";
 import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
 import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
 
@@ -302,7 +302,7 @@ export function BottomBar({
             ? inRect(worldCampRect("overworld"), localPlayer(game).pos)
               ? "safe ground"
               : locationTitle("surface", localPlayer(game).pos).toLowerCase()
-            : `depth ${zoneDepth(localPlayer(game).zoneId)}`}{" "}
+            : `floor ${zoneFloor(localPlayer(game).zoneId)}`}{" "}
           ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>
           {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}

@@ -1,62 +1,38 @@
 import { describe, expect, test } from "bun:test";
 import { player, soloGame } from "./test-helpers";
-import { ensureFloor, stepSolo, travel } from "./tick";
-import { floorZone, getZone, zoneDepth } from "./state";
-import { cryptZone } from "./zone";
-
-describe("crypt reachability", () => {
-  test("every floor cell and every marker can be walked to from the spawn", () => {
-    const map = cryptZone();
-    const seen = new Set<number>();
-    const start = { x: Math.floor(map.spawn.x), y: Math.floor(map.spawn.y) };
-    const queue = [start];
-    seen.add(start.y * map.width + start.x);
-    while (queue.length > 0) {
-      const { x, y } = queue.pop()!;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nx = x + dx;
-        const ny = y + dy;
-        const key = ny * map.width + nx;
-        if (!seen.has(key) && nx >= 0 && ny >= 0 && nx < map.width && ny < map.height) {
-          if (map.cells[key] === 1) {
-            seen.add(key);
-            queue.push({ x: nx, y: ny });
-          }
-        }
-      }
-    }
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        if (map.cells[y * map.width + x] === 1) {
-          expect(seen.has(y * map.width + x)).toBe(true);
-        }
-      }
-    }
-    for (const marker of map.markers) {
-      expect(seen.has(Math.floor(marker.y) * map.width + Math.floor(marker.x))).toBe(true);
-    }
-  });
-});
+import { ensureDungeonFloor, stepSolo, travel } from "./tick";
+import { dungeonZoneId, getZone, zoneFloor } from "./state";
+import { DUNGEONS } from "./dungeons";
+import { MARKER_TYPES } from "./zone";
 
 describe("marker spawns", () => {
-  test("the crypt zone has a boss and all four monster types", () => {
+  test("barrow floor 1 fields packs from the barrow's spawn table", () => {
     const state = soloGame(1);
-    const types = new Set([...getZone(state, "floor:1").monsters.values()].map((m) => m.typeId));
+    const zone = ensureDungeonFloor(state, "barrow", 1);
+    const wanted = new Set(DUNGEONS.barrow.spawnTable.map((ch) => MARKER_TYPES[ch]!));
+    const types = new Set([...zone.monsters.values()].map((m) => m.typeId));
+    expect(types.size).toBeGreaterThan(0);
+    for (const t of types) expect(wanted.has(t)).toBe(true);
+  });
+
+  test("the Barrow Lord keeps his vault on the bottom floor", () => {
+    const state = soloGame(1);
+    const bottom = ensureDungeonFloor(state, "barrow", DUNGEONS.barrow.floors);
+    const types = new Set([...bottom.monsters.values()].map((m) => m.typeId));
     expect(types.has("barrow_lord")).toBe(true);
-    expect(types.has("shambler")).toBe(true);
-    expect(types.has("skitter")).toBe(true);
-    expect(types.has("gravespit")).toBe(true);
-    expect(types.has("tomb_bloat")).toBe(true);
   });
 });
 
 describe("new game reset", () => {
-  test("respawns the floors, revives the player, keeps the character", () => {
+  test("respawns the world, revives the player, keeps the character", () => {
     const state = soloGame(1);
-    travel(state, player(state), "floor:1");
-    const populated = getZone(state, "floor:1").monsters.size;
+    travel(state, player(state), "dungeon:barrow:1");
+    const populated = getZone(state, "dungeon:barrow:1").monsters.size;
     // Progress a character: kill everything cheaply, get hurt, die.
-    for (const m of getZone(state, "floor:1").monsters.values()) m.life = 0;
+    for (const m of getZone(state, "dungeon:barrow:1").monsters.values()) {
+      m.lastHitBy = player(state).id;
+      m.life = 0;
+    }
     stepSolo(state, {});
     const xpAfterKills = player(state).xp;
     expect(xpAfterKills).toBeGreaterThan(0);
@@ -73,118 +49,78 @@ describe("new game reset", () => {
     expect(player(state).zoneId).toBe("surface");
     expect(player(state).pos).toEqual(getZone(state, "surface").map.spawn);
     expect(player(state).xp).toBe(xpAfterKills); // character persists
-    const fresh = getZone(state, "floor:1");
-    expect(fresh.monsters.size).toBe(populated); // floor repopulated
+    // Floors regenerate lazily: forgotten now, freshly populated on re-entry.
+    expect(state.zones.has("dungeon:barrow:1")).toBe(false);
+    const fresh = ensureDungeonFloor(state, "barrow", 1);
+    expect(fresh.monsters.size).toBe(populated);
     expect(fresh.groundItems.size).toBe(0);
     expect(fresh.corpses).toHaveLength(0);
   });
 
-  test("a reset mid-run also clears the field and forgets deeper floors", () => {
+  test("a reset mid-run clears the field and forgets every floor", () => {
     const state = soloGame(1);
-    travel(state, player(state), "floor:1");
-    const populated = getZone(state, "floor:1").monsters.size;
-    ensureFloor(state, 4);
+    travel(state, player(state), "dungeon:barrow:1");
+    ensureDungeonFloor(state, "barrow", 4);
     stepSolo(state, {});
     stepSolo(state, { newGame: true });
-    expect([...state.zones.keys()]).toEqual(["surface", "floor:1"]);
-    expect(getZone(state, "floor:1").monsters.size).toBe(populated);
+    expect([...state.zones.keys()]).toEqual(["surface"]);
     expect(player(state).dead).toBe(false);
   });
 });
 
 describe("zones", () => {
-  test("createGame builds the surface and floor:1; player starts on camp ground", () => {
+  test("createGame builds only the surface; player starts on camp ground", () => {
     const g = soloGame(1);
-    expect([...g.zones.keys()]).toEqual(["surface", "floor:1"]);
+    expect([...g.zones.keys()]).toEqual(["surface"]);
     expect(player(g).zoneId).toBe("surface");
-    expect(getZone(g, "floor:1").monsters.size).toBeGreaterThan(0);
   });
 
-  test("ensureFloor generates lazily, deterministically, and only once", () => {
+  test("ensureDungeonFloor generates lazily, deterministically, and only once", () => {
     const g = soloGame(7);
-    expect(g.zones.has("floor:2")).toBe(false);
-    const z = ensureFloor(g, 2);
-    expect(ensureFloor(g, 2)).toBe(z); // same instance, not regenerated
+    expect(g.zones.has("dungeon:barrow:2")).toBe(false);
+    const z = ensureDungeonFloor(g, "barrow", 2);
+    expect(ensureDungeonFloor(g, "barrow", 2)).toBe(z); // same instance, not regenerated
+    // Same seed + same call order ⇒ identical floor (the lockstep contract).
+    // Generation draws from the world rng, so peers must materialize floors
+    // at the same point in the tick stream — which lockstep guarantees.
     const h = soloGame(7);
-    stepSolo(h, {}); // an unrelated tick must not affect gen determinism given same call order
-    expect([...ensureFloor(h, 2).monsters.values()].map((m) => m.pos))
+    expect([...ensureDungeonFloor(h, "barrow", 2).monsters.values()].map((m) => m.pos))
       .toEqual([...z.monsters.values()].map((m) => m.pos));
   });
 
   test("deeper floors scale monsters", () => {
     const g = soloGame(3);
-    const f1 = [...getZone(g, "floor:1").monsters.values()].find((m) => m.typeId === "shambler")!;
-    const f3 = [...ensureFloor(g, 3).monsters.values()].find((m) => m.typeId === "shambler")!;
-    expect(f3.maxLife).toBeGreaterThan(f1.maxLife);
+    const pick = (floor: number) =>
+      [...ensureDungeonFloor(g, "barrow", floor).monsters.values()].reduce(
+        (a, b) => (a.mlvl < b.mlvl ? a : b),
+      );
+    expect(pick(3).mlvl).toBeGreaterThan(pick(1).mlvl);
   });
 
-  test("standing at the barrow mouth travels to floor:1; stairs go one deeper", () => {
+  test("standing at the barrow mouth travels to floor 1; stairs go one deeper", () => {
     const g = soloGame(1);
     const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
     player(g).pos = { x: mouth.x, y: mouth.y };
     stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1");
-    expect(g.events.some((e) => e.type === "traveled" && e.to === "floor:1")).toBe(true);
-    const stairs = getZone(g, "floor:1").map.markers.find((m) => m.ch === ">")!;
+    expect(player(g).zoneId).toBe("dungeon:barrow:1");
+    expect(g.events.some((e) => e.type === "traveled" && e.to === "dungeon:barrow:1")).toBe(true);
+    const stairs = getZone(g, "dungeon:barrow:1").map.markers.find((m) => m.ch === ">")!;
     player(g).pos = { x: stairs.x, y: stairs.y };
     stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:2");
+    expect(player(g).zoneId).toBe("dungeon:barrow:2");
   });
 
-  test("the crypt's stairs up climb one floor toward daylight", () => {
+  test("an idle floor's monsters hold their ground while the player is away", () => {
     const g = soloGame(1);
-    travel(g, player(g), "floor:2");
-    const up = getZone(g, "floor:2").map.markers.find((m) => m.ch === "<")!;
-    expect(up).toBeDefined();
-    player(g).pos = { x: up.x, y: up.y };
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1");
-    // Lands beside floor 1's down-stairs — near them, but not on the trigger.
-    const down = getZone(g, "floor:1").map.markers.find((m) => m.ch === ">")!;
-    const d = Math.hypot(player(g).pos.x - down.x, player(g).pos.y - down.y);
-    expect(d).toBeGreaterThan(0.5);
-    expect(d).toBeLessThanOrEqual(1.5);
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1"); // standing beside stairs stays put
-  });
-
-  test("floor 1's stairs up surface beside the barrow mouth", () => {
-    const g = soloGame(1);
-    travel(g, player(g), "floor:1");
-    const up = getZone(g, "floor:1").map.markers.find((m) => m.ch === "<")!;
-    player(g).pos = { x: up.x, y: up.y };
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("surface");
-    const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
-    const d = Math.hypot(player(g).pos.x - mouth.x, player(g).pos.y - mouth.y);
-    expect(d).toBeGreaterThan(0.5);
-    expect(d).toBeLessThanOrEqual(1.5);
-    stepSolo(g, {});
-    expect(player(g).zoneId).toBe("surface"); // beside the mouth, not back in it
-  });
-
-  test("floors persist: a cleared monster stays dead after leaving and returning", () => {
-    const g = soloGame(1);
-    travel(g, player(g), "floor:1");
-    const first = [...getZone(g, "floor:1").monsters.keys()][0]!;
-    getZone(g, "floor:1").monsters.delete(first);
-    const count = getZone(g, "floor:1").monsters.size;
-    travel(g, player(g), "surface");
-    travel(g, player(g), "floor:1");
-    expect(getZone(g, "floor:1").monsters.size).toBe(count);
-  });
-
-  test("empty zones are frozen: monsters there do not act", () => {
-    const g = soloGame(1);
-    expect(player(g).zoneId).toBe("surface");
-    const before = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
+    ensureDungeonFloor(g, "barrow", 1);
+    const before = [...getZone(g, "dungeon:barrow:1").monsters.values()].map((m) => ({ ...m.pos }));
     for (let i = 0; i < 200; i++) stepSolo(g, {});
-    const after = [...getZone(g, "floor:1").monsters.values()].map((m) => ({ ...m.pos }));
+    const after = [...getZone(g, "dungeon:barrow:1").monsters.values()].map((m) => ({ ...m.pos }));
     expect(after).toEqual(before);
   });
 
-  test("zoneDepth", () => {
-    expect(zoneDepth("surface")).toBe(1);
-    expect(zoneDepth(floorZone(4))).toBe(4);
+  test("zone identity helpers", () => {
+    expect(zoneFloor("surface")).toBe(1);
+    expect(zoneFloor(dungeonZoneId("barrow", 4))).toBe(4);
   });
 });

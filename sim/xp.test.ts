@@ -165,7 +165,7 @@ describe("xp split", () => {
     const state = createGame(1);
     const p0 = joinPlayer(state, { id: 0 });
     const p1 = joinPlayer(state, { id: 1 });
-    p0.zoneId = "floor:1";
+    p0.zoneId = "dungeon:barrow:1";
     // p1 stays in camp
     state.events.push({
       type: "monster_died",
@@ -173,7 +173,7 @@ describe("xp split", () => {
       typeId: "skitter",
       pos: { ...p0.pos },
       xp: 50,
-      zone: "floor:1",
+      zone: "dungeon:barrow:1",
       killer: p0.id,
       mlvl: 2,
     });

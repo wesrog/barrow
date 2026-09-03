@@ -1,6 +1,6 @@
 import { localPlayer } from "../local";
 import { display } from "./fonts";
-import { zoneDepth, type GameState } from "../../sim/state";
+import { zoneFloor, type GameState } from "../../sim/state";
 import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
 import { CAMP_TITLE } from "../../sim/zone";
 
@@ -8,7 +8,7 @@ import { CAMP_TITLE } from "../../sim/zone";
 export function ZoneBanner({ game }: { game: GameState }) {
   const p = localPlayer(game);
   const zoneId = p.zoneId;
-  const depth = zoneDepth(zoneId);
+  const floor = zoneFloor(zoneId);
   const underground = zoneId !== "surface";
   const onCampGround = zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
   return (
@@ -32,7 +32,7 @@ export function ZoneBanner({ game }: { game: GameState }) {
       </div>
       {underground && (
         <div style={{ fontSize: 11, color: "#7fb8c9", marginTop: 2, letterSpacing: 2 }}>
-          depth {depth}
+          floor {floor}
         </div>
       )}
     </div>

@@ -2,10 +2,11 @@ import { createRng } from "./rng";
 import { inCamp, isWalkable, type Vec, type ZoneMap } from "./map";
 import {
   allPlayers,
-  floorZone,
+  dungeonZoneId,
   getZone,
   playerIds,
-  zoneDepth,
+  zoneDungeon,
+  zoneFloor,
   type Frame,
   type GameState,
   type Player,
@@ -42,8 +43,8 @@ import {
 import { collisionSystem } from "./systems/collision";
 import { xpSystem } from "./systems/xp";
 import { isAreaId } from "./areas";
-import { ensureFloor, ensureSurface } from "./world";
-import { areaAt, campCorpseSpot, worldWaypointPos } from "./surface";
+import { ensureDungeonFloor, ensureSurface } from "./world";
+import { areaAt, campCorpseSpot, dungeonAtEntrance, worldDungeonEntrance, worldWaypointPos } from "./surface";
 import { BASE_STATS, computeStats, createEquipment, createInventory } from "./character";
 import { SKILL_IDS, type SkillId } from "./skills";
 import { rollDurability } from "./items/generate";
@@ -69,12 +70,12 @@ export const TICK_RATE = 25;
 
 const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 
-export { ensureFloor, ensureSurface } from "./world";
+export { ensureDungeonFloor, ensureSurface } from "./world";
 
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {
   if (to === "surface") ensureSurface(state);
-  else ensureFloor(state, zoneDepth(to));
+  else ensureDungeonFloor(state, zoneDungeon(to)!, zoneFloor(to));
   p.zoneId = to;
   p.wasInCamp = false; // arrival triggers (restock) re-fire on camp ground
   p.pos = { ...getZone(state, to).map.spawn };
@@ -104,8 +105,18 @@ function besideMarker(map: ZoneMap, ch: string): Vec | null {
   return null;
 }
 
+/** A walkable cell center adjacent to a world position. */
+function besideCell(map: ZoneMap, at: Vec): Vec | null {
+  const cx = Math.floor(at.x);
+  const cy = Math.floor(at.y);
+  for (const [dx, dy] of [[0, 1], [1, 0], [0, -1], [-1, 0]] as const) {
+    if (isWalkable(map, cx + dx, cy + dy)) return { x: cx + dx + 0.5, y: cy + dy + 0.5 };
+  }
+  return null;
+}
+
 /** A player standing on a '>' marker heads one floor deeper; on '<', one floor
- * back up — surfacing beside the barrow mouth from floor 1. Runs after movement. */
+ * back up — surfacing beside their dungeon's mouth from floor 1. Runs after movement. */
 export function stairsSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   for (const p of players) {
     if (p.dead || p.zoneId !== zone.id) continue;
@@ -113,16 +124,30 @@ export function stairsSystem(state: GameState, zone: ZoneState, players: Player[
       if (marker.ch !== ">" && marker.ch !== "<") continue;
       if (Math.hypot(p.pos.x - marker.x, p.pos.y - marker.y) > 0.5) continue;
       if (marker.ch === ">") {
-        // A barrow mouth on the surface is the way in; below it, stairs descend.
-        travel(state, p, p.zoneId === "surface" ? floorZone(1) : floorZone(zoneDepth(p.zoneId) + 1));
+        if (p.zoneId === "surface") {
+          // A crypt mouth: which dungeon's, the registry knows.
+          const d = dungeonAtEntrance({ x: marker.x, y: marker.y });
+          if (d) travel(state, p, dungeonZoneId(d, 1));
+        } else {
+          const d = zoneDungeon(p.zoneId)!;
+          travel(state, p, dungeonZoneId(d, zoneFloor(p.zoneId) + 1));
+        }
       } else {
         if (p.zoneId === "surface") continue; // no climbing out of the open sky
-        const depth = zoneDepth(p.zoneId);
-        const dest: ZoneId = depth <= 1 ? "surface" : floorZone(depth - 1);
-        travel(state, p, dest);
-        // Come out beside the stairs you once went down, not on top of them.
-        const spot = besideMarker(getZone(state, dest).map, ">");
-        if (spot) p.pos = spot;
+        const d = zoneDungeon(p.zoneId)!;
+        const floor = zoneFloor(p.zoneId);
+        if (floor <= 1) {
+          travel(state, p, "surface");
+          // Come out beside the mouth you went down, not on top of it.
+          const spot = besideCell(getZone(state, "surface").map, worldDungeonEntrance(d));
+          if (spot) p.pos = spot;
+        } else {
+          const dest = dungeonZoneId(d, floor - 1);
+          travel(state, p, dest);
+          // Come out beside the stairs you once went down, not on top of them.
+          const spot = besideMarker(getZone(state, dest).map, ">");
+          if (spot) p.pos = spot;
+        }
       }
       break;
     }
@@ -203,7 +228,6 @@ export function resetRun(state: GameState): void {
   }
   state.zones.clear();
   const surface = ensureSurface(state);
-  ensureFloor(state, 1);
   const claimed = new Set<string>();
   for (const corpse of strays) {
     corpse.pos = campCorpseSpot(surface.map, claimed);
@@ -233,7 +257,6 @@ export function createGame(seed: number): GameState {
     nextId: 1,
   };
   ensureSurface(state);
-  ensureFloor(state, 1);
   return state;
 }
 

@@ -25,45 +25,6 @@ export const MARKER_TYPES: Record<string, string> = {
   n: "crown_sentinel",
 };
 
-/**
- * The crypt under the barrow. '#' wall, '.' floor, '@' spawn, '<' the stairs
- * back up (a dead-end nook so ordinary pathing never trips it),
- * z/s/r/e monsters, B the Barrow Lord in his vault.
- */
-export function cryptZone(): ZoneMap {
-  return mapFromStrings([
-    "######################################",
-    "#@........#..........#....z.....#...#",
-    "#<#.......#....s.....#..........#.r.#",
-    "##..##....#..........#...####...#...#",
-    "#...##....####...#####...#..#.......#",
-    "#..............s.........#..#...z...#",
-    "#......z..................ss........#",
-    "###..#####....#####...#######...#####",
-    "#.......#........#....#.............#",
-    "#..s....#...e....#....#....e....s...#",
-    "#.......#........#.........s........#",
-    "#..##...####..####....#......###..###",
-    "#..##......#..#.......#......#......#",
-    "#......r...#..#...z...#......#.r....#",
-    "#..........#..#.......###..###......#",
-    "####..######..####........##....B...#",
-    "#........s......s#...z....##........#",
-    "#.e...............#......###...##.>.#",
-    "#.........z.......#......#......##..#",
-    "######################################",
-  ]);
-}
-
-/** What the locals call each stretch of the descent. Depth 0 is the camp. */
-export function zoneName(depth: number): string {
-  if (depth <= 0) return "The Camp";
-  if (depth <= 2) return "The Barrow Crypt";
-  if (depth <= 4) return "The Sunken Halls";
-  if (depth <= 6) return "The Bone Vaults";
-  return "The Wyrm's Undercroft";
-}
-
 /** The camp's display name — a region of the moors, not a zone of its own. */
 export const CAMP_TITLE = "The Camp";
 

@@ -118,8 +118,8 @@ describe("determinism", () => {
         step(g, { tick: g.tick, inputs: {} });
       }
       step(g, { tick: g.tick, inputs: { 0: { turnInQuest: "moor_wights" } } });
-      travel(g, g.players.get(0)!, "floor:1");
-      travel(g, g.players.get(1)!, "floor:1");
+      travel(g, g.players.get(0)!, "dungeon:barrow:1");
+      travel(g, g.players.get(1)!, "dungeon:barrow:1");
       for (let t = 0; t < 500; t++) {
         const inputs: Frame["inputs"] = {};
         if (t % 7 === 0) inputs[0] = { moveTo: { x: 5 + (t % 20), y: 3 } };

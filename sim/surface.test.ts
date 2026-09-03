@@ -197,13 +197,13 @@ describe("one surface zone", () => {
     expect(p.pos).toEqual(worldWaypointPos(surfaceMap, "redfen"));
   });
 
-  test("stairs still swap zones: surface > floor:1 > surface", () => {
+  test("stairs still swap zones: surface > barrow floor 1 > surface", () => {
     const state = soloGame(3);
     const p = player(state);
     p.pos = { x: 58.5, y: 69.5 }; // the barrow mouth '>'
     stepSolo(state, {});
-    expect(p.zoneId).toBe("floor:1");
-    const up = getZone(state, "floor:1").map.markers.find((m) => m.ch === "<")!;
+    expect(p.zoneId).toBe("dungeon:barrow:1");
+    const up = getZone(state, "dungeon:barrow:1").map.markers.find((m) => m.ch === "<")!;
     p.pos = { x: up.x, y: up.y };
     stepSolo(state, {});
     expect(p.zoneId).toBe("surface");
@@ -221,7 +221,7 @@ describe("one surface zone", () => {
   test("resetRun regenerates one surface and reseats everyone at camp", () => {
     const state = soloGame(3);
     resetRun(state);
-    expect([...state.zones.keys()].sort()).toEqual(["floor:1", "surface"]);
+    expect([...state.zones.keys()]).toEqual(["surface"]);
     expect(player(state).zoneId).toBe("surface");
     expect(inRect(worldCampRect("overworld"), player(state).pos)).toBe(true);
   });
@@ -257,7 +257,7 @@ describe("region_entered", () => {
     const p = player(state);
     p.pos = { x: 58.5, y: 69.5 };
     stepSolo(state, {});
-    expect(p.zoneId).toBe("floor:1");
+    expect(p.zoneId).toBe("dungeon:barrow:1");
     expect(p.region).toBe("overworld");
   });
 });

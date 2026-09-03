@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createGame, joinPlayer, stepSolo, travel, ensureFloor } from "./tick";
+import { createGame, joinPlayer, stepSolo, travel, ensureDungeonFloor } from "./tick";
 import {
   QUESTS, isQuestId, questOffered, questReadyToTurnIn, objectiveMet, npcIndicator, collectCount,
 } from "./quests";
@@ -126,7 +126,7 @@ describe("objective progress off the event stream", () => {
     const m = spawnMonster(state, surface, "shambler", { x: p0.pos.x + 1, y: p0.pos.y });
     m.life = 0;
     m.lastHitBy = 1; // the OTHER player lands the kill
-    p1.zoneId = "floor:1"; // ...but p1 has left the zone: no credit for them
+    p1.zoneId = "dungeon:barrow:1"; // ...but p1 has left the zone: no credit for them
     stepSolo(state, {});
     expect(p0.quests.moor_wights!.count).toBe(1); // in-zone: shared credit
     expect(p1.quests.moor_wights!.count).toBe(0); // out of zone: none
@@ -312,7 +312,7 @@ describe("campaign", () => {
     // descend_barrow: aldous, reach floor 3
     talkAt("aldous");
     stepSolo(state, { acceptQuest: "descend_barrow" });
-    travel(state, p, "floor:3");
+    travel(state, p, "dungeon:barrow:3");
     stepSolo(state, {});
     expect(objectiveMet(p, "descend_barrow")).toBe(true);
     travel(state, p, "surface");
@@ -320,11 +320,11 @@ describe("campaign", () => {
     stepSolo(state, { turnInQuest: "descend_barrow" });
     expect(p.quests.descend_barrow?.stage).toBe("done");
 
-    // barrow_lord: aldous, kill 1 barrow_lord on floor:5
+    // barrow_lord: aldous, kill 1 barrow_lord on the barrow's floor 5
     talkAt("aldous");
     stepSolo(state, { acceptQuest: "barrow_lord" });
-    travel(state, p, "floor:5");
-    const floor5 = ensureFloor(state, 5);
+    travel(state, p, "dungeon:barrow:5");
+    const floor5 = ensureDungeonFloor(state, "barrow", 5);
     const boss = spawnMonster(state, floor5, "barrow_lord", { x: p.pos.x + 1.5, y: p.pos.y }, 5);
     boss.life = 0;
     boss.lastHitBy = 0;

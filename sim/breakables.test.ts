@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { stepSolo, travel } from "./tick";
+import { ensureDungeonFloor, stepSolo, travel } from "./tick";
 import { mapFromStrings } from "./map";
 import { getZone } from "./state";
 import { createGameOn, player, playerZone, soloGame } from "./test-helpers";
-import { zoneName } from "./zone";
 /** Small open room: player in one corner, stairs far away. */
 const roomMap = () =>
   mapFromStrings([
@@ -18,7 +17,7 @@ const roomMap = () =>
 describe("breakable spawning", () => {
   test("a crypt floor holds breakables, including exactly one chest", () => {
     const state = soloGame(7);
-    const breakables = getZone(state, "floor:1").breakables;
+    const breakables = ensureDungeonFloor(state, "barrow", 1).breakables;
     expect(breakables.size).toBeGreaterThan(0);
     const chests = [...breakables.values()].filter((b) => b.kind === "chest");
     expect(chests.length).toBe(1);
@@ -27,14 +26,14 @@ describe("breakable spawning", () => {
   test("same seed produces the identical layout", () => {
     const a = soloGame(42);
     const b = soloGame(42);
-    expect([...getZone(a, "floor:1").breakables.values()]).toEqual([
-      ...getZone(b, "floor:1").breakables.values(),
+    expect([...ensureDungeonFloor(a, "barrow", 1).breakables.values()]).toEqual([
+      ...ensureDungeonFloor(b, "barrow", 1).breakables.values(),
     ]);
   });
 
   test("breakables sit on walkable cells, off the spawn and markers", () => {
     const state = soloGame(3);
-    const zone = getZone(state, "floor:1");
+    const zone = ensureDungeonFloor(state, "barrow", 1);
     const map = zone.map;
     for (const b of zone.breakables.values()) {
       const cx = Math.floor(b.pos.x);
@@ -49,9 +48,9 @@ describe("breakable spawning", () => {
 
   test("each floor gets its own fresh breakables", () => {
     const state = soloGame(11);
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     const beforeIds = [...playerZone(state).breakables.keys()];
-    travel(state, player(state), "floor:2");
+    travel(state, player(state), "dungeon:barrow:2");
     expect(playerZone(state).breakables.size).toBeGreaterThan(0);
     for (const id of playerZone(state).breakables.keys()) {
       expect(beforeIds).not.toContain(id);
@@ -107,7 +106,7 @@ describe("smashing", () => {
 describe("camp trips", () => {
   test("breakables persist on the floor while the player is topside", () => {
     const state = soloGame(9);
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     const saved = [...playerZone(state).breakables.values()];
     expect(saved.length).toBeGreaterThan(0);
     travel(state, player(state), "surface");
@@ -116,17 +115,5 @@ describe("camp trips", () => {
     player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
     expect([...playerZone(state).breakables.values()]).toEqual(saved);
-  });
-});
-
-describe("zone names", () => {
-  test("the crypt deepens through named tiers", () => {
-    expect(zoneName(0)).toBe("The Camp");
-    expect(zoneName(1)).toBe("The Barrow Crypt");
-    expect(zoneName(2)).toBe("The Barrow Crypt");
-    expect(zoneName(3)).toBe("The Sunken Halls");
-    expect(zoneName(5)).toBe("The Bone Vaults");
-    expect(zoneName(7)).toBe("The Wyrm's Undercroft");
-    expect(zoneName(20)).toBe("The Wyrm's Undercroft");
   });
 });

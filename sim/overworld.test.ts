@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { player, soloGame } from "./test-helpers";
 import { ensureSurface, stepSolo } from "./tick";
-import { getZone, zoneDepth } from "./state";
+import { getZone, zoneFloor } from "./state";
 import { createRng } from "./rng";
 import { overworldZone } from "./zone";
 import { areaRect, inRect, locationTitle, regionTitle, worldAreaSpawn } from "./surface";
@@ -90,7 +90,7 @@ describe("overworld travel", () => {
     const mouth = getZone(g, "surface").map.markers.find((m) => m.ch === ">")!;
     player(g).pos = { x: mouth.x, y: mouth.y };
     stepSolo(g, {});
-    expect(player(g).zoneId).toBe("floor:1");
+    expect(player(g).zoneId).toBe("dungeon:barrow:1");
   });
 
   test("no travel pad remains — the barrow mouth is the only way down", () => {
@@ -130,11 +130,11 @@ describe("overworld population", () => {
   });
 
   test("zone identity", () => {
-    expect(zoneDepth("surface")).toBe(1);
+    expect(zoneFloor("surface")).toBe(1);
     expect(regionTitle("overworld")).toBe("The Wither Moors");
     expect(locationTitle("surface", worldAreaSpawn("overworld"))).toBe("The Wither Moors");
     expect(locationTitle("surface", worldAreaSpawn("redfen"))).toBe("The Redfen");
-    expect(locationTitle("floor:1", { x: 0, y: 0 })).toBe("The Barrow Crypt");
+    expect(locationTitle("dungeon:barrow:1", { x: 0, y: 0 })).toBe("The Barrow Crypt");
   });
 });
 

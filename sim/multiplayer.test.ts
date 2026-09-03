@@ -31,7 +31,7 @@ test("players move independently in different zones", () => {
   const g = join2();
   const p0 = g.players.get(0)!,
     p1 = g.players.get(1)!;
-  travel(g, p0, "floor:1");
+  travel(g, p0, "dungeon:barrow:1");
   const before1 = { ...p1.pos };
   step(g, { tick: g.tick, inputs: { 0: { moveTo: { x: p0.pos.x + 2, y: p0.pos.y } } } });
   expect(p0.path.length).toBeGreaterThan(0);
@@ -42,9 +42,9 @@ test("monsters target the nearest living player in their zone", () => {
   const g = join2();
   const p0 = g.players.get(0)!,
     p1 = g.players.get(1)!;
-  travel(g, p0, "floor:1");
-  travel(g, p1, "floor:1");
-  const m = [...getZone(g, "floor:1").monsters.values()][0]!;
+  travel(g, p0, "dungeon:barrow:1");
+  travel(g, p1, "dungeon:barrow:1");
+  const m = [...getZone(g, "dungeon:barrow:1").monsters.values()][0]!;
   p0.pos = { x: m.pos.x + 1.5, y: m.pos.y }; // p0 closest
   p1.pos = { x: m.pos.x + 5, y: m.pos.y };
   const life0 = p0.life;
@@ -56,9 +56,9 @@ test("contested pickup: lower id wins deterministically", () => {
   const g = join2();
   const p0 = g.players.get(0)!,
     p1 = g.players.get(1)!;
-  travel(g, p0, "floor:1");
-  travel(g, p1, "floor:1");
-  const zone = getZone(g, "floor:1");
+  travel(g, p0, "dungeon:barrow:1");
+  travel(g, p1, "dungeon:barrow:1");
+  const zone = getZone(g, "dungeon:barrow:1");
   const id = g.nextId++;
   zone.groundItems.set(id, {
     id,

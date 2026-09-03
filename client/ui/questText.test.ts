@@ -6,7 +6,7 @@ import { soloGame, player } from "../../sim/test-helpers";
 describe("objectiveText", () => {
   test("kill quests name the monster and count", () => {
     expect(objectiveText(QUESTS.moor_wights)).toBe("Slay 8 Shamblers on the surface");
-    expect(objectiveText(QUESTS.barrow_lord)).toBe("Slay The Barrow Lord on floor 5");
+    expect(objectiveText(QUESTS.barrow_lord)).toBe("Slay The Barrow Lord in The Barrow Crypt");
   });
 
   test("collect quests name the item and its source", () => {
@@ -15,7 +15,7 @@ describe("objectiveText", () => {
 
   test("reach quests name the area or floor", () => {
     expect(objectiveText(QUESTS.find_redfen)).toBe("Find The Redfen");
-    expect(objectiveText(QUESTS.descend_barrow)).toBe("Descend to floor 3 of the barrow");
+    expect(objectiveText(QUESTS.descend_barrow)).toBe("Descend to floor 3 of The Barrow Crypt");
   });
 
   test("talk quests name the NPC", () => {

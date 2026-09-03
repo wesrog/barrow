@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { player, soloGame } from "./test-helpers";
-import { stepSolo, travel } from "./tick";
+import { ensureDungeonFloor, stepSolo, travel } from "./tick";
 import { getZone } from "./state";
 import { inCamp } from "./map";
 import { placeItem } from "./character";
@@ -15,8 +15,8 @@ function goToCamp(state: GameState): void {
 describe("the camp", () => {
   test("returning to camp leaves the floor persistent, not lost", () => {
     const state = soloGame(1);
-    travel(state, player(state), "floor:1");
-    const monstersBefore = [...getZone(state, "floor:1").monsters.keys()].sort();
+    travel(state, player(state), "dungeon:barrow:1");
+    const monstersBefore = [...getZone(state, "dungeon:barrow:1").monsters.keys()].sort();
     goToCamp(state);
     expect(player(state).zoneId).toBe("surface");
     expect(inCamp(getZone(state, "surface").map, player(state).pos)).toBe(true);
@@ -26,8 +26,8 @@ describe("the camp", () => {
     const mouth = getZone(state, "surface").map.markers.find((m) => m.ch === ">")!;
     player(state).pos = { x: mouth.x, y: mouth.y };
     stepSolo(state, {});
-    expect(player(state).zoneId).toBe("floor:1");
-    expect([...getZone(state, "floor:1").monsters.keys()].sort()).toEqual(monstersBefore);
+    expect(player(state).zoneId).toBe("dungeon:barrow:1");
+    expect([...getZone(state, "dungeon:barrow:1").monsters.keys()].sort()).toEqual(monstersBefore);
   });
 
   test("a new run from camp regenerates floor 1", () => {
@@ -35,7 +35,9 @@ describe("the camp", () => {
     stepSolo(state, { newGame: true });
     expect(player(state).zoneId).toBe("surface");
     expect(inCamp(getZone(state, "surface").map, player(state).pos)).toBe(true);
-    expect(getZone(state, "floor:1").monsters.size).toBeGreaterThan(0);
+    // Floors are lazy now: the fresh world regenerates the barrow on entry.
+    expect(state.zones.has("dungeon:barrow:1")).toBe(false);
+    expect(ensureDungeonFloor(state, "barrow", 1).monsters.size).toBeGreaterThan(0);
   });
 });
 
@@ -74,7 +76,7 @@ describe("talking to an npc", () => {
     const state = soloGame(5);
     const surface = getZone(state, "surface");
     const maren = [...surface.npcs.values()].find((n) => n.npcId === "maren")!;
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     stepSolo(state, { talkNpc: maren.id });
     expect(player(state).npcTarget).toBe(null);
   });
@@ -119,7 +121,7 @@ describe("the healer", () => {
     expect(player(state).belt).toBe(0);
     expect(player(state).gold).toBe(5);
     player(state).gold = 100;
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     stepSolo(state, { buyPotion: "health" }); // not in camp
     expect(player(state).belt).toBe(0);
     expect(player(state).gold).toBe(100);
@@ -138,7 +140,7 @@ describe("the vendor", () => {
   test("walking back into an empty camp restocks; an occupied camp keeps its stock", () => {
     const state = soloGame(1);
     stepSolo(state, {});
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     state.shop = [];
     goToCamp(state);
     stepSolo(state, {});
@@ -179,7 +181,7 @@ describe("the vendor", () => {
 
   test("repair only works on camp ground", () => {
     const state = soloGame(1);
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     player(state).equipment.weapon!.durability!.cur = 1;
     player(state).gold = 1000;
     stepSolo(state, { repair: true });

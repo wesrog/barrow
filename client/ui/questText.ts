@@ -1,5 +1,6 @@
 import type { Player } from "../../sim/state";
-import { zoneDepth } from "../../sim/state";
+import { zoneDungeon } from "../../sim/state";
+import { DUNGEONS } from "../../sim/dungeons";
 import type { QuestDef, QuestId } from "../../sim/quests";
 import { QUESTS, collectCount, objectiveMet } from "../../sim/quests";
 import { MONSTER_TYPES } from "../../sim/monsters";
@@ -23,14 +24,14 @@ export function objectiveText(q: QuestDef): string {
           ? ""
           : o.zone === "surface"
             ? " on the surface"
-            : ` on floor ${zoneDepth(o.zone)}`;
+            : ` in ${DUNGEONS[zoneDungeon(o.zone)!].name}`;
       return `Slay ${o.count === 1 ? "" : `${o.count} `}${monsterPlural(o.typeId, o.count)}${where}`;
     }
     case "collect":
       return `Gather ${o.count} ${BASES[o.itemBaseId]?.name ?? o.itemBaseId} from ${monsterPlural(o.dropFrom, 2)}`;
     case "reach":
       return o.floor !== undefined
-        ? `Descend to floor ${o.floor} of the barrow`
+        ? `Descend to floor ${o.floor} of ${DUNGEONS[o.dungeon!].name}`
         : `Find ${regionTitle(o.area!)}`;
     case "talk":
       return `Speak with ${NPCS[o.npc].name}`;

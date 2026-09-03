@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { TICK_RATE } from "../sim/tick";
-import { zoneDepth, zoneOf, type GameState, type PlayerInput } from "../sim/state";
+import { zoneFloor, zoneOf, type GameState, type PlayerInput } from "../sim/state";
 import { areaAt, locationTitle, regionTitle, inRect, worldCampRect } from "../sim/surface";
 import { AREAS } from "../sim/areas";
 import { localId, localPlayer, setLocalId } from "./local";
@@ -380,12 +380,12 @@ function Game({
               pushToast(`P${e.playerId + 1} left`);
               break;
             case "player_died": {
-              const depth = zoneDepth(e.zone);
+              const floor = zoneFloor(e.zone);
               pushToast(
                 e.zone === "surface"
                   ? `P${e.playerId + 1} fell in ${locationTitle(e.zone, e.pos)}`
-                  : depth > 0
-                    ? `P${e.playerId + 1} fell on floor ${depth}`
+                  : floor > 0
+                    ? `P${e.playerId + 1} fell on floor ${floor}`
                     : `P${e.playerId + 1} died`,
               );
               // A death moves gear onto a corpse; persist it now so a crash
@@ -491,7 +491,7 @@ function Game({
                 fadeThrough();
                 // The big "entering a new land" card, D2-style.
                 const title = locationTitle(e.to, localPlayer(game).pos);
-                const sub = e.to === "surface" ? undefined : `depth ${zoneDepth(e.to)}`;
+                const sub = e.to === "surface" ? undefined : `floor ${zoneFloor(e.to)}`;
                 setIntro((prev) =>
                   prev?.title === title && prev?.sub === sub ? prev : { seq: nextIntroSeq++, title, sub },
                 );

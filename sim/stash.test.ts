@@ -48,7 +48,7 @@ describe("the stash", () => {
   test("the stash is out of reach below ground", () => {
     const state = soloGame(1);
     const id = packItem(state);
-    travel(state, player(state), "floor:1");
+    travel(state, player(state), "dungeon:barrow:1");
     stepSolo(state, { stashPut: id });
     expect(player(state).inventory.entries.length).toBe(1);
     expect(player(state).stash.entries.length).toBe(0);

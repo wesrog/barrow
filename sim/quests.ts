@@ -2,7 +2,8 @@ import type { AreaId } from "./areas";
 import type { NpcId } from "./npcs";
 import type { Rarity } from "./items/generate";
 import type { Player, ZoneId } from "./state";
-import { zoneDepth } from "./state";
+import { dungeonZoneId, zoneDungeon, zoneFloor } from "./state";
+import type { DungeonId } from "./dungeons";
 import { NPCS } from "./npcs";
 
 export type QuestId =
@@ -13,7 +14,7 @@ export type QuestId =
 export type QuestObjective =
   | { kind: "kill"; typeId: string; count: number; zone?: ZoneId }
   | { kind: "collect"; itemBaseId: string; count: number; dropFrom: string; chance: number }
-  | { kind: "reach"; area?: AreaId; floor?: number }
+  | { kind: "reach"; area?: AreaId; dungeon?: DungeonId; floor?: number }
   | { kind: "talk"; npc: NpcId };
 
 export interface QuestDef {
@@ -125,7 +126,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
   descend_barrow: {
     id: "descend_barrow", giver: "aldous", turnIn: "aldous", name: "The Barrow Mouth",
     requires: "soldiers_due",
-    objective: { kind: "reach", floor: 3 },
+    objective: { kind: "reach", dungeon: "barrow", floor: 3 },
     dialogue: {
       offer: [
         "This is the barrow mouth. None who went down have come back up — yet.",
@@ -139,7 +140,7 @@ export const QUESTS: Record<QuestId, QuestDef> = {
   barrow_lord: {
     id: "barrow_lord", giver: "aldous", turnIn: "aldous", name: "The Lord Below",
     requires: "descend_barrow",
-    objective: { kind: "kill", typeId: "barrow_lord", count: 1, zone: "floor:5" },
+    objective: { kind: "kill", typeId: "barrow_lord", count: 1, zone: dungeonZoneId("barrow", 5) },
     dialogue: {
       offer: [
         "Deeper still, something wears a crown of rust and calls itself lord of the dead.",
@@ -175,7 +176,9 @@ export function collectCount(p: Player, baseId: string): number {
  * remembers that bump rather than requiring the player to still be standing
  * there when they walk back to report in. */
 export function reachedNow(p: Player, o: Extract<QuestObjective, { kind: "reach" }>): boolean {
-  if (o.floor !== undefined) return p.zoneId !== "surface" && zoneDepth(p.zoneId) >= o.floor;
+  if (o.floor !== undefined) {
+    return o.dungeon !== undefined && zoneDungeon(p.zoneId) === o.dungeon && zoneFloor(p.zoneId) >= o.floor;
+  }
   return p.zoneId === "surface" && p.region === o.area;
 }
 

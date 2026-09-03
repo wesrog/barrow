@@ -5,8 +5,8 @@ import { AREAS, type AreaId } from "./areas";
 import { DUNGEONS, DUNGEON_ORDER, type DungeonId } from "./dungeons";
 import { inCamp, isWalkable, type MapMarker, type Vec, type ZoneMap } from "./map";
 import type { Rng } from "./rng";
-import { zoneDepth, type ZoneId } from "./state";
-import { areaZone, MARKER_TYPES, zoneName } from "./zone";
+import { zoneDungeon, zoneFloor, type ZoneId } from "./state";
+import { areaZone, MARKER_TYPES } from "./zone";
 
 /** Registry insertion order — the one iteration order for generation and rendering. */
 export const AREA_ORDER = Object.keys(AREAS) as AreaId[];
@@ -174,15 +174,16 @@ export function worldAreaSpawn(id: AreaId): Vec {
   return { x: s.x + o.x, y: s.y + o.y };
 }
 
-/** THE difficulty lookup: region level at a surface position, floor number below. */
+/** THE difficulty lookup: region level on the surface, dungeon band below. */
 export function areaLevelAt(zoneId: ZoneId, pos: Vec): number {
-  return zoneId === "surface" ? AREAS[areaAt(pos)].areaLevel : zoneDepth(zoneId);
+  if (zoneId === "surface") return AREAS[areaAt(pos)].areaLevel;
+  return DUNGEONS[zoneDungeon(zoneId)!].levelBase + zoneFloor(zoneId) - 1;
 }
 
-/** Display name for a location: the region under `pos` on the surface, depth names below. */
+/** Display name for a location: the region under `pos` on the surface, the dungeon below. */
 export function locationTitle(id: ZoneId, pos: Vec): string {
   if (id === "surface") return AREAS[areaAt(pos)].title;
-  return zoneName(zoneDepth(id));
+  return DUNGEONS[zoneDungeon(id)!].name;
 }
 
 /** Display name for a region label. */

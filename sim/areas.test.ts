@@ -30,9 +30,9 @@ describe("area registry", () => {
   test("difficulty comes from the region under your feet, floor number below", () => {
     expect(areaLevelAt("surface", worldAreaSpawn("overworld"))).toBe(1);
     expect(areaLevelAt("surface", worldAreaSpawn("redfen"))).toBe(AREAS.redfen.areaLevel);
-    expect(areaLevelAt("floor:3", { x: 0, y: 0 })).toBe(3);
+    expect(areaLevelAt("dungeon:barrow:3", { x: 0, y: 0 })).toBe(3);
     expect(isAreaId("overworld")).toBe(true);
-    expect(isAreaId("floor:2")).toBe(false);
+    expect(isAreaId("dungeon:barrow:2")).toBe(false);
   });
 
   test("rows are internally consistent", () => {

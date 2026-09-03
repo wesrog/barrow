@@ -12,13 +12,13 @@ import {
   spawnMonster,
   upgradeToChampion,
 } from "./monsters";
-import { dungeonZoneId, floorZone, type GameState, type ZoneId, type ZoneState } from "./state";
+import { dungeonZoneId, type GameState, type ZoneId, type ZoneState } from "./state";
 import { DUNGEONS, type DungeonId } from "./dungeons";
 import { generateDungeonFloor } from "./dungeon-gen";
 import { AREA_ORDER, areaRect, stitchSurface, worldAreaSpawn } from "./surface";
 import { surfaceLayout } from "./surface";
 import { NPCS, NPC_IDS } from "./npcs";
-import { cryptZone, MARKER_TYPES } from "./zone";
+import { MARKER_TYPES } from "./zone";
 
 export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState {
   const zone: ZoneState = {
@@ -34,20 +34,6 @@ export function makeZone(state: GameState, id: ZoneId, map: ZoneMap): ZoneState 
     npcs: new Map(),
   };
   state.zones.set(id, zone);
-  return zone;
-}
-
-/** Get-or-generate floor N deterministically from the world rng. */
-export function ensureFloor(state: GameState, n: number): ZoneState {
-  const id = floorZone(n);
-  const existing = state.zones.get(id);
-  if (existing) return existing;
-  const zone = makeZone(state, id, cryptZone());
-  for (const marker of zone.map.markers) {
-    const typeId = MARKER_TYPES[marker.ch];
-    if (typeId) spawnMonster(state, zone, typeId, { x: marker.x, y: marker.y }, n);
-  }
-  spawnBreakables(state, zone, n);
   return zone;
 }
 

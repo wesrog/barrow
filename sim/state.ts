@@ -11,9 +11,7 @@ import type { Npc, NpcId } from "./npcs";
 import type { QuestId, QuestLog } from "./quests";
 
 /** The whole open-air world is one zone; dungeon floors are the rest. */
-export type ZoneId = "surface" | `floor:${number}` | `dungeon:${DungeonId}:${number}`;
-
-export const floorZone = (n: number): ZoneId => `floor:${n}`;
+export type ZoneId = "surface" | `dungeon:${DungeonId}:${number}`;
 
 export const dungeonZoneId = (d: DungeonId, floor: number): ZoneId => `dungeon:${d}:${floor}`;
 
@@ -28,12 +26,6 @@ export function zoneDungeon(id: ZoneId): DungeonId | null {
 export function zoneFloor(id: ZoneId): number {
   if (!id.startsWith("dungeon:")) return 1;
   return Number(id.split(":")[2]);
-}
-
-/** floor:N = N; the surface = 1. Regions take their level from the registry. */
-export function zoneDepth(id: ZoneId): number {
-  if (!id.startsWith("floor:")) return 1;
-  return Number(id.slice("floor:".length));
 }
 
 export interface ZoneState {

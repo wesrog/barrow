@@ -117,8 +117,10 @@ export interface DerivedStats {
   maxLife: number;
   maxMana: number;
   swingEvery: number;
+  attackSpeedPct: number;
   moveSpeedPct: number;
   magicFind: number;
+  lifeRegen: number;
 }
 
 /** Naked lvl-1 bruiser. Gear is meant to matter: unarmed hits are feeble. */
@@ -180,6 +182,7 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
   let attackSpeedPct = 0;
   let moveSpeedPct = 0;
   let magicFind = 0;
+  let lifeRegen = 0;
 
   for (const item of Object.values(eq)) {
     if (!item || isBroken(item)) continue;
@@ -202,6 +205,7 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
         case "attackSpeedPct": attackSpeedPct += mod.value; break;
         case "moveSpeedPct": moveSpeedPct += mod.value; break;
         case "magicFind": magicFind += mod.value; break;
+        case "lifeRegen": lifeRegen += mod.value; break;
       }
     }
   }
@@ -218,7 +222,9 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
     maxLife,
     maxMana,
     swingEvery: Math.max(4, Math.round(BASE_STATS.swingEvery / (1 + attackSpeedPct / 100))),
+    attackSpeedPct,
     moveSpeedPct,
     magicFind,
+    lifeRegen,
   };
 }

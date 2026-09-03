@@ -63,10 +63,11 @@ describe("class stats", () => {
 });
 
 describe("class skill rosters", () => {
-  test("each class gets its own six skills in unlock order", () => {
+  test("each class gets its own skills in unlock order", () => {
     expect(CLASS_SKILLS("warrior").map((d) => d.id)).toEqual([
       "cleave",
       "crush",
+      "charge",
       "warcry",
       "leap",
       "stomp",

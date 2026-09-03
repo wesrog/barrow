@@ -32,8 +32,9 @@ function nudge(map: ZoneMap, pos: Vec, dx: number, dy: number): boolean {
 export function collisionSystem(state: GameState, zone: ZoneState, players: Player[]): void {
   const map = zone.map;
   const monsters = [...zone.monsters.values()];
-  // Airborne (leaping) players sail over bodies — nothing shoves them off course.
-  const living = players.filter((p) => !p.dead && !p.leap);
+  // Leaping players sail over bodies and charging players barrel through them —
+  // nothing shoves either off course.
+  const living = players.filter((p) => !p.dead && !p.leap && !p.charge);
   for (let pass = 0; pass < PASSES; pass++) {
     // Player vs monster: the player yields, so meat walls actually block.
     for (const p of living) {

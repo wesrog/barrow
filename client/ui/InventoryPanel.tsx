@@ -117,7 +117,9 @@ export function InventoryPanel({
             ["attack rating", `${p.attackRating}`],
             ["defense", `${p.defense}`],
             ["magic find", `${p.magicFind}%`],
+            ["attack speed", `+${computeStats(p.equipment, p.level, p.klass).attackSpeedPct}%`],
             ["run speed", `+${computeStats(p.equipment, p.level, p.klass).moveSpeedPct}%`],
+            ["life regen", `+${p.lifeRegen}/s`],
             ["life", `${Math.ceil(p.life)}/${p.maxLife}`],
             ["mana", `${Math.floor(p.mana)}/${p.maxMana}`],
           ] as const

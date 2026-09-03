@@ -42,7 +42,7 @@ function pathLength(from: Vec, path: Vec[]): number {
 export function applyMoveInput(state: GameState, p: Player, input: PlayerInput): void {
   const dest = input.moveTo;
   if (!dest) return;
-  if (p.leap) return; // committed to the air until landing
+  if (p.leap || p.charge) return; // committed until landing / the rush ends
   const map = zoneOf(state, p).map;
   let path = approachPath(map, p.pos, dest);
   if (path === null) return;

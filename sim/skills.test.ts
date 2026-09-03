@@ -11,6 +11,9 @@ import {
   deathblowMultiplier,
   stompMultiplier,
   stompStunTicks,
+  leapRange,
+  chargeMultiplier,
+  chargeStunTicks,
 } from "./skills";
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
 import type { GameState } from "./state";
@@ -314,6 +317,34 @@ describe("leap", () => {
     expect(player(state).pos.y).toBeCloseTo(3.8);
   });
 
+  test("range grows with rank, matching blink's reach at max", () => {
+    expect(leapRange(1)).toBeCloseTo(8);
+    expect(leapRange(2)).toBeCloseTo(8.5);
+    expect(leapRange(10)).toBeCloseTo(12.5);
+  });
+
+  test("a higher-rank leap reaches spots a rank-1 leap cannot", () => {
+    const corridor = () =>
+      mapFromStrings([
+        "##############",
+        "#@...........#",
+        "##############",
+      ]);
+    const at = { x: 10.5, y: 1.5 }; // 9 tiles out: past rank 1's 8, within rank 3's 9
+
+    const lowRank = createGameOn(7, corridor());
+    readyPlayer(lowRank);
+    stepSolo(lowRank, { spendSkill: "leap" });
+    stepSolo(lowRank, { cast: { skill: "leap", at } });
+    expect(player(lowRank).leap).toBeNull();
+
+    const highRank = createGameOn(7, corridor());
+    readyPlayer(highRank);
+    for (let i = 0; i < 3; i++) stepSolo(highRank, { spendSkill: "leap" });
+    stepSolo(highRank, { cast: { skill: "leap", at } });
+    expect(player(highRank).leap).not.toBeNull();
+  });
+
   test("cannot leap into a wall or across the map", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
@@ -321,6 +352,86 @@ describe("leap", () => {
     const before = { ...player(state).pos };
     stepSolo(state, { cast: { skill: "leap", at: { x: 0.5, y: 0.5 } } }); // wall
     expect(player(state).pos).toEqual(before);
+  });
+});
+
+describe("charge", () => {
+  test("damage and stun scale with rank", () => {
+    expect(chargeMultiplier(1)).toBeCloseTo(1.3);
+    expect(chargeMultiplier(2)).toBeCloseTo(1.6);
+    expect(chargeStunTicks(1)).toBe(13);
+    expect(chargeStunTicks(3)).toBe(19);
+  });
+
+  test("rushes to the target over ticks, then hits and stuns it on arrival", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "charge" });
+    const m = spawnAt(state, "skitter", { x: 7.5, y: 2.5 });
+    const life = m.life;
+    stepSolo(state, { cast: { skill: "charge", target: m.id } });
+    expect(player(state).charge).not.toBeNull();
+    expect(m.life).toBe(life); // nothing lands until arrival
+    let hit = false;
+    let ticks = 0;
+    while (player(state).charge && ticks++ < 20) {
+      stepSolo(state, {});
+      if (state.events.some((e) => e.type === "charge_hit")) hit = true;
+    }
+    expect(player(state).charge).toBeNull();
+    expect(hit).toBe(true);
+    // Stops beside the quarry, not on top of it.
+    const d = Math.hypot(player(state).pos.x - m.pos.x, player(state).pos.y - m.pos.y);
+    expect(d).toBeLessThan(2.0);
+    expect(d).toBeGreaterThan(0.4);
+    expect(m.life).toBeLessThan(life);
+    expect(m.stunnedUntil).toBeGreaterThan(state.tick);
+  });
+
+  test("without a cursor pick, charges the nearest reachable monster", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "charge" });
+    const near = spawnAt(state, "skitter", { x: 5.5, y: 1.5 });
+    const nearLife = near.life;
+    spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
+    stepSolo(state, { cast: { skill: "charge" } });
+    expect(player(state).charge).not.toBeNull();
+    while (player(state).charge) stepSolo(state, {});
+    expect(near.life).toBeLessThan(nearLife);
+  });
+
+  test("refuses a target hidden behind a wall", () => {
+    const walled = mapFromStrings([
+      "##########",
+      "#@...#...#",
+      "#....#...#",
+      "#....#...#",
+      "##########",
+    ]);
+    const state = createGameOn(7, walled);
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "charge" });
+    const m = spawnAt(state, "skitter", { x: 7.5, y: 1.5 });
+    const before = { ...player(state).pos };
+    const mana = player(state).mana;
+    stepSolo(state, { cast: { skill: "charge", target: m.id } });
+    expect(player(state).charge).toBeNull();
+    expect(player(state).pos).toEqual(before);
+    expect(player(state).mana).toBe(mana);
+  });
+
+  test("move input mid-rush is ignored", () => {
+    const state = createGameOn(7, arena());
+    readyPlayer(state);
+    stepSolo(state, { spendSkill: "charge" });
+    const m = spawnAt(state, "skitter", { x: 7.5, y: 3.5 });
+    stepSolo(state, { cast: { skill: "charge", target: m.id } });
+    expect(player(state).charge).not.toBeNull();
+    stepSolo(state, { moveTo: { x: 1.5, y: 3.5 } });
+    expect(player(state).path).toEqual([]);
+    while (player(state).charge) stepSolo(state, {});
+    expect(player(state).pos.x).toBeGreaterThan(5);
   });
 });
 
@@ -615,5 +726,32 @@ describe("chainbolt", () => {
     expect(hitIds).toContain(b.id);
     expect(hitIds).toContain(c.id);
     expect(hitIds).not.toContain(d.id);
+  });
+});
+
+describe("life regen", () => {
+  test("gear regen trickles life back each tick, capped at max", () => {
+    const state = createGameOn(1, arena());
+    const p = player(state);
+    p.lifeRegen = 5; // 5 life/s -> 0.2 per tick at 25 Hz
+    p.life = 50;
+    stepSolo(state, {});
+    expect(p.life).toBeCloseTo(50 + 5 / 25, 6);
+    p.life = p.maxLife;
+    stepSolo(state, {});
+    expect(p.life).toBe(p.maxLife);
+  });
+
+  test("no regen without gear, and none while dead", () => {
+    const state = createGameOn(1, arena());
+    const p = player(state);
+    p.life = 50;
+    stepSolo(state, {});
+    expect(p.life).toBe(50); // D2 rule: life does not come back on its own
+    p.lifeRegen = 5;
+    p.dead = true;
+    p.life = 0;
+    stepSolo(state, {});
+    expect(p.life).toBe(0);
   });
 });

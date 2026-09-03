@@ -38,6 +38,8 @@ import {
   applySpendSkillInput,
   castPursuitSystem,
   leapSystem,
+  chargeSystem,
+  lifeRegenSystem,
   manaRegenSystem,
 } from "./systems/skills";
 import { collisionSystem } from "./systems/collision";
@@ -89,6 +91,7 @@ export function travel(state: GameState, p: Player, to: ZoneId): void {
   p.castTarget = null;
   p.pendingStrike = null;
   p.leap = null;
+  p.charge = null;
   state.events.push({ type: "traveled", playerId: p.id, to });
 }
 
@@ -302,6 +305,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     attackTarget: null,
     pendingStrike: null,
     leap: null,
+    charge: null,
     pickupTarget: null,
     smashTarget: null,
     npcTarget: null,
@@ -322,6 +326,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     stash: createInventory(),
     equipment,
     magicFind: 0,
+    lifeRegen: stats.lifeRegen,
     quests: {},
   };
   state.players.set(join.id, p);
@@ -395,6 +400,7 @@ export function step(state: GameState, frame: Frame): void {
     const here = () => roster.filter((p) => p.zoneId === zone.id);
     const acting = () => here().filter((p) => !p.dead);
     manaRegenSystem(acting());
+    lifeRegenSystem(acting());
     playerCombatSystem(state, zone, acting());
     pickupSystem(state, zone, acting());
     reclaimSystem(state, zone, acting());
@@ -404,8 +410,9 @@ export function step(state: GameState, frame: Frame): void {
     breakSystem(state, zone, acting());
     castPursuitSystem(state, zone, acting());
     leapSystem(state, zone, here());
-    // Airborne players neither walk nor trip floor triggers until they land.
-    const grounded = () => acting().filter((p) => !p.leap);
+    chargeSystem(state, zone, here());
+    // Leaping and charging players neither walk nor trip floor triggers until they stop.
+    const grounded = () => acting().filter((p) => !p.leap && !p.charge);
     movementSystem(grounded());
     regionSystem(state, zone, grounded());
     safeGroundArrivalSystem(state, zone, grounded());

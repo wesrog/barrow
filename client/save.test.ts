@@ -89,6 +89,7 @@ describe("character save", () => {
     expect(player(state).skills).toEqual({
       cleave: 2,
       crush: 0,
+      charge: 0,
       warcry: 0,
       leap: 0,
       firebolt: 0,

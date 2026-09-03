@@ -83,6 +83,7 @@ function Globe({
 export const SKILL_SHORT: Record<SkillId, string> = {
   cleave: "clv",
   crush: "crs",
+  charge: "chg",
   warcry: "cry",
   leap: "leap",
   stomp: "stmp",

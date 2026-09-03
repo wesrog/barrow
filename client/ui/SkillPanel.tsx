@@ -8,8 +8,9 @@ import { PanelChrome } from "./PanelChrome";
 const DESCRIPTIONS: Record<SkillId, string> = {
   cleave: "sweep every enemy in reach · +25%/rank · +10% per warcry rank",
   crush: "guaranteed heavy blow · 200% +50%/rank",
+  charge: "rush a distant enemy and ram it · 130% +30%/rank · brief stun · never misses",
   warcry: "battle shout, +damage for 20s · also empowers cleave",
-  leap: "jump to a spot, crushing and stunning enemies where you land",
+  leap: "jump to a spot, crushing and stunning enemies where you land · longer jumps per rank",
   stomp: "slam the ground: damage and stun everything around you · +5% dmg and longer stun per leap rank",
   deathblow: "one executioner's strike · 300% +75%/rank · +15% per crush rank · never misses",
   firebolt: "hurl fire at a distant enemy · never misses · +10% per focus rank",

@@ -95,17 +95,28 @@ export function hitMonster(
   m.life -= amount;
   m.lastHitBy = p.id;
   if (m.ai !== "chasing") {
-    m.ai = "chasing";
-    m.path = [];
+    aggro(state, zone, m);
   }
   for (const other of zone.monsters.values()) {
     if (other === m || other.ai !== "idle") continue;
     if (dist(other.pos, m.pos) > ALERT_RADIUS) continue;
     if (!hasLineOfSight(zone.map, other.pos, m.pos)) continue;
-    other.ai = "chasing";
-    other.path = [];
+    aggro(state, zone, other);
   }
   state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+}
+
+/** Flip a monster into the chase and announce it — the client's cue to bark. */
+function aggro(state: GameState, zone: ZoneState, m: Monster): void {
+  m.ai = "chasing";
+  m.path = [];
+  state.events.push({
+    type: "monster_aggro",
+    id: m.id,
+    typeId: m.typeId,
+    pos: { ...m.pos },
+    zone: zone.id,
+  });
 }
 
 const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -306,8 +317,7 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
     const d = dist(m.pos, p.pos);
     if (m.ai === "idle") {
       if (d <= m.aggro) {
-        m.ai = "chasing";
-        m.path = [];
+        aggro(state, zone, m);
       } else {
         idleWander(state, zone, m);
         continue;

@@ -10,7 +10,8 @@ export type ModStat =
   | "mana"
   | "attackSpeedPct"
   | "moveSpeedPct"
-  | "magicFind";
+  | "magicFind"
+  | "lifeRegen";
 
 export interface ModRange {
   stat: ModStat;
@@ -62,6 +63,10 @@ export const AFFIXES: Record<string, Affix> = {
   of_accuracy: a({ id: "of_accuracy", kind: "suffix", group: "ar_suf", name: "of Accuracy", alvl: 1, slots: WEAPON, mods: [{ stat: "attackRating", min: 10, max: 40 }] }),
   of_ember: a({ id: "of_ember", kind: "suffix", group: "ember", name: "of Ember", alvl: 3, slots: WEAPON, mods: [{ stat: "dmgMin", min: 1, max: 3 }, { stat: "dmgMax", min: 3, max: 6 }] }),
   of_alacrity: a({ id: "of_alacrity", kind: "suffix", group: "ias", name: "of Alacrity", alvl: 8, slots: WEAPON, mods: [{ stat: "attackSpeedPct", min: 8, max: 15 }] }),
+  of_haste: a({ id: "of_haste", kind: "suffix", group: "ias", name: "of Haste", alvl: 20, slots: WEAPON, mods: [{ stat: "attackSpeedPct", min: 16, max: 25 }] }),
+  // D2's Replenish Life: a slow trickle from gear, never fast enough to replace potions
+  of_mending: a({ id: "of_mending", kind: "suffix", group: "regen", name: "of Mending", alvl: 4, slots: "any", mods: [{ stat: "lifeRegen", min: 1, max: 2 }] }),
+  of_renewal: a({ id: "of_renewal", kind: "suffix", group: "regen", name: "of Renewal", alvl: 18, slots: "any", mods: [{ stat: "lifeRegen", min: 3, max: 5 }] }),
   of_the_fortress: a({ id: "of_the_fortress", kind: "suffix", group: "def_suf", name: "of the Fortress", alvl: 12, slots: ARMOR, mods: [{ stat: "defense", min: 15, max: 30 }] }),
   of_winds: a({ id: "of_winds", kind: "suffix", group: "frw", name: "of Winds", alvl: 6, slots: ["boots"], mods: [{ stat: "moveSpeedPct", min: 5, max: 10 }] }),
   of_fortune: a({ id: "of_fortune", kind: "suffix", group: "mf_suf", name: "of Fortune", alvl: 5, slots: "any", mods: [{ stat: "magicFind", min: 5, max: 15 }] }),

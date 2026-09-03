@@ -24,6 +24,7 @@ const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
   attackSpeedPct: (v) => `+${v}% attack speed`,
   moveSpeedPct: (v) => `+${v}% run speed`,
   magicFind: (v) => `+${v}% better chance of magic items`,
+  lifeRegen: (v) => `replenish life +${v}`,
 };
 
 export function itemDetail(item: Item, playerLevel: number, playerKlass?: Klass): {

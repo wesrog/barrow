@@ -167,5 +167,15 @@ describe("computeStats", () => {
     expect(s.moveSpeedPct).toBe(10);
     // 20% IAS on a 12-tick swing -> 10 ticks
     expect(s.swingEvery).toBe(Math.round(BASE_STATS.swingEvery / 1.2));
+    // the sheet shows the raw percentage too
+    expect(s.attackSpeedPct).toBe(20);
+  });
+
+  test("life regen comes only from gear, D2 Replenish Life style", () => {
+    const eq = createEquipment();
+    expect(computeStats(eq).lifeRegen).toBe(0); // no natural regen — potions stay king
+    eq.ring1 = { ...plain("bone_ring"), mods: [{ stat: "lifeRegen", value: 2 }] };
+    eq.amulet = { ...plain("grave_amulet"), mods: [{ stat: "lifeRegen", value: 3 }] };
+    expect(computeStats(eq).lifeRegen).toBe(5);
   });
 });

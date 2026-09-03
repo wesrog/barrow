@@ -5,6 +5,7 @@ export type Klass = "warrior" | "witch";
 export type SkillId =
   | "cleave"
   | "crush"
+  | "charge"
   | "warcry"
   | "leap"
   | "stomp"
@@ -38,6 +39,7 @@ export interface SkillDef {
 export const SKILLS: Record<SkillId, SkillDef> = {
   cleave: { id: "cleave", name: "Cleave", klass: "warrior", targeting: "none", levelReq: 1, manaCost: 3, buffTicks: 0, castTicks: 18 },
   crush: { id: "crush", name: "Crush", klass: "warrior", targeting: "target", levelReq: 2, manaCost: 4, buffTicks: 0, castTicks: 14 },
+  charge: { id: "charge", name: "Charge", klass: "warrior", targeting: "target", levelReq: 3, manaCost: 4, buffTicks: 0, castTicks: 16 },
   warcry: { id: "warcry", name: "Warcry", klass: "warrior", targeting: "none", levelReq: 4, manaCost: 6, buffTicks: 500, castTicks: 15 },
   leap: { id: "leap", name: "Leap", klass: "warrior", targeting: "point", levelReq: 6, manaCost: 5, buffTicks: 0, castTicks: 20 },
   stomp: { id: "stomp", name: "Stomp", klass: "warrior", targeting: "none", levelReq: 9, manaCost: 7, buffTicks: 0, castTicks: 16, prereq: "leap" },
@@ -75,7 +77,18 @@ export const CHAINBOLT_RANGE = 8;
 export const CHAINBOLT_TARGETS = 3;
 /** Second and third chain bolt strikes land at this fraction of full damage. */
 export const CHAINBOLT_FALLOFF = 0.7;
-export const LEAP_RANGE = 8;
+export const CHARGE_RANGE = 8;
+/** The rush stops this far short of the quarry — beside it, not on top of it. */
+export const CHARGE_STOP_SHORT = 1.1;
+/** Ground speed of the rush in tiles per tick — well above walking pace. */
+export const CHARGE_SPEED = 0.8;
+/** The rammed monster must still be this close to the stop point to eat the hit. */
+export const CHARGE_HIT_RADIUS = 2.0;
+
+/** Leap reach: 8 tiles, +0.5 per extra rank — matches blink's 12 range near max. */
+export function leapRange(rank: number): number {
+  return 8 + 0.5 * (rank - 1);
+}
 export const LEAP_STUN_RADIUS = 1.6;
 /** Airborne travel time — the stun and landing hit resolve when the flight ends. */
 export const LEAP_TICKS = 10;
@@ -96,6 +109,16 @@ export function crushMultiplier(rank: number): number {
 /** Warcry buff: +10% damage, +5% per extra rank, while active. */
 export function warcryMultiplier(rank: number): number {
   return 1 + 0.1 + 0.05 * (rank - 1);
+}
+
+/** Charge ram: 130% weapon damage, +30% per extra rank. Always hits. */
+export function chargeMultiplier(rank: number): number {
+  return 1.3 + 0.3 * (rank - 1);
+}
+
+/** The rammed target reels briefly — enough that arrival isn't a free swing against you. */
+export function chargeStunTicks(rank: number): number {
+  return 10 + 3 * rank;
 }
 
 export function leapStunTicks(rank: number): number {

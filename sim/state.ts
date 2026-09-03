@@ -126,6 +126,8 @@ export interface Player {
   pendingStrike: { at: number; target: number | null } | null;
   /** A leap in flight: the player travels from→to and lands (stunning) at endTick. */
   leap: { from: Vec; to: Vec; startTick: number; endTick: number } | null;
+  /** A charge underway: a ground rush from→to that rams the target monster at endTick. */
+  charge: { from: Vec; to: Vec; target: number; startTick: number; endTick: number } | null;
   /** Ground item id being walked to for pickup, if any. */
   pickupTarget: number | null;
   /** Breakable id being walked to for smashing, if any. */
@@ -162,6 +164,8 @@ export interface Player {
   stash: Inventory;
   equipment: Equipment;
   magicFind: number;
+  /** Life per second trickling back from gear (D2's Replenish Life). 0 without it. */
+  lifeRegen: number;
   /** Per-hero quest log; absent key = never started. Saves with the character. */
   quests: QuestLog;
 }
@@ -182,6 +186,7 @@ export type SimEvent =
   | { type: "player_swing"; playerId: PlayerId; to: Vec; zone: ZoneId }
   | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean; zone: ZoneId }
   | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
+  | { type: "monster_aggro"; id: number; typeId: string; pos: Vec; zone: ZoneId }
   | { type: "player_hit"; playerId: PlayerId; amount: number }
   | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | {
@@ -200,6 +205,7 @@ export type SimEvent =
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
   | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
+  | { type: "charge_hit"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }

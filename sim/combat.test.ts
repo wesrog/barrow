@@ -126,6 +126,61 @@ describe("monster AI", () => {
     expect(Math.hypot(m.pos.x - 30.5, m.pos.y - 2.5)).toBeLessThanOrEqual(3);
   });
 
+  test("noticing the player emits a monster_aggro event, once", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 4.5, y: 1.5 });
+    stepSolo(game, {});
+    const aggros = game.events.filter((e) => e.type === "monster_aggro");
+    expect(aggros).toHaveLength(1);
+    expect(aggros[0]).toEqual({
+      type: "monster_aggro",
+      id: m.id,
+      typeId: "shambler",
+      pos: { x: 4.5, y: 1.5 }, // where it stood when it noticed, not where it is now
+      zone: player(game).zoneId,
+    });
+    // Still chasing on later ticks: no repeat announcements.
+    for (let i = 0; i < 20; i++) {
+      stepSolo(game, {});
+      expect(game.events.filter((e) => e.type === "monster_aggro")).toHaveLength(0);
+    }
+  });
+
+  test("a provoking hit from beyond aggro range emits monster_aggro", () => {
+    const game = createGameOn(1, arena());
+    const p = player(game);
+    p.klass = "witch";
+    p.skills.firebolt = 1;
+    p.mana = 50;
+    const m = spawnAt(game, "shambler", { x: 8.5, y: 1.5 });
+    stepSolo(game, {});
+    expect(m.ai).toBe("idle");
+    stepSolo(game, { cast: { skill: "firebolt", target: m.id } });
+    expect(m.ai).toBe("chasing");
+    expect(
+      game.events.some((e) => e.type === "monster_aggro" && e.id === m.id),
+    ).toBe(true);
+  });
+
+  test("idle allies joining a fight each emit monster_aggro", () => {
+    const game = createGameOn(1, longArena());
+    const p = player(game);
+    p.klass = "witch";
+    p.skills.firebolt = 1;
+    p.mana = 50;
+    // Victim beyond its own aggro radius; ally right beside the victim.
+    const victim = spawnAt(game, "shambler", { x: 8.5, y: 1.5 });
+    const ally = spawnAt(game, "shambler", { x: 10.5, y: 1.5 });
+    stepSolo(game, {});
+    expect(victim.ai).toBe("idle");
+    expect(ally.ai).toBe("idle");
+    stepSolo(game, { cast: { skill: "firebolt", target: victim.id } });
+    expect(ally.ai).toBe("chasing");
+    const ids = game.events.filter((e) => e.type === "monster_aggro").map((e) => (e as any).id);
+    expect(ids).toContain(victim.id);
+    expect(ids).toContain(ally.id);
+  });
+
   test("monster respects its swing cooldown", () => {
     const game = createGameOn(1, arena());
     const m = spawnAt(game, "shambler", { x: 2.1, y: 1.5 });

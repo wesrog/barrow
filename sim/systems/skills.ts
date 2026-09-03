@@ -11,7 +11,6 @@ import {
   FIREBALL_RANGE,
   FIREBOLT_RANGE,
   FROSTNOVA_RADIUS,
-  LEAP_RANGE,
   LEAP_TICKS,
   LEAP_STUN_RADIUS,
   MAX_RANK,
@@ -25,7 +24,14 @@ import {
   fireboltDamage,
   frostnovaChillTicks,
   frostnovaDamage,
+  CHARGE_RANGE,
+  CHARGE_STOP_SHORT,
+  CHARGE_SPEED,
+  CHARGE_HIT_RADIUS,
+  chargeMultiplier,
+  chargeStunTicks,
   leapMultiplier,
+  leapRange,
   leapStunTicks,
   spellMultiplier,
   STOMP_RADIUS,
@@ -223,6 +229,44 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       });
       break;
     }
+    case "charge": {
+      // Same forgiving targeting as crush, gated like a bolt: range plus sight.
+      const reaches = (c: { pos: { x: number; y: number } }) =>
+        Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= CHARGE_RANGE &&
+        hasLineOfSight(zone.map, p.pos, c.pos);
+      let m = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
+      if (!m || !reaches(m)) {
+        m = nearestTo(p.pos, [...zone.monsters.values()].filter(reaches));
+      }
+      if (!m) return;
+      const dist = Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y);
+      if (dist <= CHARGE_STOP_SHORT) return; // already beside it — nothing to rush
+      if (!spendMana(state, p, "charge")) return;
+      // The destination locks at cast time: beside the quarry, along the rush line.
+      const t = (dist - CHARGE_STOP_SHORT) / dist;
+      const to = {
+        x: p.pos.x + (m.pos.x - p.pos.x) * t,
+        y: p.pos.y + (m.pos.y - p.pos.y) * t,
+      };
+      p.charge = {
+        from: { ...p.pos },
+        to,
+        target: m.id,
+        startTick: state.tick,
+        endTick: state.tick + Math.max(1, Math.ceil((dist - CHARGE_STOP_SHORT) / CHARGE_SPEED)),
+      };
+      p.path = [];
+      p.attackTarget = null;
+      state.events.push({
+        type: "skill_cast",
+        playerId: p.id,
+        skill: "charge",
+        pos: { ...p.pos },
+        at: to,
+        zone: zone.id,
+      });
+      break;
+    }
     case "warcry": {
       if (!spendMana(state, p, "warcry")) return;
       p.buffUntil = state.tick + SKILLS.warcry.buffTicks;
@@ -239,7 +283,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!cast.at) return;
       const cell = { x: Math.floor(cast.at.x), y: Math.floor(cast.at.y) };
       if (!isWalkable(zone.map, cell.x, cell.y)) return;
-      if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > LEAP_RANGE) return;
+      if (Math.hypot(cast.at.x - p.pos.x, cast.at.y - p.pos.y) > leapRange(p.skills.leap)) return;
       if (!spendMana(state, p, "leap")) return;
       // Takeoff only — leapSystem carries the flight; the stun lands with the player.
       p.leap = {
@@ -501,6 +545,45 @@ export function leapSystem(state: GameState, zone: ZoneState, players: Player[])
   }
 }
 
+/** Carry charging players along the ground; arrival rams and stuns the quarry. */
+export function chargeSystem(state: GameState, zone: ZoneState, players: Player[]): void {
+  for (const p of players) {
+    const charge = p.charge;
+    if (!charge) continue;
+    if (p.dead) {
+      p.charge = null;
+      continue;
+    }
+    if (state.tick >= charge.endTick - 1) {
+      p.pos = { ...charge.to };
+      p.charge = null;
+      const m = zone.monsters.get(charge.target);
+      if (m && Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= CHARGE_HIT_RADIUS) {
+        m.stunnedUntil = state.tick + chargeStunTicks(p.skills.charge);
+        const amount = rollSkillDamage(state, p, chargeMultiplier(p.skills.charge));
+        hitMonster(state, zone, m, p, amount);
+      }
+      state.events.push({ type: "charge_hit", playerId: p.id, pos: { ...p.pos }, zone: zone.id });
+    } else {
+      const step = 1 / (charge.endTick - charge.startTick);
+      const t = (state.tick - charge.startTick + 1) * step;
+      p.pos = {
+        x: charge.from.x + (charge.to.x - charge.from.x) * t,
+        y: charge.from.y + (charge.to.y - charge.from.y) * t,
+      };
+    }
+  }
+}
+
 export function manaRegenSystem(players: Player[]): void {
   for (const p of players) p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_PER_TICK);
+}
+
+/** Gear-granted life trickle (D2's Replenish Life). Life never comes back on
+ * its own — lifeRegen is 0 without the affix, keeping potions load-bearing. */
+export function lifeRegenSystem(players: Player[]): void {
+  for (const p of players) {
+    if (p.dead || p.lifeRegen <= 0) continue;
+    p.life = Math.min(p.maxLife, p.life + p.lifeRegen / 25);
+  }
 }

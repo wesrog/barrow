@@ -241,7 +241,7 @@ export function resetRun(state: GameState): void {
     p.dead = false;
     p.life = p.maxLife;
     p.mana = p.maxMana;
-    p.buffUntil = 0;
+    p.buffs = {};
     // A fresh world starts from camp, but the waypoints you've earned are yours.
     p.checkpoint = "overworld";
     travel(state, p, "surface");
@@ -319,7 +319,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     skills: Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>,
     mana: stats.maxMana,
     maxMana: stats.maxMana,
-    buffUntil: 0,
+    buffs: {},
     belt: 0,
     manaBelt: 0,
     gold: 0,

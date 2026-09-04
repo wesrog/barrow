@@ -1894,7 +1894,7 @@ export function createScene(
           } else if (event.skill === "fireball") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.4 });
             shake(0.08); // the blast itself arrives as an `exploded` event
-          } else if (event.skill === "chainbolt") {
+          } else if (event.skill === "soulchain") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6 });
             ring(event.pos, 1.6, 0x9ad1f5, 220);
             shake(0.08);

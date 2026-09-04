@@ -5,22 +5,6 @@ import type { GameState } from "../../sim/state";
 import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
 import { PanelChrome } from "./PanelChrome";
 
-const DESCRIPTIONS: Record<SkillId, string> = {
-  cleave: "sweep every enemy in reach · +25%/rank · +10% per warcry rank",
-  crush: "guaranteed heavy blow · 200% +50%/rank",
-  charge: "rush a distant enemy and ram it · 130% +30%/rank · brief stun · never misses",
-  warcry: "battle shout, +damage for 20s · also empowers cleave",
-  leap: "jump to a spot, crushing and stunning enemies where you land · longer jumps per rank",
-  stomp: "slam the ground: damage and stun everything around you · +5% dmg and longer stun per leap rank",
-  deathblow: "one executioner's strike · 300% +75%/rank · +15% per crush rank · never misses",
-  firebolt: "hurl fire at a distant enemy · never misses · +10% per focus rank",
-  frostnova: "icy burst around you, chilling everything it touches",
-  focus: "gather your will, +spell damage for 20s · also empowers firebolt",
-  blink: "step through shadow to a spot you can see",
-  fireball: "a blast at the aimed spot, burning all it engulfs · +8% per firebolt rank",
-  chainbolt: "lightning leaps through the three nearest enemies in sight · +8% per fireball rank",
-};
-
 const panelStyle: CSSProperties = {
   position: "absolute",
   top: 16,
@@ -115,7 +99,7 @@ export function SkillPanel({
   const p = localPlayer(game);
   const roster = CLASS_SKILLS(p.klass);
   // The tree reads in tiers: one row of the panel per unlock level.
-  const tiers = [...new Set(roster.map((d) => d.levelReq))].sort((a, b) => a - b);
+  const tiers = [...new Set(roster.map((d) => d.tier))].sort((a, b) => a - b);
   return (
     <div style={panelStyle}>
       <style>{PULSE_KEYFRAMES}</style>
@@ -141,11 +125,11 @@ export function SkillPanel({
             — level {tier} —
           </div>
           {roster
-            .filter((def) => def.levelReq === tier)
+            .filter((def) => def.tier === tier)
             .map((def) => {
               const rank = p.skills[def.id];
-              const levelLocked = p.level < def.levelReq;
-              const prereqLocked = def.prereq !== undefined && p.skills[def.prereq] <= 0;
+              const levelLocked = p.level < def.tier;
+              const prereqLocked = def.prereqs.some((pre) => p.skills[pre] <= 0);
               const canSpend = !levelLocked && !prereqLocked && p.skillPoints > 0 && rank < MAX_RANK;
               const slot = hotbar.indexOf(def.id);
               const edge = rank > 0 ? "#5a5468" : "#2c2833";
@@ -169,7 +153,7 @@ export function SkillPanel({
                     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ color: rank > 0 ? "#e8dcc0" : "#948c7d" }}>{def.name}</span>
                       {levelLocked ? (
-                        <span style={{ color: "#8f8778", fontSize: 10 }}>unlocks at level {def.levelReq}</span>
+                        <span style={{ color: "#8f8778", fontSize: 10 }}>unlocks at level {def.tier}</span>
                       ) : (
                         <RankPips rank={rank} />
                       )}
@@ -212,10 +196,10 @@ export function SkillPanel({
                       )}
                     </span>
                   </div>
-                  <div style={{ color: "#6b6455", marginTop: 2 }}>{DESCRIPTIONS[def.id]}</div>
+                  <div style={{ color: "#6b6455", marginTop: 2 }}>{def.describe(rank)}</div>
                   {prereqLocked && !levelLocked && (
                     <div style={{ color: "#8a6a3a", marginTop: 2 }}>
-                      needs a point in {SKILLS[def.prereq!].name}
+                      needs a point in {def.prereqs.map((pre) => SKILLS[pre].name).join(", ")}
                     </div>
                   )}
                 </div>

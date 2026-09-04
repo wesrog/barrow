@@ -6,7 +6,7 @@ import type { Monster, Corpse } from "./monsters";
 import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
-import type { Klass, SkillId } from "./skills";
+import type { BuffId, Klass, SkillId } from "./skills";
 import type { Npc, NpcId } from "./npcs";
 import type { QuestId, QuestLog } from "./quests";
 
@@ -152,8 +152,8 @@ export interface Player {
   skills: Record<SkillId, number>;
   mana: number;
   maxMana: number;
-  /** Tick until which the class buff (Warcry / Focus) is active. */
-  buffUntil: number;
+  /** Timed buffs by id: the tick each one ends. */
+  buffs: Partial<Record<BuffId, number>>;
   /** Healing potions on the belt. */
   belt: number;
   /** Mana potions on the belt's second row. */

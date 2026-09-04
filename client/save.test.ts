@@ -1,3 +1,4 @@
+import { SKILL_IDS } from "../sim/skills";
 import { describe, expect, test } from "bun:test";
 import { zoneOf } from "../sim/state";
 import { inCamp, isWalkable } from "../sim/map";
@@ -87,19 +88,8 @@ describe("character save", () => {
     const partial = { ...save, skills: { cleave: 2 } };
     expect(applyCharacter(state, 0, JSON.stringify(partial))).toBe(true);
     expect(player(state).skills).toEqual({
+      ...Object.fromEntries(SKILL_IDS.map((id) => [id, 0])),
       cleave: 2,
-      crush: 0,
-      charge: 0,
-      warcry: 0,
-      leap: 0,
-      firebolt: 0,
-      frostnova: 0,
-      focus: 0,
-      blink: 0,
-      stomp: 0,
-      deathblow: 0,
-      fireball: 0,
-      chainbolt: 0,
     });
   });
 

@@ -1,9 +1,9 @@
 import { hasLineOfSight, isWalkable } from "../map";
 import {
   BLINK_RANGE,
-  CHAINBOLT_FALLOFF,
-  CHAINBOLT_RANGE,
-  CHAINBOLT_TARGETS,
+  SOULCHAIN_FALLOFF,
+  SOULCHAIN_RANGE,
+  SOULCHAIN_TARGETS,
   CLEAVE_RADIUS,
   CRUSH_RANGE,
   DEATHBLOW_RANGE,
@@ -15,7 +15,9 @@ import {
   LEAP_STUN_RADIUS,
   MAX_RANK,
   SKILLS,
-  chainboltDamage,
+  soulchainDamage,
+  applyBuff,
+  BUFF_TICKS,
   cleaveMultiplier,
   crushMultiplier,
   damageMultiplier,
@@ -41,21 +43,29 @@ import {
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import { computeHitChance, hitMonster, rollDamage } from "./combat";
+import { recomputePlayerStats } from "./inventory";
 import { breakProp, type Breakable } from "../breakables";
 import { findPath, smoothPath } from "../path";
 import type { Monster } from "../monsters";
 
 export const MANA_REGEN_PER_TICK = 0.05; // 1.25/s at 25 Hz
 
+/** The whole spend gate, shared with the panel so the + button and the sim agree. */
+export function canSpendOn(p: Player, id: SkillId): boolean {
+  const def = SKILLS[id];
+  if (!def || def.klass !== p.klass || def.pending) return false;
+  if (p.skillPoints <= 0 || p.level < def.tier) return false;
+  if (def.prereqs.some((pre) => p.skills[pre] <= 0)) return false;
+  return p.skills[id] < MAX_RANK;
+}
+
 export function applySpendSkillInput(state: GameState, p: Player, input: PlayerInput): void {
   const id = input.spendSkill;
-  if (!id) return;
-  const def = SKILLS[id];
-  if (!def || def.klass !== p.klass || p.skillPoints <= 0 || p.level < def.levelReq) return;
-  if (def.prereq && p.skills[def.prereq] <= 0) return;
-  if (p.skills[id] >= MAX_RANK) return;
+  if (!id || !canSpendOn(p, id)) return;
   p.skills[id]++;
   p.skillPoints--;
+  // Passives live in the derived stats, so a new rank has to reach them.
+  recomputePlayerStats(state, p);
   state.events.push({ type: "skill_learned", playerId: p.id, skill: id, rank: p.skills[id] });
 }
 
@@ -270,7 +280,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
     }
     case "warcry": {
       if (!spendMana(state, p, "warcry")) return;
-      p.buffUntil = state.tick + SKILLS.warcry.buffTicks;
+      applyBuff(state, p, "warcry", BUFF_TICKS);
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -384,9 +394,9 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       });
       break;
     }
-    case "chainbolt": {
+    case "soulchain": {
       const inSight = (c: { pos: { x: number; y: number } }) =>
-        Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= CHAINBOLT_RANGE &&
+        Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= SOULCHAIN_RANGE &&
         hasLineOfSight(zone.map, p.pos, c.pos);
       const targets = [...zone.monsters.values()]
         .filter(inSight)
@@ -395,12 +405,12 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
             Math.hypot(a.pos.x - p.pos.x, a.pos.y - p.pos.y) -
             Math.hypot(b.pos.x - p.pos.x, b.pos.y - p.pos.y),
         )
-        .slice(0, CHAINBOLT_TARGETS);
+        .slice(0, SOULCHAIN_TARGETS);
       if (targets.length === 0) return;
-      if (!spendMana(state, p, "chainbolt")) return;
-      const { min, max } = chainboltDamage(p.skills.chainbolt, p.skills.fireball);
+      if (!spendMana(state, p, "soulchain")) return;
+      const { min, max } = soulchainDamage(p.skills.soulchain);
       targets.forEach((m, i) => {
-        const falloff = i === 0 ? 1 : CHAINBOLT_FALLOFF;
+        const falloff = i === 0 ? 1 : SOULCHAIN_FALLOFF;
         const amount = Math.max(
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * falloff),
@@ -410,7 +420,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
-        skill: "chainbolt",
+        skill: "soulchain",
         pos: { ...p.pos },
         at: { ...targets[0]!.pos },
         zone: zone.id,
@@ -479,7 +489,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
     }
     case "focus": {
       if (!spendMana(state, p, "focus")) return;
-      p.buffUntil = state.tick + SKILLS.focus.buffTicks;
+      applyBuff(state, p, "focus", BUFF_TICKS);
       state.events.push({
         type: "skill_cast",
         playerId: p.id,

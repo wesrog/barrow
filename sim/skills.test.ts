@@ -16,7 +16,9 @@ import {
   chargeStunTicks,
 } from "./skills";
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
+import { BUFF_TICKS, CLASS_TREES, SKILL_IDS, TIERS, TREES, TREE_SKILLS, hasBuff } from "./skills";
 import type { GameState } from "./state";
+import type { SkillId } from "./skills";
 
 const arena = () =>
   mapFromStrings([
@@ -27,10 +29,16 @@ const arena = () =>
     "##########",
   ]);
 
-function readyPlayer(state: GameState, level = 10, points = 10): void {
+function readyPlayer(state: GameState, level = 24, points = 12): void {
   player(state).level = level;
   player(state).skillPoints = points;
   player(state).mana = player(state).maxMana;
+}
+
+/** Spend along the prerequisite chain, then on the skill itself. */
+function learn(state: GameState, id: SkillId): void {
+  for (const pre of SKILLS[id].prereqs) if (player(state).skills[pre] <= 0) learn(state, pre);
+  stepSolo(state, { spendSkill: id });
 }
 
 describe("skill points", () => {
@@ -61,7 +69,7 @@ describe("skill points", () => {
   test("skills are gated by character level", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state, 1, 5);
-    stepSolo(state, { spendSkill: "leap" }); // leap unlocks at 6
+    stepSolo(state, { spendSkill: "leap" }); // leap unlocks at 4
     expect(player(state).skills.leap).toBe(0);
     expect(player(state).skillPoints).toBe(5);
   });
@@ -105,7 +113,7 @@ describe("cleave", () => {
     // Seed chosen so both 95%-capped hit rolls land; determinism keeps it stable.
     const state = createGameOn(2, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     const b = spawnAt(state, "skitter", { x: 1.5, y: 2.3 });
     const c = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // far away
@@ -131,7 +139,7 @@ describe("cleave", () => {
     const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     stepSolo(state, { cast: { skill: "cleave" } }); // no rank
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     player(state).mana = 0;
     stepSolo(state, { cast: { skill: "cleave" } }); // no mana
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
@@ -144,7 +152,7 @@ describe("cleave", () => {
     spawnAt(state, "skitter", { x: 2.2, y: 1.5 }); // cleave needs a target in reach
     stepSolo(state, { cast: { skill: "cleave" } }); // no rank — a misclick, not a mana problem
     expect(state.events.filter((e) => e.type === "cast_failed")).toHaveLength(0);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     player(state).mana = 0;
     stepSolo(state, { cast: { skill: "cleave" } });
     const fails = state.events.filter((e) => e.type === "cast_failed");
@@ -156,7 +164,7 @@ describe("crush", () => {
   test("lands a guaranteed heavy hit on a target in reach", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     stepSolo(state, { cast: { skill: "crush", target: m.id } });
     const hit = state.events.find((e) => e.type === "monster_hit");
@@ -168,7 +176,7 @@ describe("crush", () => {
   test("ignores a target out of reach", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const m = spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
     const manaBefore = player(state).mana;
     stepSolo(state, { cast: { skill: "crush", target: m.id } });
@@ -179,7 +187,7 @@ describe("crush", () => {
   test("with no target given, strikes the nearest monster in reach", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const near = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "crush" } });
@@ -191,7 +199,7 @@ describe("crush", () => {
   test("an out-of-reach target falls back to the nearest monster in reach", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const near = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     const far = spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "crush", target: far.id } });
@@ -203,7 +211,7 @@ describe("crush", () => {
   test("with nothing in reach, spends no mana", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const manaBefore = player(state).mana;
     stepSolo(state, { cast: { skill: "crush" } });
     expect(player(state).mana).toBe(manaBefore);
@@ -215,7 +223,7 @@ describe("cast aim point", () => {
   test("crush's cast event carries the struck monster's position", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "crush" });
+    learn(state, "crush");
     const m = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     stepSolo(state, { cast: { skill: "crush" } });
     const cast = state.events.find((e) => e.type === "skill_cast") as any;
@@ -225,7 +233,7 @@ describe("cast aim point", () => {
   test("cleave's cast event aims at the nearest monster struck", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     const near = spawnAt(state, "skitter", { x: 1.9, y: 1.5 });
     spawnAt(state, "skitter", { x: 1.5, y: 2.9 });
     stepSolo(state, { cast: { skill: "cleave" } });
@@ -236,8 +244,8 @@ describe("cast aim point", () => {
   test("stomp's cast event aims at the nearest monster struck", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "leap" });
-    stepSolo(state, { spendSkill: "stomp" });
+    learn(state, "leap");
+    learn(state, "stomp");
     const near = spawnAt(state, "skitter", { x: 1.9, y: 1.5 });
     spawnAt(state, "skitter", { x: 1.5, y: 2.9 });
     stepSolo(state, { cast: { skill: "stomp" } });
@@ -250,11 +258,11 @@ describe("warcry", () => {
   test("buffs damage for a duration", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "warcry" });
+    learn(state, "warcry");
     expect(damageMultiplier(state, player(state))).toBeCloseTo(1.0);
     stepSolo(state, { cast: { skill: "warcry" } });
     expect(damageMultiplier(state, player(state))).toBeGreaterThan(1.0);
-    for (let i = 0; i < SKILLS.warcry.buffTicks + 5; i++) stepSolo(state, {});
+    for (let i = 0; i < BUFF_TICKS + 5; i++) stepSolo(state, {});
     expect(damageMultiplier(state, player(state))).toBeCloseTo(1.0);
   });
 });
@@ -263,7 +271,7 @@ describe("leap", () => {
   test("flies across ticks instead of teleporting, landing on the target cell", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     stepSolo(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
     // Airborne after the cast tick: on the way, but nowhere near the landing cell.
     expect(player(state).leap).not.toBeNull();
@@ -282,7 +290,7 @@ describe("leap", () => {
   test("stuns monsters around the landing spot on arrival, not at takeoff", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     // A short hop keeps the chasing skitter inside the stun radius at touchdown.
     const near = spawnAt(state, "skitter", { x: 2.5, y: 2.3 });
     stepSolo(state, { cast: { skill: "leap", at: { x: 2.5, y: 1.5 } } });
@@ -298,7 +306,7 @@ describe("leap", () => {
   test("move input mid-flight is ignored", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     stepSolo(state, { cast: { skill: "leap", at: { x: 7.5, y: 3.5 } } });
     stepSolo(state, { moveTo: { x: 2.5, y: 1.5 } });
     expect(player(state).path).toEqual([]);
@@ -310,7 +318,7 @@ describe("leap", () => {
   test("damages monsters around the landing spot, leaving distant ones unhurt", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     const near = spawnAt(state, "skitter", { x: 7.5, y: 3.4 });
     const far = spawnAt(state, "skitter", { x: 2.5, y: 8.5 });
     const nearLife = near.life;
@@ -326,7 +334,7 @@ describe("leap", () => {
   test("lands on the exact aim point, not the cell center", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     stepSolo(state, { cast: { skill: "leap", at: { x: 7.2, y: 3.8 } } });
     while (player(state).leap) stepSolo(state, {});
     expect(player(state).pos.x).toBeCloseTo(7.2);
@@ -350,13 +358,13 @@ describe("leap", () => {
 
     const lowRank = createGameOn(7, corridor());
     readyPlayer(lowRank);
-    stepSolo(lowRank, { spendSkill: "leap" });
+    learn(lowRank, "leap");
     stepSolo(lowRank, { cast: { skill: "leap", at } });
     expect(player(lowRank).leap).toBeNull();
 
     const highRank = createGameOn(7, corridor());
     readyPlayer(highRank);
-    for (let i = 0; i < 3; i++) stepSolo(highRank, { spendSkill: "leap" });
+    for (let i = 0; i < 3; i++) learn(highRank, "leap");
     stepSolo(highRank, { cast: { skill: "leap", at } });
     expect(player(highRank).leap).not.toBeNull();
   });
@@ -364,7 +372,7 @@ describe("leap", () => {
   test("cannot leap into a wall or across the map", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "leap" });
+    learn(state, "leap");
     const before = { ...player(state).pos };
     stepSolo(state, { cast: { skill: "leap", at: { x: 0.5, y: 0.5 } } }); // wall
     expect(player(state).pos).toEqual(before);
@@ -382,7 +390,7 @@ describe("charge", () => {
   test("rushes to the target over ticks, then hits and stuns it on arrival", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "charge" });
+    learn(state, "charge");
     const m = spawnAt(state, "skitter", { x: 7.5, y: 2.5 });
     const life = m.life;
     stepSolo(state, { cast: { skill: "charge", target: m.id } });
@@ -407,7 +415,7 @@ describe("charge", () => {
   test("without a cursor pick, charges the nearest reachable monster", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "charge" });
+    learn(state, "charge");
     const near = spawnAt(state, "skitter", { x: 5.5, y: 1.5 });
     const nearLife = near.life;
     spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
@@ -427,7 +435,7 @@ describe("charge", () => {
     ]);
     const state = createGameOn(7, walled);
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "charge" });
+    learn(state, "charge");
     const m = spawnAt(state, "skitter", { x: 7.5, y: 1.5 });
     const before = { ...player(state).pos };
     const mana = player(state).mana;
@@ -440,7 +448,7 @@ describe("charge", () => {
   test("move input mid-rush is ignored", () => {
     const state = createGameOn(7, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "charge" });
+    learn(state, "charge");
     const m = spawnAt(state, "skitter", { x: 7.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "charge", target: m.id } });
     expect(player(state).charge).not.toBeNull();
@@ -455,7 +463,7 @@ describe("cast rate", () => {
   test("cleave cannot be recast until its cast time elapses", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     stepSolo(state, { cast: { skill: "cleave" } });
     const castsAfterFirst = state.events.filter((e) => e.type === "skill_cast").length;
@@ -492,7 +500,7 @@ describe("cast rate", () => {
   test("a basic swing blocks skills, and a skill blocks basic swings", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state);
-    stepSolo(state, { spendSkill: "cleave" });
+    learn(state, "cleave");
     spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     stepSolo(state, { swingAt: { x: 2.2, y: 1.5 } });
     expect(state.events.filter((e) => e.type === "player_swing")).toHaveLength(1);
@@ -524,29 +532,27 @@ describe("skill tree prerequisites", () => {
     readyPlayer(state, 20, 10);
     stepSolo(state, { spendSkill: "stomp" }); // requires a rank of leap
     expect(player(state).skills.stomp).toBe(0);
+    stepSolo(state, { spendSkill: "charge" });
     stepSolo(state, { spendSkill: "leap" });
     stepSolo(state, { spendSkill: "stomp" });
     expect(player(state).skills.stomp).toBe(1);
     stepSolo(state, { spendSkill: "deathblow" }); // requires crush
     expect(player(state).skills.deathblow).toBe(0);
+    stepSolo(state, { spendSkill: "cleave" });
     stepSolo(state, { spendSkill: "crush" });
     stepSolo(state, { spendSkill: "deathblow" });
     expect(player(state).skills.deathblow).toBe(1);
   });
 
-  test("the witch's chain runs firebolt → fireball → chainbolt", () => {
+  test("the witch's fire chain runs firebolt → fireball", () => {
     const state = createGameOn(1, arena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
     stepSolo(state, { spendSkill: "fireball" });
     expect(player(state).skills.fireball).toBe(0); // no firebolt yet
-    stepSolo(state, { spendSkill: "chainbolt" });
-    expect(player(state).skills.chainbolt).toBe(0); // no fireball yet
     stepSolo(state, { spendSkill: "firebolt" });
     stepSolo(state, { spendSkill: "fireball" });
     expect(player(state).skills.fireball).toBe(1);
-    stepSolo(state, { spendSkill: "chainbolt" });
-    expect(player(state).skills.chainbolt).toBe(1);
   });
 });
 
@@ -554,8 +560,8 @@ describe("stomp", () => {
   test("slams and stuns everything around the warrior", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "leap" });
-    stepSolo(state, { spendSkill: "stomp" });
+    learn(state, "leap");
+    learn(state, "stomp");
     const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });
     const b = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // far away
     stepSolo(state, { cast: { skill: "stomp" } });
@@ -570,8 +576,8 @@ describe("deathblow", () => {
   test("lands one huge always-hit blow on the nearest target in reach", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "crush" });
-    stepSolo(state, { spendSkill: "deathblow" });
+    learn(state, "crush");
+    learn(state, "deathblow");
     const m = spawnAt(state, "shambler", { x: 2.2, y: 1.5 });
     const lifeBefore = m.life;
     stepSolo(state, { cast: { skill: "deathblow" } });
@@ -585,7 +591,7 @@ describe("casting stops the approach", () => {
     const state = createGameOn(1, arena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     const m = spawnAt(state, "skitter", { x: 8.5, y: 1.5 }); // in spell range, far from melee
     stepSolo(state, { attack: m.id }); // click the enemy: the walk-in begins
     expect(player(state).attackTarget).toBe(m.id);
@@ -612,7 +618,7 @@ describe("firebolt targeting", () => {
     const state = createGameOn(seed, longArena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     return state;
   }
 
@@ -649,7 +655,8 @@ describe("firebolt targeting", () => {
     const manaBefore = player(state).mana;
     stepSolo(state, { cast: { skill: "firebolt" } });
     expect(playerZone(state).breakables.has(id)).toBe(true);
-    expect(player(state).mana).toBe(manaBefore);
+    // Nothing spent: only the tick's regen moved the pool.
+    expect(player(state).mana).toBeCloseTo(manaBefore + MANA_REGEN_PER_TICK);
   });
 
   test("a hovered monster beyond range starts a walk-in, casting once in reach", () => {
@@ -699,8 +706,8 @@ describe("fireball", () => {
     const state = createGameOn(1, arena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "firebolt" });
-    stepSolo(state, { spendSkill: "fireball" });
+    learn(state, "firebolt");
+    learn(state, "fireball");
     const a = spawnAt(state, "skitter", { x: 6.5, y: 2.5 });
     const b = spawnAt(state, "skitter", { x: 6.9, y: 3.1 });
     const c = spawnAt(state, "skitter", { x: 1.5, y: 3.5 }); // outside the blast
@@ -716,27 +723,27 @@ describe("fireball", () => {
     const state = createGameOn(1, arena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "firebolt" });
-    stepSolo(state, { spendSkill: "fireball" });
+    learn(state, "firebolt");
+    learn(state, "fireball");
     spawnAt(state, "skitter", { x: 6.5, y: 2.5 });
     stepSolo(state, { cast: { skill: "fireball", at: { x: 60, y: 60 } } }); // out of range
     expect(state.events.filter((e) => e.type === "monster_hit")).toHaveLength(0);
   });
 });
 
-describe("chainbolt", () => {
+describe("soulchain", () => {
   test("strikes up to three nearest enemies in sight", () => {
     const state = createGameOn(1, arena());
     player(state).klass = "witch";
     readyPlayer(state, 20, 10);
-    stepSolo(state, { spendSkill: "firebolt" });
-    stepSolo(state, { spendSkill: "fireball" });
-    stepSolo(state, { spendSkill: "chainbolt" });
+    learn(state, "firebolt");
+    learn(state, "fireball");
+    learn(state, "soulchain");
     const a = spawnAt(state, "skitter", { x: 3.5, y: 1.5 });
     const b = spawnAt(state, "skitter", { x: 4.5, y: 2.5 });
     const c = spawnAt(state, "skitter", { x: 5.5, y: 3.5 });
     const d = spawnAt(state, "skitter", { x: 8.5, y: 3.5 }); // fourth wheel
-    stepSolo(state, { cast: { skill: "chainbolt" } });
+    stepSolo(state, { cast: { skill: "soulchain" } });
     const hitIds = state.events.filter((e) => e.type === "monster_hit").map((e) => (e as any).id);
     expect(hitIds).toContain(a.id);
     expect(hitIds).toContain(b.id);
@@ -769,5 +776,126 @@ describe("life regen", () => {
     p.life = 0;
     stepSolo(state, {});
     expect(p.life).toBe(0);
+  });
+});
+
+describe("skill table", () => {
+  test("every tree has exactly one skill per tier", () => {
+    for (const tree of Object.values(TREES)) {
+      const rows = TREE_SKILLS(tree.id);
+      expect(rows.map((r) => r.tier)).toEqual([...TIERS]);
+    }
+  });
+
+  test("every class has three trees and eighteen skills", () => {
+    for (const klass of ["warrior", "witch"] as const) {
+      const trees = CLASS_TREES(klass);
+      expect(trees).toHaveLength(3);
+      expect(trees.flatMap((t) => TREE_SKILLS(t.id))).toHaveLength(18);
+    }
+  });
+
+  test("prerequisites are in the same tree at a lower tier", () => {
+    for (const id of SKILL_IDS) {
+      const def = SKILLS[id];
+      for (const pre of def.prereqs) {
+        expect(SKILLS[pre].tree).toBe(def.tree);
+        expect(SKILLS[pre].tier).toBeLessThan(def.tier);
+      }
+    }
+  });
+
+  test("synergy sources exist and belong to the same class", () => {
+    for (const id of SKILL_IDS) {
+      const def = SKILLS[id];
+      for (const s of def.synergies) {
+        expect(SKILLS[s.from]).toBeDefined();
+        expect(SKILLS[s.from].klass).toBe(def.klass);
+      }
+    }
+  });
+
+  test("a skill's class matches its tree's class", () => {
+    for (const id of SKILL_IDS) expect(SKILLS[id].klass).toBe(TREES[SKILLS[id].tree].klass);
+  });
+
+  test("passives cast nothing", () => {
+    for (const id of SKILL_IDS) {
+      const def = SKILLS[id];
+      if (def.kind !== "passive") continue;
+      expect(def.manaCost).toBe(0);
+      expect(def.castTicks).toBe(0);
+      expect(def.targeting).toBe("none");
+    }
+  });
+
+  test("describe renders numbers at rank 1 and rank 10 for every skill", () => {
+    for (const id of SKILL_IDS) {
+      expect(SKILLS[id].describe(1)).toMatch(/\d/);
+      expect(SKILLS[id].describe(MAX_RANK)).toMatch(/\d/);
+    }
+  });
+});
+
+describe("spend gating by tree", () => {
+  test("a tier locks until the character reaches its level", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 3, 5);
+    stepSolo(state, { spendSkill: "cleave" });
+    stepSolo(state, { spendSkill: "crush" }); // tier 4 at level 3
+    expect(player(state).skills.crush).toBe(0);
+    player(state).level = 4;
+    stepSolo(state, { spendSkill: "crush" });
+    expect(player(state).skills.crush).toBe(1);
+  });
+
+  test("every prerequisite needs a point first", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 12, 5);
+    stepSolo(state, { spendSkill: "deathblow" }); // needs crush, which needs cleave
+    expect(player(state).skills.deathblow).toBe(0);
+    stepSolo(state, { spendSkill: "cleave" });
+    stepSolo(state, { spendSkill: "crush" });
+    stepSolo(state, { spendSkill: "deathblow" });
+    expect(player(state).skills.deathblow).toBe(1);
+  });
+
+  test("passives take points without needing a prerequisite", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 8, 1);
+    stepSolo(state, { spendSkill: "weaponmastery" });
+    expect(player(state).skills.weaponmastery).toBe(1);
+  });
+
+  test("pending rows refuse points", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 30, 10);
+    for (const id of ["cleave", "crush", "deathblow"] as const) stepSolo(state, { spendSkill: id });
+    stepSolo(state, { spendSkill: "whirl" });
+    expect(player(state).skills.whirl).toBe(0);
+    expect(player(state).skillPoints).toBe(7);
+  });
+});
+
+describe("buffs", () => {
+  test("warcry and focus coexist and expire independently", () => {
+    const state = createGameOn(1, arena());
+    const p = player(state);
+    p.buffs.warcry = state.tick + 10;
+    p.buffs.focus = state.tick + 20;
+    expect(hasBuff(state, p, "warcry")).toBe(true);
+    expect(hasBuff(state, p, "focus")).toBe(true);
+    for (let i = 0; i < 12; i++) stepSolo(state, {});
+    expect(hasBuff(state, p, "warcry")).toBe(false);
+    expect(hasBuff(state, p, "focus")).toBe(true);
+  });
+
+  test("casting warcry sets the warcry buff for BUFF_TICKS", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 1, 1);
+    stepSolo(state, { spendSkill: "warcry" });
+    const at = state.tick;
+    stepSolo(state, { cast: { skill: "warcry" } });
+    expect(player(state).buffs.warcry).toBe(at + BUFF_TICKS);
   });
 });

@@ -6,7 +6,7 @@ import {
   BLINK_RANGE,
   CLASS_SKILLS,
   FIREBOLT_RANGE,
-  chainboltDamage,
+  soulchainDamage,
   fireballDamage,
   fireboltDamage,
   focusMultiplier,
@@ -17,6 +17,7 @@ import {
 import { CLASS_STATS, computeStats, createEquipment } from "./character";
 import { applyCharacter, newCharacterRaw, serializeCharacter } from "./save";
 import type { GameState } from "./state";
+import type { SkillId } from "./skills";
 
 const arena = () =>
   mapFromStrings([
@@ -26,6 +27,12 @@ const arena = () =>
     "#..........#",
     "############",
   ]);
+
+/** Spend along the prerequisite chain, then on the skill itself. */
+function learn(state: GameState, id: SkillId): void {
+  for (const pre of SKILLS[id].prereqs) if (player(state).skills[pre] <= 0) learn(state, pre);
+  stepSolo(state, { spendSkill: id });
+}
 
 /** Turn the solo player into a leveled witch with points to spend. */
 function makeWitch(state: GameState, level = 10, points = 10): void {
@@ -65,21 +72,14 @@ describe("class stats", () => {
 describe("class skill rosters", () => {
   test("each class gets its own skills in unlock order", () => {
     expect(CLASS_SKILLS("warrior").map((d) => d.id)).toEqual([
-      "cleave",
-      "crush",
-      "charge",
-      "warcry",
-      "leap",
-      "stomp",
-      "deathblow",
+      "cleave", "crush", "weaponmastery", "deathblow", "whirl", "rend",
+      "warcry", "taunt", "ironskin", "battleshout", "howl", "rally",
+      "charge", "leap", "fleetfoot", "stomp", "frenzy", "berserk",
     ]);
     expect(CLASS_SKILLS("witch").map((d) => d.id)).toEqual([
-      "firebolt",
-      "frostnova",
-      "focus",
-      "blink",
-      "fireball",
-      "chainbolt",
+      "firebolt", "warmth", "fireball", "firewall", "meteor", "firemastery",
+      "frostbolt", "frostnova", "icearmor", "glacialspike", "blizzard", "coldmastery",
+      "weaken", "blink", "focus", "slow", "soulchain", "doom",
     ]);
   });
 
@@ -87,7 +87,7 @@ describe("class skill rosters", () => {
     const state = createGameOn(1, arena());
     player(state).level = 10;
     player(state).skillPoints = 1;
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     expect(player(state).skills.firebolt).toBe(0);
     expect(player(state).skillPoints).toBe(1);
   });
@@ -97,7 +97,7 @@ describe("class skill rosters", () => {
     makeWitch(state);
     stepSolo(state, { spendSkill: "cleave" });
     expect(player(state).skills.cleave).toBe(0);
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     expect(player(state).skills.firebolt).toBe(1);
   });
 });
@@ -106,7 +106,7 @@ describe("firebolt", () => {
   test("strikes a distant monster, always hits, and spends mana", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     const m = spawnAt(state, "skitter", { x: 8.5, y: 1.5 });
     const lifeBefore = m.life;
     const manaBefore = player(state).mana;
@@ -119,7 +119,7 @@ describe("firebolt", () => {
   test("out of range does nothing", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "firebolt" });
+    learn(state, "firebolt");
     const m = spawnAt(state, "skitter", { x: 1.5 + FIREBOLT_RANGE + 2, y: 1.5 });
     const manaBefore = player(state).mana;
     stepSolo(state, { cast: { skill: "firebolt", target: m.id } });
@@ -143,11 +143,9 @@ describe("witch damage curves", () => {
     expect(fireballDamage(3, 0)).toEqual({ min: 18, max: 30 });
   });
 
-  test("chain bolt grows +4/+5 per rank and scales with fireball investment", () => {
-    expect(chainboltDamage(1, 0)).toEqual({ min: 6, max: 11 });
-    expect(chainboltDamage(3, 0)).toEqual({ min: 14, max: 21 });
-    // +8% per fireball rank: rank 1 with fireball maxed = base × 1.8, floored
-    expect(chainboltDamage(1, 10)).toEqual({ min: 10, max: 19 });
+  test("soulchain grows +4/+5 per rank", () => {
+    expect(soulchainDamage(1)).toEqual({ min: 6, max: 11 });
+    expect(soulchainDamage(3)).toEqual({ min: 14, max: 21 });
   });
 });
 
@@ -155,7 +153,7 @@ describe("frost nova", () => {
   test("damages and chills everything in the ring, missing the far one", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "frostnova" });
+    learn(state, "frostnova");
     const near = spawnAt(state, "skitter", { x: 2.5, y: 1.5 });
     const far = spawnAt(state, "skitter", { x: 9.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "frostnova" } });
@@ -167,7 +165,7 @@ describe("frost nova", () => {
   test("cast event aims at the nearest monster struck so the witch faces the blast", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "frostnova" });
+    learn(state, "frostnova");
     const near = spawnAt(state, "skitter", { x: 2.5, y: 1.5 });
     spawnAt(state, "skitter", { x: 1.5, y: 3.4 });
     stepSolo(state, { cast: { skill: "frostnova" } });
@@ -189,9 +187,9 @@ describe("focus", () => {
     expect(focusMultiplier(3)).toBeCloseTo(1.2);
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "focus" });
+    learn(state, "focus");
     stepSolo(state, { cast: { skill: "focus" } });
-    expect(player(state).buffUntil).toBeGreaterThan(state.tick);
+    expect(player(state).buffs.focus).toBeGreaterThan(state.tick);
   });
 });
 
@@ -199,7 +197,7 @@ describe("blink", () => {
   test("teleports to a walkable spot in range without stunning", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "blink" });
+    learn(state, "blink");
     const bystander = spawnAt(state, "skitter", { x: 8.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "blink", at: { x: 6.5, y: 1.5 } } });
     expect(player(state).pos).toEqual({ x: 6.5, y: 1.5 });
@@ -209,7 +207,7 @@ describe("blink", () => {
   test("arrives at the exact aim point, not the cell center", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "blink" });
+    learn(state, "blink");
     stepSolo(state, { cast: { skill: "blink", at: { x: 6.2, y: 1.8 } } });
     expect(player(state).pos).toEqual({ x: 6.2, y: 1.8 });
   });
@@ -217,7 +215,7 @@ describe("blink", () => {
   test("emits its cast event with departure pos and aim point so the hero can face the blink", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "blink" });
+    learn(state, "blink");
     const start = { ...player(state).pos };
     stepSolo(state, { cast: { skill: "blink", at: { x: 6.5, y: 1.5 } } });
     const ev = state.events.find((e) => e.type === "skill_cast") as any;
@@ -228,7 +226,7 @@ describe("blink", () => {
   test("refuses walls and spots beyond range", () => {
     const state = createGameOn(1, arena());
     makeWitch(state);
-    stepSolo(state, { spendSkill: "blink" });
+    learn(state, "blink");
     const start = { ...player(state).pos };
     stepSolo(state, { cast: { skill: "blink", at: { x: 0.5, y: 0.5 } } }); // wall
     expect(player(state).pos).toEqual(start);

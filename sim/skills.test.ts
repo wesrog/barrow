@@ -954,3 +954,33 @@ describe("debuffs in the world", () => {
     expect(m.debuffs.some((d) => d.kind === "chill")).toBe(true);
   });
 });
+
+describe("warmth", () => {
+  test("mana comes back faster per rank", () => {
+    const plain = createGameOn(1, arena());
+    const warm = createGameOn(1, arena());
+    player(warm).skills.warmth = 10;
+    for (const s of [plain, warm]) {
+      player(s).mana = 0;
+      stepSolo(s, {});
+    }
+    expect(player(warm).mana).toBeCloseTo(MANA_REGEN_PER_TICK + 0.1);
+    expect(player(plain).mana).toBeCloseTo(MANA_REGEN_PER_TICK);
+  });
+});
+
+describe("fire mastery", () => {
+  test("lifts firebolt damage by rank", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 24, 1);
+    learn(state, "firebolt");
+    player(state).skills.firemastery = 10;
+    const m = spawnAt(state, "skitter", { x: 5, y: 2 });
+    m.maxLife = 1000;
+    m.life = 1000;
+    stepSolo(state, { cast: { skill: "firebolt" } });
+    // rank-1 firebolt rolls 5–9; ×1.8 floors to at least 9
+    expect(1000 - m.life).toBeGreaterThanOrEqual(9);
+  });
+});

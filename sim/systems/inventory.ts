@@ -22,7 +22,7 @@ const PICKUP_RANGE = 1.5;
 
 /** Re-derive player combat stats from equipment. Current life never exceeds max. */
 export function recomputePlayerStats(state: GameState, p: Player): void {
-  const s = computeStats(p.equipment, p.level, p.klass);
+  const s = computeStats(p.equipment, p.level, p.klass, p.skills);
   p.dmgMin = s.dmgMin;
   p.dmgMax = s.dmgMax;
   p.attackRating = s.attackRating;

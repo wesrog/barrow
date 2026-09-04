@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { SKILL_IDS, type SkillId } from "./skills";
 import {
   INV_W,
   INV_H,
@@ -210,5 +211,29 @@ describe("computeStats", () => {
     eq.ring1 = { ...plain("bone_ring"), mods: [{ stat: "lifeRegen", value: 2 }] };
     eq.amulet = { ...plain("grave_amulet"), mods: [{ stat: "lifeRegen", value: 3 }] };
     expect(computeStats(eq).lifeRegen).toBe(5);
+  });
+});
+
+describe("passives", () => {
+  const noSkills = () => Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>;
+
+  test("weapon mastery raises damage and attack rating", () => {
+    const eq = createEquipment();
+    const base = computeStats(eq, 10, "warrior", noSkills());
+    const skilled = computeStats(eq, 10, "warrior", { ...noSkills(), weaponmastery: 5 });
+    expect(skilled.attackRating).toBe(base.attackRating + 60);
+    expect(skilled.dmgMax).toBeGreaterThanOrEqual(base.dmgMax);
+  });
+
+  test("iron skin scales defense", () => {
+    const eq = createEquipment();
+    const base = computeStats(eq, 10, "warrior", noSkills());
+    const skilled = computeStats(eq, 10, "warrior", { ...noSkills(), ironskin: 10 });
+    expect(skilled.defense).toBe(Math.floor(base.defense * 1.8));
+  });
+
+  test("fleetfoot adds move speed", () => {
+    const eq = createEquipment();
+    expect(computeStats(eq, 10, "warrior", { ...noSkills(), fleetfoot: 10 }).moveSpeedPct).toBe(30);
   });
 });

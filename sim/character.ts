@@ -1,6 +1,7 @@
 import { BASES, type Slot } from "./items/bases";
 import type { Item, Rarity } from "./items/generate";
-import type { Klass } from "./skills";
+import type { Klass, SkillId } from "./skills";
+import { fleetfootSpeed, ironSkinDefense, weaponMasteryAttackRating, weaponMasteryDamage } from "./skills";
 
 export const INV_W = 10;
 export const INV_H = 4;
@@ -223,7 +224,12 @@ export function isTwoHanded(item: Item): boolean {
   return BASES[item.baseId]!.twoHanded === true;
 }
 
-export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior"): DerivedStats {
+export function computeStats(
+  eq: Equipment,
+  level = 1,
+  klass: Klass = "warrior",
+  skills?: Record<SkillId, number>,
+): DerivedStats {
   const cls = CLASS_STATS[klass];
   const weapon = eq.weapon && !isBroken(eq.weapon) ? eq.weapon : null;
   const weaponBase = weapon ? BASES[weapon.baseId]! : null;
@@ -266,6 +272,13 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
       }
     }
   }
+
+  // Passives sit beside gear: they feed the same percentages the affixes do.
+  const rank = (id: SkillId) => skills?.[id] ?? 0;
+  dmgPct += weaponMasteryDamage(rank("weaponmastery")) * 100;
+  attackRating += weaponMasteryAttackRating(rank("weaponmastery"));
+  moveSpeedPct += fleetfootSpeed(rank("fleetfoot")) * 100;
+  defense = Math.floor(defense * (1 + ironSkinDefense(rank("ironskin"))));
 
   dmgMin = Math.floor(dmgMin * (1 + dmgPct / 100));
   dmgMax = Math.floor(dmgMax * (1 + dmgPct / 100));

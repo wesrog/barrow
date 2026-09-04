@@ -19,6 +19,8 @@ import {
   applyBuff,
   BUFF_TICKS,
   CHILL_POWER,
+  warmthRegen,
+  fireDamageMultiplier,
   cleaveMultiplier,
   crushMultiplier,
   damageMultiplier,
@@ -119,7 +121,7 @@ function boltMonster(state: GameState, zone: ZoneState, p: Player, m: Monster): 
   const { min, max } = fireboltDamage(p.skills.firebolt, p.skills.focus);
   const amount = Math.max(
     1,
-    Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
+    Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * fireDamageMultiplier(p)),
   );
   hitMonster(state, zone, m, p, amount, "fire");
   state.events.push({
@@ -376,7 +378,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         if (Math.hypot(m.pos.x - cast.at.x, m.pos.y - cast.at.y) > FIREBALL_RADIUS) continue;
         const amount = Math.max(
           1,
-          Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
+          Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * fireDamageMultiplier(p)),
         );
         hitMonster(state, zone, m, p, amount, "fire");
       }
@@ -603,7 +605,9 @@ export function debuffSystem(state: GameState, zone: ZoneState): void {
 }
 
 export function manaRegenSystem(players: Player[]): void {
-  for (const p of players) p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_PER_TICK);
+  for (const p of players) {
+    p.mana = Math.min(p.maxMana, p.mana + MANA_REGEN_PER_TICK + warmthRegen(p.skills.warmth));
+  }
 }
 
 /** Gear-granted life trickle (D2's Replenish Life). Life never comes back on

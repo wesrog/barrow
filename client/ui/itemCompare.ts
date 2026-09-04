@@ -3,6 +3,7 @@ import {
   slotForItem,
   type DerivedStats,
   type Equipment,
+  type EquipSlot,
 } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
@@ -19,9 +20,16 @@ export type StatDelta = Pick<
   "dmgMin" | "dmgMax" | "attackRating" | "defense" | "maxLife" | "maxMana" | "magicFind"
 >;
 
-/** Character-stat change from equipping `item` into the slot it would occupy. */
-export function equipDelta(eq: Equipment, item: Item, level: number, klass: Klass): StatDelta {
-  const slot = slotForItem(item, eq);
+/** Character-stat change from equipping `item` into the slot it would occupy
+ *  (or `into`, when the player names a ring slot). */
+export function equipDelta(
+  eq: Equipment,
+  item: Item,
+  level: number,
+  klass: Klass,
+  into?: EquipSlot,
+): StatDelta {
+  const slot = slotForItem(item, eq, into);
   const swapped: Equipment = { ...eq, [slot]: item };
   const before = computeStats(eq, level, klass);
   const after = computeStats(swapped, level, klass);

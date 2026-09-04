@@ -294,7 +294,7 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
       placeItem(p.inventory, entry.id, entry.item);
       return;
     }
-    const slot = slotForItem(entry.item, p.equipment);
+    const slot = slotForItem(entry.item, p.equipment, input.equipInto);
     const previous = p.equipment[slot];
     p.equipment[slot] = entry.item;
     if (previous) {

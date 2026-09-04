@@ -18,6 +18,8 @@
  * through a convolver just turn to mud.
  */
 
+import type { WeaponEdge } from "../sim/items/bases";
+
 type SoundName =
   | "swing"
   | "hit"
@@ -313,43 +315,85 @@ interface ImpactOpts {
   flesh?: boolean;
   /** add a long low rumble tail (heavy landings, explosions) */
   rumble?: boolean;
+  /** weapon character: "sharp" thins the thump and adds a slicing sweep,
+   * "blunt" mutes the crack and doubles down on the sub */
+  edge?: WeaponEdge;
   at?: number;
 }
 
 /** Layered impact: crack + noise body + sub thump [+ squish] [+ rumble].
  * Layer timings, presence, and levels all wobble per hit — repeated strikes
  * at a fixed attack cadence must never sound like a drum machine. */
-function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, at = 0 }: ImpactOpts = {}): void {
+function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, edge, at = 0 }: ImpactOpts = {}): void {
   // humanize: the whole hit lands a hair off the tick grid
   const t = at + rnd(0, 0.025);
-  // crack — the first 10ms of high-frequency snap; sometimes barely there
+  const sharp = edge === "sharp";
+  const blunt = edge === "blunt";
+  // crack — the first 10ms of high-frequency snap; sometimes barely there.
+  // A blade bites with a bright, sure crack; a club lands with almost none.
   noise(c, {
-    dur: 0.012,
-    gain: rnd(0.1, 0.28) * size,
-    filterFrom: rnd(4200, 5600) * p,
+    dur: sharp ? 0.018 : 0.012,
+    gain: rnd(0.1, 0.28) * size * (sharp ? 1.5 : blunt ? 0.4 : 1),
+    filterFrom: rnd(4200, 5600) * p * (sharp ? 1.3 : blunt ? 0.75 : 1),
     filterType: "highpass",
     at: t,
     sat: true,
   });
-  // body — the mid punch, sweeping down as the energy dissipates
+  // body — the mid punch, sweeping down as the energy dissipates.
+  // Blunt: longer, lower, fatter. Sharp: tighter and sitting higher.
   noise(c, {
-    dur: rnd(0.06, 0.13) * size,
-    gain: rnd(0.28, 0.42) * size,
-    filterFrom: rnd(750, 1050) * p,
-    filterTo: rnd(180, 260) * p,
-    q: rnd(0.7, 1.1),
+    dur: rnd(0.06, 0.13) * size * (blunt ? 1.5 : sharp ? 0.8 : 1),
+    gain: rnd(0.28, 0.42) * size * (blunt ? 1.2 : 1),
+    filterFrom: rnd(750, 1050) * p * (blunt ? 0.6 : sharp ? 1.35 : 1),
+    filterTo: rnd(180, 260) * p * (blunt ? 0.6 : 1),
+    q: rnd(0.7, 1.1) * (blunt ? 0.8 : 1),
     at: t + rnd(0, 0.006),
     sat: true,
   });
-  // sub — the chest-weight thump, drifting a few ms behind the crack
+  // sub — the chest-weight thump, drifting a few ms behind the crack.
+  // The whole point of a maul; an afterthought for a knife.
   sub(c, {
-    from: rnd(125, 155) * p,
-    to: rnd(42, 54) * p,
-    dur: rnd(0.11, 0.19) * size,
-    gain: rnd(0.42, 0.62) * size,
+    from: rnd(125, 155) * p * (blunt ? 0.85 : 1),
+    to: rnd(42, 54) * p * (blunt ? 0.8 : 1),
+    dur: rnd(0.11, 0.19) * size * (blunt ? 1.6 : sharp ? 0.6 : 1),
+    gain: rnd(0.42, 0.62) * size * (blunt ? 1.3 : sharp ? 0.45 : 1),
     at: t + rnd(0.002, 0.01),
   });
-  if (flesh && Math.random() < 0.75) {
+  if (sharp) {
+    // the slice: a narrow, bright band tearing downward through the cut,
+    // plus a brief edge-ring as the steel leaves the wound
+    noise(c, {
+      dur: rnd(0.07, 0.12),
+      gain: rnd(0.16, 0.26) * size,
+      filterFrom: rnd(3200, 4400) * p,
+      filterTo: rnd(900, 1400) * p,
+      q: rnd(4, 7),
+      at: t + rnd(0.004, 0.01),
+      sat: true,
+    });
+    if (Math.random() < 0.5) {
+      noise(c, {
+        dur: rnd(0.08, 0.14),
+        gain: rnd(0.04, 0.08) * size,
+        filterFrom: rnd(5200, 6800) * p,
+        q: rnd(14, 22),
+        at: t + rnd(0.01, 0.02),
+      });
+    }
+  }
+  if (blunt) {
+    // the thud's aftermath: a dull, dark low-mid slump as the mass settles
+    noise(c, {
+      dur: rnd(0.14, 0.24) * size,
+      gain: rnd(0.14, 0.22) * size,
+      filterFrom: rnd(260, 360) * p,
+      filterTo: rnd(70, 110) * p,
+      filterType: "lowpass",
+      at: t + rnd(0.01, 0.02),
+      sat: true,
+    });
+  }
+  if (flesh && Math.random() < (sharp ? 0.9 : 0.75)) {
     // wet squish: high-Q resonant sweep through low mids; absent one hit in four
     noise(c, {
       dur: rnd(0.05, 0.11),
@@ -501,14 +545,86 @@ function metal(c: AudioContext, { freq, dur, gain = 0.2, at = 0, partials = 6 }:
   }
 }
 
-const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice) => void> = {
-  swing: (c) => {
+/** A blade through air: a thin, fast whistle — a narrow band sweeping down
+ * from the top, with a hair of steel ring — and hardly any low body. */
+function swingSharp(c: AudioContext, p: number, at: number, loud: number): void {
+  const quick = Math.random() < 0.5;
+  noise(c, {
+    dur: quick ? rnd(0.06, 0.1) : rnd(0.1, 0.16),
+    gain: rnd(0.14, 0.22) * loud,
+    filterFrom: rnd(3400, 4600) * p,
+    filterTo: rnd(900, 1400) * p,
+    q: rnd(2.5, 4.5),
+    at,
+  });
+  // the edge singing: a very narrow band riding just above the whistle
+  if (Math.random() < 0.7) {
+    noise(c, {
+      dur: rnd(0.05, 0.09),
+      gain: rnd(0.05, 0.1) * loud,
+      filterFrom: rnd(5500, 7500) * p,
+      filterTo: rnd(2500, 3500) * p,
+      q: rnd(8, 14),
+      at: at + rnd(0, 0.015),
+    });
+  }
+  // a whisper of displaced air underneath; never the fat whoosh
+  if (Math.random() < 0.4) {
+    noise(c, {
+      dur: rnd(0.07, 0.11),
+      gain: rnd(0.03, 0.06) * loud,
+      filterFrom: rnd(900, 1300) * p,
+      filterTo: rnd(300, 450) * p,
+      filterType: "lowpass",
+      at: at + rnd(0, 0.02),
+    });
+  }
+}
+
+/** Mass through air: a slow, dark whoosh with a fat low body and a soft
+ * onset — all shoulder, no top end. */
+function swingBlunt(c: AudioContext, p: number, at: number, loud: number): void {
+  noise(c, {
+    dur: rnd(0.16, 0.28),
+    gain: rnd(0.16, 0.26) * loud,
+    filterFrom: rnd(550, 800) * p,
+    filterTo: rnd(110, 170) * p,
+    filterType: "lowpass",
+    at,
+    attack: rnd(0.03, 0.07),
+  });
+  // the low air body is the sound here, so it's always present
+  noise(c, {
+    dur: rnd(0.12, 0.2),
+    gain: rnd(0.08, 0.14) * loud,
+    filterFrom: rnd(280, 420) * p,
+    filterTo: rnd(80, 130) * p,
+    filterType: "lowpass",
+    at: at + rnd(0.01, 0.04),
+    attack: rnd(0.02, 0.05),
+  });
+  // haft creak / grip at the top of the swing
+  if (Math.random() < 0.35) {
+    noise(c, { dur: 0.05, gain: 0.05 * loud, filterFrom: rnd(500, 800), filterTo: 250, q: 2, at });
+  }
+}
+
+const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge) => void> = {
+  swing: (c, _v, edge) => {
     // Swings fire on a fixed attack cadence, so everything here fights the
     // metronome: a wide timing jitter, three different arc characters, a big
     // dynamic range, and layers that come and go per swing.
     const p = rnd(0.7, 1.35);
     const at = rnd(0, 0.05);
     const loud = rnd(0.6, 1.15); // some swings are half-hearted
+    if (edge === "sharp") {
+      swingSharp(c, p, at, loud);
+      return;
+    }
+    if (edge === "blunt") {
+      swingBlunt(c, p, at, loud);
+      return;
+    }
     const kind = Math.random();
     if (kind < 0.4) {
       // full arc — long displaced air
@@ -558,8 +674,8 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice) => void> = {
       noise(c, { dur: 0.04, gain: 0.06 * loud, filterFrom: rnd(900, 1400), filterTo: 500, q: 1.5, at });
     }
   },
-  hit: (c) => {
-    impact(c, { p: rnd(0.85, 1.2), flesh: true });
+  hit: (c, _v, edge) => {
+    impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
   },
   hurt: (c, v) => {
     growl(c, { v: v ?? NEUTRAL_VOICE, dur: rnd(0.16, 0.24), gain: rnd(0.3, 0.4), fall: 0.6 });
@@ -679,14 +795,15 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice) => void> = {
 const THROTTLE_MS: Partial<Record<SoundName, number>> = { aggro: 900 };
 
 /** Play a named sound; same-name calls within its throttle window collapse into one.
- * Pass the monster's typeId to voice hurt/aggro/die/spit in its family's timbre. */
-export function play(name: SoundName, typeId?: string): void {
+ * Pass the monster's typeId to voice hurt/aggro/die/spit in its family's timbre,
+ * and the wielded weapon's edge to shape swing/hit as a cut or a thud. */
+export function play(name: SoundName, typeId?: string, edge?: WeaponEdge): void {
   const c = ensure();
   if (!c || c.state !== "running" || !sfxBus) return;
   const now = performance.now();
   if (now - (lastPlayed.get(name) ?? -1000) < (THROTTLE_MS[name] ?? 60)) return;
   lastPlayed.set(name, now);
-  RECIPES[name](c, monsterVoice(typeId));
+  RECIPES[name](c, monsterVoice(typeId), edge);
 }
 
 /* --------------------------------------------------------------------------

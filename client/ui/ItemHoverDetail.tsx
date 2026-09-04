@@ -147,6 +147,38 @@ export function ItemTooltip({ x, y, children }: { x: number; y: number; children
   );
 }
 
+/** The "replaces X / +N stat" block for one candidate slot. */
+function CompareBlock({
+  lead,
+  replaces,
+  deltas,
+}: {
+  lead: string;
+  replaces: Item | null;
+  deltas: { text: string; color: string }[];
+}) {
+  return (
+    <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid #2c2833" }}>
+      <span style={{ color: "#6b6455" }}>{replaces ? lead : "fills empty slot"}</span>
+      {replaces && <span style={{ color: RARITY_CSS[replaces.rarity] }}>{replaces.name}</span>}
+      {deltas.length === 0 ? (
+        <div style={{ color: "#6b6455" }}>no stat change</div>
+      ) : (
+        deltas.map((line, i) => (
+          <div key={i} style={{ color: line.color }}>
+            {line.text}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+/** A ring hovered while both fingers are full: shift-click targets the second ring. */
+export function secondRingChoice(item: Item, equipment: Equipment): boolean {
+  return BASES[item.baseId]!.slot === "ring" && !!equipment.ring1 && !!equipment.ring2;
+}
+
 /** Item name, base stats, mods, and (when comparable) the equip diff vs current gear. */
 export function ItemHoverDetail({
   item,
@@ -162,10 +194,10 @@ export function ItemHoverDetail({
   compare: boolean;
 }) {
   const detail = itemDetail(item, level, klass);
-  const base = BASES[item.baseId]!;
   const comparable = compare && isComparable(item);
   const replaces = comparable ? equipment[slotForItem(item, equipment)] : null;
   const deltas = comparable ? deltaLines(equipDelta(equipment, item, level, klass)) : [];
+  const secondRing = comparable && secondRingChoice(item, equipment);
   return (
     <>
       <div style={{ color: detail.color }}>{item.name}</div>
@@ -174,24 +206,13 @@ export function ItemHoverDetail({
           {line.text}
         </div>
       ))}
-      {comparable && (
-        <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid #2c2833" }}>
-          <span style={{ color: "#6b6455" }}>
-            {replaces ? "replaces " : "fills empty slot"}
-          </span>
-          {replaces && (
-            <span style={{ color: RARITY_CSS[replaces.rarity] }}>{replaces.name}</span>
-          )}
-          {deltas.length === 0 ? (
-            <div style={{ color: "#6b6455" }}>no stat change</div>
-          ) : (
-            deltas.map((line, i) => (
-              <div key={i} style={{ color: line.color }}>
-                {line.text}
-              </div>
-            ))
-          )}
-        </div>
+      {comparable && <CompareBlock lead="replaces " replaces={replaces} deltas={deltas} />}
+      {secondRing && (
+        <CompareBlock
+          lead="shift-click replaces "
+          replaces={equipment.ring2}
+          deltas={deltaLines(equipDelta(equipment, item, level, klass, "ring2"))}
+        />
       )}
     </>
   );

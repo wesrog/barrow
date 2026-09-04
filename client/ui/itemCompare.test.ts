@@ -58,4 +58,17 @@ describe("equipDelta", () => {
     expect(delta.maxLife).toBe(0);
     expect(delta.maxMana).toBe(5);
   });
+
+  test("a named ring slot compares against that ring instead of the first", () => {
+    const eq = createEquipment();
+    eq.ring1 = plain("bone_ring", [{ stat: "life", value: 10 }]);
+    eq.ring2 = plain("bone_ring", [{ stat: "mana", value: 5 }]);
+    const ring = plain("bone_ring", [{ stat: "life", value: 4 }]);
+    const vsFirst = equipDelta(eq, ring, 10, "warrior");
+    expect(vsFirst.maxLife).toBe(-6);
+    expect(vsFirst.maxMana).toBe(0);
+    const vsSecond = equipDelta(eq, ring, 10, "warrior", "ring2");
+    expect(vsSecond.maxLife).toBe(4);
+    expect(vsSecond.maxMana).toBe(-5);
+  });
 });

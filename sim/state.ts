@@ -271,6 +271,8 @@ export interface PlayerInput {
   smash?: number;
   /** Inventory entry id to equip. */
   equip?: number;
+  /** With `equip`: the ring slot to put a ring in (shift-click picks the second). */
+  equipInto?: EquipSlot;
   /** Equipment slot to unequip back into the inventory. */
   unequip?: EquipSlot;
   /** Inventory entry id to toss on the ground at the player's feet. */

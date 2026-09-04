@@ -103,6 +103,25 @@ describe("equip", () => {
     expect(player(state).inventory.entries[0]!.item.baseId).toBe("rusted_blade");
   });
 
+  test("equipInto swaps the second ring when both ring slots are full", () => {
+    const state = bareGame(1);
+    player(state).level = 5; // bone ring needs level 4
+    const a = state.nextId++;
+    placeItem(player(state).inventory, a, plain("bone_ring", "ring a"));
+    stepSolo(state, { equip: a });
+    const b = state.nextId++;
+    placeItem(player(state).inventory, b, plain("bone_ring", "ring b"));
+    stepSolo(state, { equip: b });
+    expect(player(state).equipment.ring1?.name).toBe("ring a");
+    expect(player(state).equipment.ring2?.name).toBe("ring b");
+    const c = state.nextId++;
+    placeItem(player(state).inventory, c, plain("bone_ring", "ring c"));
+    stepSolo(state, { equip: c, equipInto: "ring2" });
+    expect(player(state).equipment.ring1?.name).toBe("ring a");
+    expect(player(state).equipment.ring2?.name).toBe("ring c");
+    expect(player(state).inventory.entries.map((e) => e.item.name)).toEqual(["ring b"]);
+  });
+
   test("equip and unequip emit events for the HUD", () => {
     const state = createGameOn(1, openMap());
     const id = state.nextId++;

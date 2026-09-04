@@ -23,6 +23,16 @@ describe("data table sanity", () => {
     }
   });
 
+  test("every weapon says whether it cuts or bludgeons; nothing else does", () => {
+    for (const b of Object.values(BASES)) {
+      if (b.slot === "weapon") expect(b.edge === "sharp" || b.edge === "blunt").toBe(true);
+      else expect(b.edge).toBeUndefined();
+    }
+    expect(BASES["rusted_blade"]!.edge).toBe("sharp");
+    expect(BASES["war_maul"]!.edge).toBe("blunt");
+    expect(BASES["gnarled_staff"]!.edge).toBe("blunt");
+  });
+
   test("every treasure class entry references real bases", () => {
     for (const tc of Object.values(TREASURE_CLASSES)) {
       for (const entry of tc.entries) {

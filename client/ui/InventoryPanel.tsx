@@ -4,7 +4,7 @@ import type { CSSProperties } from "react";
 import { INV_H, INV_W, computeStats, type EquipSlot } from "../../sim/character";
 import { BASES, potionKind } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
-import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
+import { ItemHoverDetail, RARITY_CSS, secondRingChoice } from "./ItemHoverDetail";
 import { itemValue } from "../../sim/systems/town";
 import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
@@ -72,7 +72,8 @@ export function InventoryPanel({
 }: {
   game: GameState;
   assets: GameAssets | null;
-  onEquip: (entryId: number) => void;
+  /** `into` names the second ring slot on a shift-click; otherwise the sim picks. */
+  onEquip: (entryId: number, into?: EquipSlot) => void;
   onUnequip: (slot: EquipSlot) => void;
   onDrop: (entryId: number) => void;
   /** Tidy the pack: big gear first, grouped by slot, best rarity leading. */
@@ -206,10 +207,11 @@ export function InventoryPanel({
           const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
           const locked = base.levelReq > p.level || classLocked;
           const sellPrice = Math.max(1, Math.floor(itemValue(e.item) / 4));
+          const ringChoice = secondRingChoice(e.item, p.equipment);
           return (
             <div
               key={e.id}
-              onClick={() => {
+              onClick={(ev) => {
                 if (sellMode && onSell) {
                   setHovered(null);
                   onSell(e.id);
@@ -217,7 +219,7 @@ export function InventoryPanel({
                   setHovered(null);
                   onStash(e.id);
                 } else {
-                  onEquip(e.id);
+                  onEquip(e.id, ev.shiftKey && ringChoice ? "ring2" : undefined);
                 }
               }}
               onContextMenu={(ev) => {
@@ -236,7 +238,9 @@ export function InventoryPanel({
                     ? `${base.classReq} only · right-click to drop`
                     : locked
                       ? `requires level ${base.levelReq} · right-click to drop`
-                      : "click to equip · right-click to drop"
+                      : ringChoice
+                        ? "click to swap first ring · shift-click for second · right-click to drop"
+                        : "click to equip · right-click to drop"
               }
               style={{
                 position: "absolute",

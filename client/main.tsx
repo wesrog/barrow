@@ -11,6 +11,7 @@ import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
+import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
 import { updateMusic } from "./music";
 import { loadAssets, type GameAssets } from "./render/models";
@@ -49,6 +50,12 @@ let nextToastId = 1;
 let nextIntroSeq = 1;
 
 /** Is the local player standing on the camp's safe ground? */
+/** What the local hero is swinging: a blade cuts, a maul (or a bare fist) thuds. */
+function weaponEdge(game: GameState): WeaponEdge {
+  const weapon = localPlayer(game).equipment.weapon;
+  return (weapon && BASES[weapon.baseId]?.edge) ?? "blunt";
+}
+
 function onCampGround(game: GameState): boolean {
   const p = localPlayer(game);
   return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
@@ -425,14 +432,14 @@ function Game({
           switch (e.type) {
             case "monster_hit":
               scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
-              play("hit");
+              play("hit", undefined, weaponEdge(game));
               break;
             case "player_hit":
               scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
               break;
             case "player_swing":
-              play("swing");
+              play("swing", undefined, weaponEdge(game));
               break;
             case "monster_swing":
               if (e.ranged) play("spit", zoneOf(game, localPlayer(game)).monsters.get(e.id)?.typeId);
@@ -447,7 +454,7 @@ function Game({
               play("die", e.typeId);
               break;
             case "breakable_broken":
-              play("hit");
+              play("hit", undefined, weaponEdge(game));
               break;
             case "item_dropped":
               play(e.rarity === "normal" ? "drop" : "drop_rare");
@@ -966,8 +973,9 @@ function Game({
             onStash={(entryId) => {
               uiInputRef.current.stashPut = entryId;
             }}
-            onEquip={(entryId) => {
+            onEquip={(entryId, into) => {
               uiInputRef.current.equip = entryId;
+              uiInputRef.current.equipInto = into;
             }}
             onUnequip={(slot: EquipSlot) => {
               uiInputRef.current.unequip = slot;

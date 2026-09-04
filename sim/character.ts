@@ -143,12 +143,14 @@ export function removeEntry(inv: Inventory, id: number): InvEntry | null {
   return inv.entries.splice(idx, 1)[0]!;
 }
 
-/** Equip slot this item goes to; rings prefer an empty ring slot, else ring1. */
-export function slotForItem(item: Item, eq: Equipment): EquipSlot {
+/** Equip slot this item goes to; rings prefer an empty ring slot, else ring1.
+ *  `prefer` names a ring slot explicitly (shift-click) and only applies to rings. */
+export function slotForItem(item: Item, eq: Equipment, prefer?: EquipSlot): EquipSlot {
   const slot = BASES[item.baseId]!.slot;
   if (slot === "potion") throw new Error("potions go to the belt, not equipment");
   if (slot === "quest") throw new Error("quest items don't equip");
   if (slot === "ring") {
+    if (prefer === "ring1" || prefer === "ring2") return prefer;
     if (!eq.ring1) return "ring1";
     if (!eq.ring2) return "ring2";
     return "ring1";

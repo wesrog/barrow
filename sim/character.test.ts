@@ -76,6 +76,20 @@ describe("slotForItem", () => {
     expect(slotForItem(plain("bone_ring"), eq)).toBe("ring1"); // both full: swap first
     expect(slotForItem(plain("plank_buckler"), eq)).toBe("shield");
   });
+
+  test("a preferred ring slot wins over the first-free rule, but only for rings", () => {
+    const eq = createEquipment();
+    eq.ring1 = plain("bone_ring");
+    eq.ring2 = plain("bone_ring");
+    expect(slotForItem(plain("bone_ring"), eq, "ring2")).toBe("ring2");
+    expect(slotForItem(plain("bone_ring"), eq, "ring1")).toBe("ring1");
+    // An empty ring2 is still preferred over swapping a full ring1.
+    eq.ring2 = null;
+    expect(slotForItem(plain("bone_ring"), eq, "ring2")).toBe("ring2");
+    // Non-ring slots ignore the preference: a blade can't go on a finger.
+    expect(slotForItem(plain("rusted_blade"), eq, "ring2")).toBe("weapon");
+    expect(slotForItem(plain("bone_ring"), eq, "weapon")).toBe("ring2");
+  });
 });
 
 describe("orbs as off-hands", () => {

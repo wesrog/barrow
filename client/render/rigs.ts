@@ -101,6 +101,15 @@ function makeWeaponModel(baseId: string): THREE.Group {
       tip.rotation.z = -0.5;
       break;
     }
+    case "bone_wand":
+    case "willow_wand":
+    case "hexwood_wand": {
+      // A short rod with a glowing bead at the tip.
+      haft(0.5, baseId === "bone_wand" ? 0xd9d4c4 : 0x5a4326);
+      const bead = add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), flatMat(0xb08af8, 0.3)));
+      bead.position.y = -0.52;
+      break;
+    }
     case "gnarled_staff": {
       haft(1.05, 0x5a4326);
       const knot = add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), flatMat(0x6e5432, 0.7)));

@@ -135,16 +135,20 @@ class AnimRig implements ModelRig {
   }
 }
 
-/** Weapon base id -> KayKit weapon model + whether it swings two-handed. */
-const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = {
+/** Weapon base id -> KayKit weapon model + whether it swings two-handed.
+ *  `scale` shrinks a model that doubles for a smaller weapon (a staff as a wand). */
+const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean; scale?: number }> = {
   rusted_blade: { model: "sword_1handed", twoHanded: false },
   hatchet: { model: "axe_1handed", twoHanded: false },
   twin_fang: { model: "dagger", twoHanded: false },
   war_maul: { model: "axe_2handed", twoHanded: true },
   grave_scythe: { model: "sword_2handed", twoHanded: true },
-  gnarled_staff: { model: "skeleton_staff", twoHanded: false },
-  ember_staff: { model: "skeleton_staff", twoHanded: false },
-  wyrmwood_staff: { model: "skeleton_staff", twoHanded: false },
+  gnarled_staff: { model: "skeleton_staff", twoHanded: true },
+  ember_staff: { model: "skeleton_staff", twoHanded: true },
+  wyrmwood_staff: { model: "skeleton_staff", twoHanded: true },
+  bone_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
+  willow_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
+  hexwood_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
   dire_flail: { model: "axe_2handed", twoHanded: true },
   moon_glaive: { model: "axe_2handed", twoHanded: true },
   kingsbane: { model: "sword_1handed", twoHanded: false },
@@ -332,6 +336,7 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
       const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
       twoHanded = look.twoHanded;
       const model = cloneWeapon(assets.weapons[look.model]);
+      if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
       const glow = RARITY_GLOW[eq.weapon.rarity];
       if (glow !== undefined) {
         model.traverse((obj) => {

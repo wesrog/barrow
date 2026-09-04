@@ -111,11 +111,11 @@ describe("orbs as off-hands", () => {
 
   test("an orb stacks with weapon damage instead of replacing it", () => {
     const eq = createEquipment();
-    eq.weapon = plain("gnarled_staff"); // 1-4
+    eq.weapon = plain("bone_wand"); // 1-3
     eq.shield = plain("fen_pearl"); // 5-12
     const s = computeStats(eq);
     expect(s.dmgMin).toBe(1 + 5);
-    expect(s.dmgMax).toBe(4 + 12);
+    expect(s.dmgMax).toBe(3 + 12);
   });
 
   test("a broken orb contributes no damage", () => {

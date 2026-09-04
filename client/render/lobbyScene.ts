@@ -222,7 +222,8 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   });
   {
     const eq = createEquipment();
-    eq.weapon = showpiece("gnarled_staff", "Gnarled Staff");
+    // A wand, so the witchlight orb in her other hand isn't sharing a staff's two hands.
+    eq.weapon = showpiece("bone_wand", "Bone Wand");
     witch.setEquipment(eq);
   }
   const witchFlat = (color: number, roughness = 0.85) =>

@@ -211,12 +211,40 @@ describe("class-restricted weapons", () => {
     expect(Math.max(...casters.map((c) => c.levelReq))).toBeGreaterThanOrEqual(20);
   });
 
-  test("heavy two-wide weapons are two-handed; blades, staves and orbs are not", () => {
-    for (const id of ["war_maul", "grave_scythe", "dire_flail", "moon_glaive"]) {
+  test("heavy two-wide weapons and staves are two-handed; blades, wands and orbs are not", () => {
+    for (const id of ["war_maul", "grave_scythe", "dire_flail", "moon_glaive", "gnarled_staff", "ember_staff", "wyrmwood_staff"]) {
       expect(BASES[id]!.twoHanded).toBe(true);
     }
-    for (const id of ["rusted_blade", "hatchet", "twin_fang", "kingsbane", "gnarled_staff", "wyrmwood_staff", "ashen_orb"]) {
+    for (const id of ["rusted_blade", "hatchet", "twin_fang", "kingsbane", "bone_wand", "willow_wand", "hexwood_wand", "ashen_orb"]) {
       expect(BASES[id]!.twoHanded).toBeUndefined();
+    }
+  });
+
+  test("wands are witch-only one-wide weapons spanning the level curve, weaker than the staff of their tier", () => {
+    const wands = Object.values(BASES).filter((b) => b.id.endsWith("_wand"));
+    expect(wands.length).toBeGreaterThanOrEqual(3);
+    for (const w of wands) {
+      expect(w.slot).toBe("weapon");
+      expect(w.classReq).toBe("witch");
+      expect(w.w).toBe(1);
+      expect(w.dmgMax).toBeDefined();
+    }
+    expect(Math.min(...wands.map((w) => w.levelReq))).toBe(1);
+    expect(Math.max(...wands.map((w) => w.levelReq))).toBeGreaterThanOrEqual(18);
+    // A wand plus an orb should land near a staff, not beat it outright.
+    expect(BASES["bone_wand"]!.dmgMax!).toBeLessThan(BASES["gnarled_staff"]!.dmgMax!);
+    expect(BASES["hexwood_wand"]!.dmgMax!).toBeLessThan(BASES["wyrmwood_staff"]!.dmgMax!);
+  });
+
+  test("wands drop from every treasure class", () => {
+    for (const tcId of ["trash", "standard", "boss"]) {
+      const rng = createRng(33);
+      let wands = 0;
+      for (let i = 0; i < 4000; i++) {
+        const item = rollDrop(rng, tcId, 30);
+        if (item && item.baseId.endsWith("_wand")) wands++;
+      }
+      expect(wands).toBeGreaterThan(0);
     }
   });
 

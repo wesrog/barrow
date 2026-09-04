@@ -14,9 +14,9 @@ export interface TreasureClass {
 const LOW_WEAPONS = ["rusted_blade", "hatchet"];
 const MID_WEAPONS = ["war_maul", "twin_fang", "grave_scythe"];
 const HIGH_WEAPONS = ["dire_flail", "moon_glaive", "kingsbane"];
-const CASTER_LOW = ["gnarled_staff", "ashen_orb"];
-const CASTER_MID = ["ember_staff", "fen_pearl"];
-const CASTER_HIGH = ["wyrmwood_staff", "grave_star"];
+const CASTER_LOW = ["gnarled_staff", "bone_wand", "ashen_orb"];
+const CASTER_MID = ["ember_staff", "willow_wand", "fen_pearl"];
+const CASTER_HIGH = ["wyrmwood_staff", "hexwood_wand", "grave_star"];
 const LOW_ARMOR = ["cracked_helm", "rag_tunic", "worn_boots", "plank_buckler"];
 const MID_ARMOR = ["bone_visage", "studded_jerkin", "grave_plate", "chain_greaves", "bone_targe"];
 const HIGH_ARMOR = ["iron_barbute", "wyrm_skull", "lamellar_coat", "bogsteel_plate", "marsh_striders", "cragwalkers", "rimed_kite", "barrow_bulwark"];

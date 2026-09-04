@@ -119,7 +119,7 @@ function boltMonster(state: GameState, zone: ZoneState, p: Player, m: Monster): 
     1,
     Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
   );
-  hitMonster(state, zone, m, p, amount);
+  hitMonster(state, zone, m, p, amount, "fire");
   state.events.push({
     type: "skill_cast",
     playerId: p.id,
@@ -201,7 +201,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       for (const m of targets) {
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
           const amount = rollSkillDamage(state, p, mult);
-          hitMonster(state, zone, m, p, amount);
+          hitMonster(state, zone, m, p, amount, "physical");
         }
       }
       state.events.push({
@@ -229,7 +229,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!m) return;
       if (!spendMana(state, p, "crush")) return;
       const amount = rollSkillDamage(state, p, crushMultiplier(p.skills.crush));
-      hitMonster(state, zone, m, p, amount);
+      hitMonster(state, zone, m, p, amount, "physical");
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -327,7 +327,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         // A ground slam: no dodging it, like the leap's landing.
         const amount = rollSkillDamage(state, p, mult);
         m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + stunFor);
-        hitMonster(state, zone, m, p, amount);
+        hitMonster(state, zone, m, p, amount, "physical");
       }
       state.events.push({
         type: "skill_cast",
@@ -353,7 +353,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (!m) return;
       if (!spendMana(state, p, "deathblow")) return;
       const amount = rollSkillDamage(state, p, deathblowMultiplier(p.skills.deathblow, p.skills.crush));
-      hitMonster(state, zone, m, p, amount);
+      hitMonster(state, zone, m, p, amount, "physical");
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -376,7 +376,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
         );
-        hitMonster(state, zone, m, p, amount);
+        hitMonster(state, zone, m, p, amount, "fire");
       }
       state.events.push({
         type: "skill_cast",
@@ -415,7 +415,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * falloff),
         );
-        hitMonster(state, zone, m, p, amount);
+        hitMonster(state, zone, m, p, amount, "shadow");
       });
       state.events.push({
         type: "skill_cast",
@@ -475,7 +475,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
         );
         m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + chill);
-        hitMonster(state, zone, m, p, amount);
+        hitMonster(state, zone, m, p, amount, "cold");
       }
       state.events.push({
         type: "skill_cast",
@@ -541,7 +541,7 @@ export function leapSystem(state: GameState, zone: ZoneState, players: Player[])
         if (Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= LEAP_STUN_RADIUS) {
           m.stunnedUntil = state.tick + stunFor;
           const amount = rollSkillDamage(state, p, mult);
-          hitMonster(state, zone, m, p, amount);
+          hitMonster(state, zone, m, p, amount, "physical");
         }
       }
       state.events.push({ type: "leap_land", playerId: p.id, pos: { ...p.pos }, zone: zone.id });
@@ -572,7 +572,7 @@ export function chargeSystem(state: GameState, zone: ZoneState, players: Player[
       if (m && Math.hypot(m.pos.x - p.pos.x, m.pos.y - p.pos.y) <= CHARGE_HIT_RADIUS) {
         m.stunnedUntil = state.tick + chargeStunTicks(p.skills.charge);
         const amount = rollSkillDamage(state, p, chargeMultiplier(p.skills.charge));
-        hitMonster(state, zone, m, p, amount);
+        hitMonster(state, zone, m, p, amount, "physical");
       }
       state.events.push({ type: "charge_hit", playerId: p.id, pos: { ...p.pos }, zone: zone.id });
     } else {

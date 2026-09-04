@@ -9,6 +9,7 @@ import { localId, localPlayer, setLocalId } from "./local";
 import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
+import type { Element } from "../sim/elements";
 import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { BASES, type WeaponEdge } from "../sim/items/bases";
@@ -41,6 +42,9 @@ import { Reveal } from "./ui/Reveal";
 const TICK_MS = 1000 / TICK_RATE;
 
 /** The crypt style rendered for a zone; undefined on the surface. */
+/** Damage-number tint per element: parchment for steel, then fire, frost, shadow. */
+const ELEMENT_COLORS: Record<Element, string> = { physical: "#f4e9c8", fire: "#f08a3c", cold: "#7fc8f5", shadow: "#b07cf0" };
+
 function dungeonStyleOf(zoneId: ZoneId): DungeonStyleId | undefined {
   const d = zoneDungeon(zoneId);
   return d === null ? undefined : DUNGEONS[d].style;
@@ -431,7 +435,7 @@ function Game({
           if ("playerId" in e && e.playerId !== localId()) continue;
           switch (e.type) {
             case "monster_hit":
-              scene.addDamageNumber(e.pos, String(e.amount), "#f4e9c8");
+              scene.addDamageNumber(e.pos, String(e.amount), ELEMENT_COLORS[e.element]);
               play("hit", undefined, weaponEdge(game));
               break;
             case "player_hit":

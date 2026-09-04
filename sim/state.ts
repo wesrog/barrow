@@ -7,6 +7,7 @@ import type { Item, Rarity } from "./items/generate";
 import type { Breakable, BreakableKind } from "./breakables";
 import type { Equipment, EquipSlot, Inventory } from "./character";
 import type { BuffId, Klass, SkillId } from "./skills";
+import type { Element } from "./elements";
 import type { Npc, NpcId } from "./npcs";
 import type { QuestId, QuestLog } from "./quests";
 
@@ -188,7 +189,7 @@ export type SimEvent =
   | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
   | { type: "monster_aggro"; id: number; typeId: string; pos: Vec; zone: ZoneId }
   | { type: "player_hit"; playerId: PlayerId; amount: number }
-  | { type: "monster_hit"; id: number; amount: number; pos: Vec; zone: ZoneId }
+  | { type: "monster_hit"; id: number; amount: number; element: Element; pos: Vec; zone: ZoneId }
   | {
       type: "monster_died";
       id: number;

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
-import { computeHitChance, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
+import { computeHitChance, hitMonster, rollDamage, PLAYER_STRIKE_TICKS } from "./systems/combat";
 import { dropSpot } from "./systems/combat";
 import { createRng } from "./rng";
 import type { ZoneMap } from "./map";
@@ -451,5 +451,33 @@ describe("dropSpot", () => {
     const rng = createRng(1);
     const result = dropSpot(rng, map, pos);
     expect(result).toEqual(pos);
+  });
+});
+
+describe("elemental hits", () => {
+  test("a fire-resistant monster takes reduced fire damage and announces the element", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "shambler", { x: 3, y: 2 });
+    m.resist.fire = 50;
+    hitMonster(state, playerZone(state), m, player(state), 20, "fire");
+    expect(m.life).toBe(m.maxLife - 10);
+    const hit = state.events.find((e) => e.type === "monster_hit");
+    expect(hit && hit.type === "monster_hit" ? hit.element : null).toBe("fire");
+  });
+
+  test("cold mastery ranks lower the monster's cold resistance", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "shambler", { x: 3, y: 2 });
+    m.resist.cold = 100;
+    player(state).skills.coldmastery = 10; // −80, at one fifth against an immunity = −16
+    hitMonster(state, playerZone(state), m, player(state), 100, "cold");
+    expect(m.life).toBe(m.maxLife - 16);
+  });
+
+  test("spawned monsters copy their type's resistances", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "cairn_wight", { x: 3, y: 2 });
+    expect(m.resist.cold).toBeGreaterThan(0);
+    expect(m.resist.fire).toBeLessThan(0);
   });
 });

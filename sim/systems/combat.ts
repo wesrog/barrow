@@ -1,3 +1,5 @@
+import { resistedDamage, type Element } from "../elements";
+import { coldMasteryReduction } from "../skills";
 import type { Rng } from "../rng";
 import { hasLineOfSight, inCamp, isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
 import { findPath, smoothPath } from "../path";
@@ -68,7 +70,7 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
       1,
       Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
-    hitMonster(state, zone, target, p, amount);
+    hitMonster(state, zone, target, p, amount, "physical");
   }
 }
 
@@ -91,8 +93,12 @@ export function hitMonster(
   m: Monster,
   p: Player,
   amount: number,
+  element: Element,
 ): void {
-  m.life -= amount;
+  const dealt = resistedDamage(amount, m.resist[element], {
+    coldMasteryReduction: element === "cold" ? coldMasteryReduction(p.skills.coldmastery) : 0,
+  });
+  m.life -= dealt;
   m.lastHitBy = p.id;
   if (m.ai !== "chasing") {
     aggro(state, zone, m);
@@ -103,7 +109,7 @@ export function hitMonster(
     if (!hasLineOfSight(zone.map, other.pos, m.pos)) continue;
     aggro(state, zone, other);
   }
-  state.events.push({ type: "monster_hit", id: m.id, amount, pos: { ...m.pos }, zone: zone.id });
+  state.events.push({ type: "monster_hit", id: m.id, amount: dealt, element, pos: { ...m.pos }, zone: zone.id });
 }
 
 /** Flip a monster into the chase and announce it — the client's cue to bark. */
@@ -408,10 +414,12 @@ export function deathSystem(
         if (Math.hypot(other.pos.x - m.pos.x, other.pos.y - m.pos.y) <= radius) {
           const amount = rollDamage(state.rng, dmgMin, dmgMax);
           other.life -= amount;
+          // Monster-on-monster blast: unresisted, nobody's kill credit.
           state.events.push({
             type: "monster_hit",
             id: other.id,
             amount,
+            element: "physical",
             pos: { ...other.pos },
             zone: zone.id,
           });

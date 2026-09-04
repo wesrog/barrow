@@ -1,3 +1,4 @@
+import { zeroResist, type Element } from "./elements";
 import type { Vec } from "./map";
 import type { GameState, PlayerId, ZoneState } from "./state";
 
@@ -32,6 +33,8 @@ export interface MonsterType {
   guaranteedDrop?: boolean;
   /** Telegraphed attack: ticks of visible windup before the strike lands. */
   windup?: number;
+  /** Percent resistance per element; missing = 0. 100 = immune, negative = weakness. */
+  resist?: Partial<Record<Element, number>>;
 }
 
 export const MONSTER_TYPES: Record<string, MonsterType> = {
@@ -51,6 +54,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 12,
     tc: "standard",
     mlvl: 5,
+    resist: { cold: 30 },
   },
   skitter: {
     id: "skitter",
@@ -68,6 +72,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 6,
     tc: "trash",
     mlvl: 2,
+    resist: { shadow: 40 },
   },
   gravespit: {
     id: "gravespit",
@@ -85,6 +90,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 10,
     tc: "standard",
     mlvl: 4,
+    resist: { fire: -25, shadow: 40 },
     ranged: 5.5,
   },
   tomb_bloat: {
@@ -103,6 +109,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 8,
     tc: "trash",
     mlvl: 3,
+    resist: { fire: 100, cold: -30 },
     explode: { radius: 1.8, dmgMin: 6, dmgMax: 12 },
   },
   fen_howler: {
@@ -121,6 +128,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 14,
     tc: "standard",
     mlvl: 6,
+    resist: { fire: 40 },
   },
   bog_maw: {
     id: "bog_maw",
@@ -138,6 +146,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 18,
     tc: "standard",
     mlvl: 7,
+    resist: { fire: 60, cold: -20 },
     ranged: 6.0,
   },
   cairn_wight: {
@@ -156,6 +165,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 30,
     tc: "standard",
     mlvl: 9,
+    resist: { cold: 60, fire: -30 },
     windup: 15,
   },
   cinder_shade: {
@@ -174,6 +184,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 22,
     tc: "trash",
     mlvl: 10,
+    resist: { fire: 100, cold: -40 },
   },
   ash_revenant: {
     id: "ash_revenant",
@@ -191,6 +202,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 38,
     tc: "standard",
     mlvl: 11,
+    resist: { fire: 50, cold: -20 },
     windup: 14,
   },
   ember_hulk: {
@@ -209,6 +221,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 42,
     tc: "standard",
     mlvl: 11,
+    resist: { fire: 75, cold: -10, physical: 20 },
     explode: { radius: 2.0, dmgMin: 15, dmgMax: 28 },
   },
   veil_screamer: {
@@ -227,6 +240,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 46,
     tc: "standard",
     mlvl: 12,
+    resist: { shadow: 100, physical: -20 },
     ranged: 6.0,
   },
   crown_sentinel: {
@@ -245,6 +259,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 58,
     tc: "standard",
     mlvl: 13,
+    resist: { physical: 30, cold: 100 },
     windup: 16,
   },
   barrow_lord: {
@@ -263,6 +278,7 @@ export const MONSTER_TYPES: Record<string, MonsterType> = {
     xp: 60,
     tc: "boss",
     mlvl: 8,
+    resist: { shadow: 50, cold: 25, fire: 25 },
     guaranteedDrop: true,
     windup: 20,
   },
@@ -354,6 +370,8 @@ export interface Monster {
   strikeTo: Vec | null;
   /** Tick until which this monster is stunned (no moving, no swinging). */
   stunnedUntil: number;
+  /** Percent resistance per element, copied from the type at spawn. */
+  resist: Record<Element, number>;
   /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
   lastHitBy: PlayerId | null;
   /** Champions lead a pack: beefed stats, a modifier, a guaranteed drop. */
@@ -448,6 +466,7 @@ export function spawnMonster(
     strikeTo: null,
     stunnedUntil: 0,
     lastHitBy: null,
+    resist: { ...zeroResist(), ...(table.resist ?? {}) },
   };
   zone.monsters.set(monster.id, monster);
   return monster;

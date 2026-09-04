@@ -18,6 +18,8 @@ import {
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
 import { BUFF_TICKS, CHILL_POWER, CLASS_TREES, SKILL_IDS, TIERS, TREES, TREE_SKILLS, hasBuff } from "./skills";
 import { applyDebuff } from "./debuffs";
+import { hitMonster } from "./systems/combat";
+import { frostboltChillTicks, slowTicks, soulchainDrain, weakenPower, weakenTicks } from "./skills";
 import type { GameState } from "./state";
 import type { SkillId } from "./skills";
 
@@ -982,5 +984,120 @@ describe("fire mastery", () => {
     stepSolo(state, { cast: { skill: "firebolt" } });
     // rank-1 firebolt rolls 5–9; ×1.8 floors to at least 9
     expect(1000 - m.life).toBeGreaterThanOrEqual(9);
+  });
+});
+
+describe("frost bolt", () => {
+  test("hits the nearest monster in sight for cold and chills it", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 1, 1);
+    learn(state, "frostbolt");
+    const m = spawnAt(state, "shambler", { x: 6, y: 2 });
+    stepSolo(state, { cast: { skill: "frostbolt" } });
+    expect(m.life).toBeLessThan(m.maxLife);
+    expect(m.debuffs.find((d) => d.kind === "chill")?.until).toBe(state.tick - 1 + frostboltChillTicks(1));
+  });
+
+  test("walks toward a hovered target beyond reach, then chills it on arrival", () => {
+    const state = createGameOn(
+      1,
+      mapFromStrings([
+        "######################",
+        "#@...................#",
+        "#....................#",
+        "######################",
+      ]),
+    );
+    player(state).klass = "witch";
+    readyPlayer(state, 1, 1);
+    learn(state, "frostbolt");
+    const m = spawnAt(state, "skitter", { x: 19.5, y: 1.5 }); // 18 away
+    stepSolo(state, { cast: { skill: "frostbolt", target: m.id } });
+    expect(player(state).castTarget).toEqual({ skill: "frostbolt", monster: m.id, breakable: undefined });
+    let hit = false;
+    for (let i = 0; i < 300 && !hit; i++) {
+      stepSolo(state, {});
+      hit = state.events.some((e) => e.type === "monster_hit" && e.element === "cold");
+    }
+    expect(hit).toBe(true);
+    expect(m.debuffs.some((d) => d.kind === "chill")).toBe(true);
+  });
+});
+
+describe("curses", () => {
+  test("weaken curses every monster near the aimed spot", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 1, 1);
+    learn(state, "weaken");
+    const near = spawnAt(state, "shambler", { x: 5, y: 2 });
+    const far = spawnAt(state, "shambler", { x: 8, y: 3 });
+    stepSolo(state, { cast: { skill: "weaken", at: { x: 5, y: 2 } } });
+    expect(near.debuffs).toEqual([{ kind: "weaken", until: state.tick - 1 + weakenTicks(1), power: weakenPower(1) }]);
+    expect(far.debuffs).toEqual([]);
+  });
+
+  test("slow duration grows with weaken ranks", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 12, 10);
+    for (const id of ["weaken", "weaken", "weaken", "blink", "focus", "slow"] as const) stepSolo(state, { spendSkill: id });
+    const m = spawnAt(state, "shambler", { x: 5, y: 2 });
+    stepSolo(state, { cast: { skill: "slow", at: { x: 5, y: 2 } } });
+    expect(m.debuffs[0]!.until).toBe(state.tick - 1 + slowTicks(1, 3));
+  });
+
+  test("doomed monsters take more damage from a plain swing", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "shambler", { x: 3, y: 2 });
+    applyDebuff(m, { kind: "doom", until: state.tick + 100, power: 0.5 });
+    hitMonster(state, playerZone(state), m, player(state), 20, "physical");
+    expect(m.life).toBe(m.maxLife - 30);
+  });
+
+  test("a curse beyond range does nothing and costs nothing", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 1, 1);
+    learn(state, "weaken");
+    const m = spawnAt(state, "shambler", { x: 8, y: 2 });
+    const manaBefore = player(state).mana;
+    stepSolo(state, { cast: { skill: "weaken", at: { x: 40, y: 2 } } });
+    expect(m.debuffs).toEqual([]);
+    expect(player(state).mana).toBeGreaterThanOrEqual(manaBefore);
+  });
+
+  test("shadow resistance shortens a curse; immunity shrugs it off", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 1, 1);
+    learn(state, "weaken");
+    const half = spawnAt(state, "shambler", { x: 5, y: 2 });
+    half.resist.shadow = 50;
+    const immune = spawnAt(state, "shambler", { x: 5.5, y: 2 });
+    immune.resist.shadow = 100;
+    stepSolo(state, { cast: { skill: "weaken", at: { x: 5, y: 2 } } });
+    expect(half.debuffs[0]!.until).toBe(state.tick - 1 + Math.floor(weakenTicks(1) / 2));
+    expect(immune.debuffs).toEqual([]);
+  });
+});
+
+describe("soulchain drain", () => {
+  test("deals shadow through three targets and heals the caster", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 18, 1);
+    player(state).skills.soulchain = 1;
+    player(state).life = 10;
+    const ms = [4, 5, 6, 7].map((x) => spawnAt(state, "shambler", { x, y: 2 }));
+    stepSolo(state, { cast: { skill: "soulchain" } });
+    const hurt = ms.filter((m) => m.life < m.maxLife);
+    expect(hurt).toHaveLength(3);
+    const dealt = hurt.reduce((s, m) => s + (m.maxLife - m.life), 0);
+    expect(player(state).life).toBe(10 + Math.floor(dealt * soulchainDrain(1, 0)));
+    expect(
+      state.events.filter((e) => e.type === "monster_hit").every((e) => e.type === "monster_hit" && e.element === "shadow"),
+    ).toBe(true);
   });
 });

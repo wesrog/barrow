@@ -617,6 +617,8 @@ function Game({
               else if (e.skill === "stomp") play("leapland");
               else if (e.skill === "deathblow") play("crush");
               else if (e.skill === "firebolt") play("spit");
+              else if (e.skill === "frostbolt") play("spit");
+              else if (e.skill === "weaken" || e.skill === "slow" || e.skill === "doom") play("cleave");
               else if (e.skill === "fireball") play("spit");
               else if (e.skill === "soulchain") play("spit");
               else if (e.skill === "frostnova") play("cleave");

@@ -1902,6 +1902,13 @@ export function createScene(
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
             if (event.at) boltFlight(event.pos, event.at, 0xffd27a, 0xe8722c);
             shake(0.06);
+          } else if (event.skill === "frostbolt") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            if (event.at) boltFlight(event.pos, event.at, 0xd8f4ff, 0x7fc8f5);
+            shake(0.06);
+          } else if (event.skill === "weaken" || event.skill === "slow" || event.skill === "doom") {
+            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            if (event.at) ring(event.at, 2.5, 0xb07cf0, 360);
           } else if (event.skill === "frostnova") {
             caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
             ring(event.pos, 2.5, 0x9ad8e8, 320);

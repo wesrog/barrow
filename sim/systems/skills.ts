@@ -19,6 +19,18 @@ import {
   applyBuff,
   BUFF_TICKS,
   CHILL_POWER,
+  CURSE_RADIUS,
+  CURSE_RANGE,
+  FROSTBOLT_RANGE,
+  frostboltDamage,
+  frostboltChillTicks,
+  weakenPower,
+  weakenTicks,
+  slowPower,
+  slowTicks,
+  doomPower,
+  doomTicks,
+  soulchainDrain,
   warmthRegen,
   fireDamageMultiplier,
   cleaveMultiplier,
@@ -47,7 +59,7 @@ import {
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import { computeHitChance, hitMonster, rollDamage } from "./combat";
 import { recomputePlayerStats } from "./inventory";
-import { applyDebuff, pruneDebuffs } from "../debuffs";
+import { applyDebuff, pruneDebuffs, type DebuffKind } from "../debuffs";
 import { breakProp, type Breakable } from "../breakables";
 import { findPath, smoothPath } from "../path";
 import type { Monster } from "../monsters";
@@ -109,37 +121,57 @@ function nearestTo<T extends { pos: { x: number; y: number } }>(
   return best;
 }
 
+/** The two hover-targeted bolts share one path; only the payload differs. */
+type BoltSkill = "firebolt" | "frostbolt";
+const BOLT_RANGE: Record<BoltSkill, number> = { firebolt: FIREBOLT_RANGE, frostbolt: FROSTBOLT_RANGE };
+
 /** Range and line of sight — the whole gate for a bolt; spells never miss. */
-function boltReaches(zone: ZoneState, p: Player, c: { pos: { x: number; y: number } }): boolean {
+function boltReaches(
+  zone: ZoneState,
+  p: Player,
+  c: { pos: { x: number; y: number } },
+  skill: BoltSkill,
+): boolean {
   return (
-    Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= FIREBOLT_RANGE &&
+    Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= BOLT_RANGE[skill] &&
     hasLineOfSight(zone.map, p.pos, c.pos)
   );
 }
 
-function boltMonster(state: GameState, zone: ZoneState, p: Player, m: Monster): void {
-  const { min, max } = fireboltDamage(p.skills.firebolt, p.skills.focus);
-  const amount = Math.max(
-    1,
-    Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * fireDamageMultiplier(p)),
-  );
-  hitMonster(state, zone, m, p, amount, "fire");
+function boltMonster(state: GameState, zone: ZoneState, p: Player, m: Monster, skill: BoltSkill): void {
+  if (skill === "firebolt") {
+    const { min, max } = fireboltDamage(p.skills.firebolt, p.skills.focus);
+    const amount = Math.max(
+      1,
+      Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * fireDamageMultiplier(p)),
+    );
+    hitMonster(state, zone, m, p, amount, "fire");
+  } else {
+    const { min, max } = frostboltDamage(p.skills.frostbolt);
+    const amount = Math.max(1, Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)));
+    applyDebuff(m, {
+      kind: "chill",
+      until: state.tick + frostboltChillTicks(p.skills.frostbolt),
+      power: CHILL_POWER,
+    });
+    hitMonster(state, zone, m, p, amount, "cold");
+  }
   state.events.push({
     type: "skill_cast",
     playerId: p.id,
-    skill: "firebolt",
+    skill,
     pos: { ...p.pos },
     at: { ...m.pos },
     zone: zone.id,
   });
 }
 
-function boltBreakable(state: GameState, zone: ZoneState, p: Player, b: Breakable): void {
+function boltBreakable(state: GameState, zone: ZoneState, p: Player, b: Breakable, skill: BoltSkill): void {
   breakProp(state, zone, b);
   state.events.push({
     type: "skill_cast",
     playerId: p.id,
-    skill: "firebolt",
+    skill,
     pos: { ...p.pos },
     at: { ...b.pos },
     zone: zone.id,
@@ -161,12 +193,13 @@ export function castPursuitSystem(state: GameState, zone: ZoneState, players: Pl
       p.castTarget = null;
       continue;
     }
-    if (boltReaches(zone, p, target)) {
+    const skill = pursuit.skill as BoltSkill;
+    if (boltReaches(zone, p, target, skill)) {
       p.castTarget = null;
       p.path = [];
-      if (!spendMana(state, p, pursuit.skill)) continue;
-      if (pursuit.monster !== undefined) boltMonster(state, zone, p, target as Monster);
-      else boltBreakable(state, zone, p, target as Breakable);
+      if (!spendMana(state, p, skill)) continue;
+      if (pursuit.monster !== undefined) boltMonster(state, zone, p, target as Monster, skill);
+      else boltBreakable(state, zone, p, target as Breakable, skill);
     } else if (p.path.length === 0) {
       const cells = findPath(
         zone.map,
@@ -186,6 +219,77 @@ export function castPursuitSystem(state: GameState, zone: ZoneState, players: Pl
 function rollSkillDamage(state: GameState, p: Player, multiplier: number): number {
   const total = multiplier * damageMultiplier(state, p);
   return Math.max(1, Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * total));
+}
+
+type Cast = NonNullable<PlayerInput["cast"]>;
+
+/** Hover-targeted bolt: the pick is a hint, reach decides, out-of-reach queues a walk-in. */
+function castBolt(state: GameState, zone: ZoneState, p: Player, cast: Cast, skill: BoltSkill): void {
+  // Spells never miss — range and line of sight are the whole gate.
+  const hintM = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
+  const hintB = cast.breakable !== undefined ? zone.breakables.get(cast.breakable) : undefined;
+  const hint = hintM ?? hintB;
+  if (hint && !boltReaches(zone, p, hint, skill)) {
+    // A hovered mark beyond reach queues a walk-in; the pursuit system fires on arrival.
+    if (p.skills[skill] <= 0) return;
+    p.castTarget = { skill: skill, monster: hintM?.id, breakable: hintB?.id };
+    p.attackTarget = null;
+    p.pickupTarget = null;
+    p.smashTarget = null;
+    p.portalTarget = null;
+    p.reclaimTarget = null;
+    p.path = [];
+    return;
+  }
+  if (hintB && !hintM) {
+    if (!spendMana(state, p, skill)) return;
+    boltBreakable(state, zone, p, hintB, skill);
+    return;
+  }
+  // Barrels are only hit on an explicit hover — the fallback hunts monsters alone.
+  const m =
+    hintM ??
+    nearestTo(
+      p.pos,
+      [...zone.monsters.values()].filter((c) => boltReaches(zone, p, c, skill)),
+    );
+  if (!m) return;
+  if (!spendMana(state, p, skill)) return;
+  boltMonster(state, zone, p, m, skill);
+}
+
+/** Point-aimed curse: every monster near the spot, within range and sight. Shadow
+ * resistance shortens the hold rather than resisting it; an immune shrugs it off. */
+function castCurse(
+  state: GameState,
+  zone: ZoneState,
+  p: Player,
+  cast: Cast,
+  skill: "weaken" | "slow" | "doom",
+  debuff: { kind: DebuffKind; power: number; ticks: number },
+): void {
+  if (!cast.at) return;
+  const at = cast.at;
+  if (Math.hypot(at.x - p.pos.x, at.y - p.pos.y) > CURSE_RANGE) return;
+  if (!hasLineOfSight(zone.map, p.pos, at)) return;
+  const targets = [...zone.monsters.values()].filter(
+    (m) => Math.hypot(m.pos.x - at.x, m.pos.y - at.y) <= CURSE_RADIUS,
+  );
+  if (targets.length === 0) return;
+  if (!spendMana(state, p, skill)) return;
+  for (const m of targets) {
+    const ticks = Math.floor((debuff.ticks * Math.max(0, 100 - m.resist.shadow)) / 100);
+    if (ticks <= 0) continue;
+    applyDebuff(m, { kind: debuff.kind, power: debuff.power, until: state.tick + ticks });
+  }
+  state.events.push({
+    type: "skill_cast",
+    playerId: p.id,
+    skill,
+    pos: { ...p.pos },
+    at: { x: at.x, y: at.y },
+    zone: zone.id,
+  });
 }
 
 export function applyCastInput(state: GameState, p: Player, input: PlayerInput): void {
@@ -413,14 +517,19 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       if (targets.length === 0) return;
       if (!spendMana(state, p, "soulchain")) return;
       const { min, max } = soulchainDamage(p.skills.soulchain);
+      let dealt = 0;
       targets.forEach((m, i) => {
         const falloff = i === 0 ? 1 : SOULCHAIN_FALLOFF;
         const amount = Math.max(
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p) * falloff),
         );
+        const before = m.life;
         hitMonster(state, zone, m, p, amount, "shadow");
+        dealt += before - m.life;
       });
+      // The chain drinks: a share of what it took comes home as life.
+      p.life = Math.min(p.maxLife, p.life + Math.floor(dealt * soulchainDrain(p.skills.soulchain, p.skills.doom)));
       state.events.push({
         type: "skill_cast",
         playerId: p.id,
@@ -431,38 +540,25 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
       });
       break;
     }
-    case "firebolt": {
-      // Spells never miss — range and line of sight are the whole gate.
-      const hintM = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
-      const hintB = cast.breakable !== undefined ? zone.breakables.get(cast.breakable) : undefined;
-      const hint = hintM ?? hintB;
-      if (hint && !boltReaches(zone, p, hint)) {
-        // A hovered mark beyond reach queues a walk-in; the pursuit system fires on arrival.
-        if (p.skills.firebolt <= 0) return;
-        p.castTarget = { skill: "firebolt", monster: hintM?.id, breakable: hintB?.id };
-        p.attackTarget = null;
-        p.pickupTarget = null;
-        p.smashTarget = null;
-        p.portalTarget = null;
-        p.reclaimTarget = null;
-        p.path = [];
-        return;
-      }
-      if (hintB && !hintM) {
-        if (!spendMana(state, p, "firebolt")) return;
-        boltBreakable(state, zone, p, hintB);
-        return;
-      }
-      // Barrels are only hit on an explicit hover — the fallback hunts monsters alone.
-      const m =
-        hintM ??
-        nearestTo(
-          p.pos,
-          [...zone.monsters.values()].filter((c) => boltReaches(zone, p, c)),
-        );
-      if (!m) return;
-      if (!spendMana(state, p, "firebolt")) return;
-      boltMonster(state, zone, p, m);
+    case "firebolt":
+      castBolt(state, zone, p, cast, "firebolt");
+      break;
+    case "frostbolt":
+      castBolt(state, zone, p, cast, "frostbolt");
+      break;
+    case "weaken": {
+      const r = p.skills.weaken;
+      castCurse(state, zone, p, cast, "weaken", { kind: "weaken", power: weakenPower(r), ticks: weakenTicks(r) });
+      break;
+    }
+    case "slow": {
+      const r = p.skills.slow;
+      castCurse(state, zone, p, cast, "slow", { kind: "slow", power: slowPower(r), ticks: slowTicks(r, p.skills.weaken) });
+      break;
+    }
+    case "doom": {
+      const r = p.skills.doom;
+      castCurse(state, zone, p, cast, "doom", { kind: "doom", power: doomPower(r), ticks: doomTicks(r, p.skills.slow) });
       break;
     }
     case "frostnova": {

@@ -18,6 +18,7 @@ import {
   soulchainDamage,
   applyBuff,
   BUFF_TICKS,
+  CHILL_POWER,
   cleaveMultiplier,
   crushMultiplier,
   damageMultiplier,
@@ -44,6 +45,7 @@ import {
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import { computeHitChance, hitMonster, rollDamage } from "./combat";
 import { recomputePlayerStats } from "./inventory";
+import { applyDebuff, pruneDebuffs } from "../debuffs";
 import { breakProp, type Breakable } from "../breakables";
 import { findPath, smoothPath } from "../path";
 import type { Monster } from "../monsters";
@@ -474,7 +476,7 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
           1,
           Math.floor(rollDamage(state.rng, min, max) * spellMultiplier(state, p)),
         );
-        m.stunnedUntil = Math.max(m.stunnedUntil, state.tick + chill);
+        applyDebuff(m, { kind: "chill", until: state.tick + chill, power: CHILL_POWER });
         hitMonster(state, zone, m, p, amount, "cold");
       }
       state.events.push({
@@ -583,6 +585,20 @@ export function chargeSystem(state: GameState, zone: ZoneState, players: Player[
         y: charge.from.y + (charge.to.y - charge.from.y) * t,
       };
     }
+  }
+}
+
+/** Tick damage-over-time and shed expired debuffs. Runs before monster AI. */
+export function debuffSystem(state: GameState, zone: ZoneState): void {
+  for (const m of zone.monsters.values()) {
+    for (const d of m.debuffs) {
+      if (d.until <= state.tick) continue;
+      if (d.kind !== "burn" && d.kind !== "bleed") continue;
+      const source = d.source !== undefined ? state.players.get(d.source) : undefined;
+      if (!source) continue;
+      hitMonster(state, zone, m, source, Math.floor(d.power), d.element ?? "physical");
+    }
+    pruneDebuffs(m, state.tick);
   }
 }
 

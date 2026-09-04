@@ -1,4 +1,5 @@
 import { zeroResist, type Element } from "./elements";
+import type { Debuff } from "./debuffs";
 import type { Vec } from "./map";
 import type { GameState, PlayerId, ZoneState } from "./state";
 
@@ -372,6 +373,8 @@ export interface Monster {
   stunnedUntil: number;
   /** Percent resistance per element, copied from the type at spawn. */
   resist: Record<Element, number>;
+  /** Active curses, chills, and damage over time. */
+  debuffs: Debuff[];
   /** Who landed the last player-dealt blow — the kill credit A6 splits xp by. */
   lastHitBy: PlayerId | null;
   /** Champions lead a pack: beefed stats, a modifier, a guaranteed drop. */
@@ -467,6 +470,7 @@ export function spawnMonster(
     stunnedUntil: 0,
     lastHitBy: null,
     resist: { ...zeroResist(), ...(table.resist ?? {}) },
+    debuffs: [],
   };
   zone.monsters.set(monster.id, monster);
   return monster;

@@ -158,7 +158,7 @@ describe("frost nova", () => {
     const far = spawnAt(state, "skitter", { x: 9.5, y: 3.5 });
     stepSolo(state, { cast: { skill: "frostnova" } });
     expect(near.life).toBeLessThan(near.maxLife);
-    expect(near.stunnedUntil).toBeGreaterThan(state.tick);
+    expect(near.debuffs.find((d) => d.kind === "chill")?.until).toBeGreaterThan(state.tick);
     expect(far.life).toBe(far.maxLife);
   });
 

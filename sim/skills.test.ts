@@ -16,7 +16,8 @@ import {
   chargeStunTicks,
 } from "./skills";
 import { MANA_REGEN_PER_TICK } from "./systems/skills";
-import { BUFF_TICKS, CLASS_TREES, SKILL_IDS, TIERS, TREES, TREE_SKILLS, hasBuff } from "./skills";
+import { BUFF_TICKS, CHILL_POWER, CLASS_TREES, SKILL_IDS, TIERS, TREES, TREE_SKILLS, hasBuff } from "./skills";
+import { applyDebuff } from "./debuffs";
 import type { GameState } from "./state";
 import type { SkillId } from "./skills";
 
@@ -897,5 +898,59 @@ describe("buffs", () => {
     const at = state.tick;
     stepSolo(state, { cast: { skill: "warcry" } });
     expect(player(state).buffs.warcry).toBe(at + BUFF_TICKS);
+  });
+});
+
+describe("debuffs in the world", () => {
+  test("a chilled monster closes distance more slowly", () => {
+    const fast = createGameOn(1, arena());
+    const slow = createGameOn(1, arena());
+    const a = spawnAt(fast, "shambler", { x: 7, y: 2 });
+    const b = spawnAt(slow, "shambler", { x: 7, y: 2 });
+    applyDebuff(b, { kind: "chill", until: slow.tick + 100, power: CHILL_POWER });
+    for (let i = 0; i < 10; i++) {
+      stepSolo(fast, {});
+      stepSolo(slow, {});
+    }
+    const moved = (m: { pos: { x: number } }) => 7 - m.pos.x;
+    expect(moved(b)).toBeLessThan(moved(a));
+    expect(moved(b)).toBeGreaterThan(0);
+  });
+
+  test("a weakened monster hits for less", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "shambler", { x: 2, y: 1 });
+    m.dmgMin = 10;
+    m.dmgMax = 10;
+    m.attackRating = 100000;
+    applyDebuff(m, { kind: "weaken", until: state.tick + 1000, power: 0.5 });
+    const hits: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      stepSolo(state, {});
+      for (const e of state.events) if (e.type === "player_hit") hits.push(e.amount);
+    }
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((h) => h === 5)).toBe(true);
+  });
+
+  test("burn ticks fire damage credited to its source and expires", () => {
+    const state = createGameOn(1, arena());
+    const m = spawnAt(state, "shambler", { x: 7, y: 2 });
+    applyDebuff(m, { kind: "burn", until: state.tick + 3, power: 2, element: "fire", source: 0 });
+    for (let i = 0; i < 5; i++) stepSolo(state, {});
+    expect(m.life).toBe(m.maxLife - 6);
+    expect(m.lastHitBy).toBe(0);
+    expect(m.debuffs).toHaveLength(0);
+  });
+
+  test("frost nova chills instead of stunning", () => {
+    const state = createGameOn(1, arena());
+    player(state).klass = "witch";
+    readyPlayer(state, 4, 2);
+    learn(state, "frostnova");
+    const m = spawnAt(state, "shambler", { x: 2, y: 1 });
+    stepSolo(state, { cast: { skill: "frostnova" } });
+    expect(m.stunnedUntil).toBe(0);
+    expect(m.debuffs.some((d) => d.kind === "chill")).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { resistedDamage, type Element } from "../elements";
+import { doomFactor, slowFactor, weakenFactor } from "../debuffs";
 import { coldMasteryReduction } from "../skills";
 import type { Rng } from "../rng";
 import { hasLineOfSight, inCamp, isWalkable, nearestWalkable, type Vec, type ZoneMap } from "../map";
@@ -97,6 +98,7 @@ export function hitMonster(
 ): void {
   const dealt = resistedDamage(amount, m.resist[element], {
     coldMasteryReduction: element === "cold" ? coldMasteryReduction(p.skills.coldmastery) : 0,
+    doomPower: doomFactor(m, state.tick) - 1,
   });
   m.life -= dealt;
   m.lastHitBy = p.id;
@@ -216,7 +218,7 @@ const WANDER_SPEED_SCALE = 0.35;
 /** An idle monster ambles to a random spot near home, then loiters a while. */
 function idleWander(state: GameState, zone: ZoneState, m: Monster): void {
   if (m.path.length > 0) {
-    moveAlongPath(m.pos, m.path, m.speed * WANDER_SPEED_SCALE);
+    moveAlongPath(m.pos, m.path, m.speed * WANDER_SPEED_SCALE * slowFactor(m, state.tick));
     return;
   }
   if (m.wanderIn > 0) {
@@ -267,7 +269,7 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
           continue;
         }
       }
-      moveAlongPath(m.pos, m.path, m.speed);
+      moveAlongPath(m.pos, m.path, m.speed * slowFactor(m, state.tick));
       if (dist(m.pos, m.home) <= 1) {
         m.ai = "idle";
         m.path = [];
@@ -297,7 +299,10 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
       // Diving through the palisade gap mid-swing still leaves the blow short.
       if (inCamp(zone.map, p.pos)) continue;
       if (connects && state.rng.next() < computeHitChance(m.attackRating, p.defense)) {
-        const amount = rollDamage(state.rng, m.dmgMin, m.dmgMax);
+        const amount = Math.max(
+          1,
+          Math.floor(rollDamage(state.rng, m.dmgMin, m.dmgMax) * weakenFactor(m, state.tick)),
+        );
         p.life -= amount;
         state.events.push({ type: "player_hit", playerId: p.id, amount });
       }
@@ -344,7 +349,8 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
       // Keep the path — clearing it caused stop/start jitter at the reach
       // boundary; being in reach simply pauses movement.
       if (m.swingCooldown === 0) {
-        m.swingCooldown = m.swingEvery;
+        // Chill and curses stretch the swing cadence along with the stride.
+        m.swingCooldown = Math.round(m.swingEvery / slowFactor(m, state.tick));
         if (m.windup !== undefined && !m.ranged) {
           // Telegraph: announce the strike, land it windup ticks later.
           m.windingUntil = state.tick + m.windup;
@@ -378,7 +384,7 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
         m.path = pathToward(zone.map, m.pos, p.pos);
         m.repathIn = 10;
       }
-      moveAlongPath(m.pos, m.path, m.speed);
+      moveAlongPath(m.pos, m.path, m.speed * slowFactor(m, state.tick));
     }
   }
 }

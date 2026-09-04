@@ -40,6 +40,7 @@ import {
   castPursuitSystem,
   leapSystem,
   chargeSystem,
+  debuffSystem,
   lifeRegenSystem,
   manaRegenSystem,
 } from "./systems/skills";
@@ -420,6 +421,7 @@ export function step(state: GameState, frame: Frame): void {
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());
     stairsSystem(state, zone, grounded());
+    debuffSystem(state, zone);
     monsterAiSystem(state, zone, here());
     collisionSystem(state, zone, here());
     deathSystem(state, zone, here(), travel);

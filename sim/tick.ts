@@ -28,6 +28,7 @@ import {
   applyDrinkInput,
   applyDropItemInput,
   applyEquipInput,
+  applySortInput,
   applyPickupInput,
   applyReclaimInput,
   pickupSystem,
@@ -386,6 +387,7 @@ export function step(state: GameState, frame: Frame): void {
     applyTurnInQuestInput(state, p, input);
     applyShopInput(state, p, input);
     applyStashInput(state, p, input);
+    applySortInput(state, p, input);
     applyBuyPotionInput(state, p, input);
     applyCastInput(state, p, input);
     applyCastPortalInput(state, p, input);

@@ -8,6 +8,7 @@ import type { GameState } from "../../sim/state";
 import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
 import { ItemIcon } from "./ItemIcon";
 import { PanelChrome } from "./PanelChrome";
+import { SortButton } from "./SortButton";
 
 const CELL = 32;
 
@@ -42,10 +43,13 @@ const panelStyle: CSSProperties = {
 export function StashPanel({
   game,
   onTake,
+  onSort,
   onClose,
 }: {
   game: GameState;
   onTake: (entryId: number) => void;
+  /** Tidy the stash the same way the pack sorts. */
+  onSort: () => void;
   onClose: () => void;
 }) {
   const [hovered, setHovered] = useState<Item | null>(null);
@@ -54,6 +58,20 @@ export function StashPanel({
   return (
     <div style={panelStyle}>
       <PanelChrome title="stash" color="#c9a84c" onClose={onClose} />
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: "#6b6455" }}>
+          {p.stash.entries.length} item{p.stash.entries.length === 1 ? "" : "s"}
+        </span>
+        <SortButton onSort={onSort} hint="tidy the stash: big gear first, grouped by slot" />
+      </div>
 
       <div
         style={{

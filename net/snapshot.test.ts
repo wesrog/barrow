@@ -9,7 +9,7 @@ test("snapshot round-trip: the restored game steps identically to the original",
   const g = createGame(777);
   joinPlayer(g, { id: 0 });
   joinPlayer(g, { id: 1 });
-  travel(g, g.players.get(0)!, "floor:1");
+  travel(g, g.players.get(0)!, "dungeon:barrow:1");
   for (let t = 0; t < 120; t++) {
     step(g, { tick: g.tick, inputs: t % 5 === 0 ? { 0: { moveTo: { x: 4 + (t % 10), y: 4 } } } : {} });
   }

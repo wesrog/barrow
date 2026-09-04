@@ -1,5 +1,5 @@
-import { BASES } from "./items/bases";
-import type { Item } from "./items/generate";
+import { BASES, type Slot } from "./items/bases";
+import type { Item, Rarity } from "./items/generate";
 import type { Klass } from "./skills";
 
 export const INV_W = 10;
@@ -87,6 +87,53 @@ export function placeItem(
   const spot = findSpot(inv, w, h, gridW, gridH);
   if (!spot) return false;
   inv.entries.push({ id, item, x: spot.x, y: spot.y });
+  return true;
+}
+
+// Pack order for "organize": tall-then-wide first so big gear packs the
+// left edge and the 1x1s fill the leftovers; within a size, gear groups by
+// slot, best rarity leads, then higher level, then name. Entry id is the final
+// tiebreak so any entry order yields the same layout.
+const SORT_SLOT_ORDER: Record<Slot, number> = {
+  weapon: 0,
+  shield: 1,
+  helm: 2,
+  chest: 3,
+  boots: 4,
+  amulet: 5,
+  ring: 6,
+  potion: 7,
+  quest: 8,
+};
+const SORT_RARITY_ORDER: Record<Rarity, number> = { unique: 0, rare: 1, magic: 2, normal: 3 };
+
+function compareForSort(a: InvEntry, b: InvEntry): number {
+  const ba = BASES[a.item.baseId]!;
+  const bb = BASES[b.item.baseId]!;
+  return (
+    bb.h - ba.h ||
+    bb.w - ba.w ||
+    SORT_SLOT_ORDER[ba.slot] - SORT_SLOT_ORDER[bb.slot] ||
+    SORT_RARITY_ORDER[a.item.rarity] - SORT_RARITY_ORDER[b.item.rarity] ||
+    bb.levelReq - ba.levelReq ||
+    (a.item.name < b.item.name ? -1 : a.item.name > b.item.name ? 1 : 0) ||
+    a.id - b.id
+  );
+}
+
+/**
+ * Re-pack every entry top-left, biggest first. Ids and items are untouched, only
+ * positions move. If the re-pack can't seat everything (a hand-packed grid the
+ * greedy pass can't reproduce), the inventory is left exactly as it was and
+ * false is returned.
+ */
+export function sortInventory(inv: Inventory, gridW = INV_W, gridH = INV_H): boolean {
+  const ordered = [...inv.entries].sort(compareForSort);
+  const packed: Inventory = { entries: [] };
+  for (const e of ordered) {
+    if (!placeItem(packed, e.id, e.item, gridW, gridH)) return false;
+  }
+  inv.entries = packed.entries;
   return true;
 }
 

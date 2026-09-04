@@ -866,6 +866,9 @@ function Game({
             onTake={(entryId) => {
               uiInputRef.current.stashTake = entryId;
             }}
+            onSort={() => {
+              uiInputRef.current.sortStash = true;
+            }}
             onClose={() => setStashOpen(false)}
           />
         )}
@@ -967,6 +970,9 @@ function Game({
             }}
             onDrop={(entryId) => {
               uiInputRef.current.dropItem = entryId;
+            }}
+            onSort={() => {
+              uiInputRef.current.sortPack = true;
             }}
             onClose={() => {
               // While vendoring the shop forces the panel open, so its X

@@ -308,4 +308,8 @@ export interface PlayerInput {
   stashPut?: number;
   /** Move this stash entry back into the inventory (town only). */
   stashTake?: number;
+  /** Re-pack the inventory: big gear first, grouped by slot, best rarity leading. */
+  sortPack?: boolean;
+  /** Same tidy-up for the stash. */
+  sortStash?: boolean;
 }

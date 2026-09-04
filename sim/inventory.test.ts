@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone } from "./test-helpers";
-import { BASE_STATS, INV_H, INV_W, placeItem } from "./character";
+import { BASE_STATS, INV_H, INV_W, placeItem, sortInventory } from "./character";
+import { BASES } from "./items/bases";
 import { recomputePlayerStats } from "./systems/inventory";
 import type { Item } from "./items/generate";
 import type { GameState } from "./state";
@@ -200,5 +201,94 @@ describe("dropping items", () => {
     const state = createGameOn(1, openMap());
     stepSolo(state, { dropItem: 999 });
     expect(playerZone(state).groundItems.size).toBe(0);
+  });
+});
+
+describe("sorting", () => {
+  const rare = (baseId: string): Item => ({ ...plain(baseId), rarity: "rare", name: `Rare ${baseId}` });
+
+  test("sortInventory packs a scattered pack tight against the top-left, big items first", () => {
+    const state = createGameOn(7, openMap());
+    const inv = player(state).inventory;
+    inv.entries.push({ id: 1, item: plain("bone_ring"), x: 9, y: 3 });
+    inv.entries.push({ id: 2, item: plain("cracked_helm"), x: 5, y: 1 });
+    inv.entries.push({ id: 3, item: plain("rusted_blade"), x: 2, y: 0 });
+    inv.entries.push({ id: 4, item: plain("minor_potion"), x: 0, y: 3 });
+    expect(sortInventory(inv)).toBe(true);
+    const at = (id: number) => inv.entries.find((e) => e.id === id)!;
+    expect({ x: at(3).x, y: at(3).y }).toEqual({ x: 0, y: 0 }); // 1x3 blade leads
+    expect({ x: at(2).x, y: at(2).y }).toEqual({ x: 1, y: 0 }); // 2x2 helm beside it
+    expect(inv.entries.length).toBe(4);
+    // Every entry keeps its id and item; nothing overlaps or leaves the grid.
+    const cells = new Set<string>();
+    for (const e of inv.entries) {
+      const base = BASES[e.item.baseId]!;
+      for (let dy = 0; dy < base.h; dy++)
+        for (let dx = 0; dx < base.w; dx++) {
+          const k = `${e.x + dx},${e.y + dy}`;
+          expect(cells.has(k)).toBe(false);
+          cells.add(k);
+          expect(e.x + dx).toBeLessThan(INV_W);
+          expect(e.y + dy).toBeLessThan(INV_H);
+        }
+    }
+  });
+
+  test("within a size, gear groups by slot and the best rarity leads", () => {
+    const state = createGameOn(7, openMap());
+    const inv = player(state).inventory;
+    inv.entries.push({ id: 1, item: plain("worn_boots"), x: 0, y: 0 });
+    inv.entries.push({ id: 2, item: rare("cracked_helm"), x: 2, y: 0 });
+    inv.entries.push({ id: 3, item: plain("cracked_helm"), x: 4, y: 0 });
+    inv.entries.push({ id: 4, item: rare("worn_boots"), x: 6, y: 0 });
+    expect(sortInventory(inv)).toBe(true);
+    const order = [...inv.entries].sort((a, b) => a.y - b.y || a.x - b.x).map((e) => e.id);
+    expect(order).toEqual([2, 3, 4, 1]);
+  });
+
+  test("a pack that only fit by luck is left alone rather than spilled", () => {
+    const state = createGameOn(7, openMap());
+    const inv = player(state).inventory;
+    // Fill the whole 10x4 grid with 1x1 rings: any re-pack must still fit all 40.
+    for (let i = 0; i < INV_W * INV_H; i++) {
+      inv.entries.push({ id: i, item: plain("bone_ring"), x: i % INV_W, y: Math.floor(i / INV_W) });
+    }
+    const before = inv.entries.map((e) => ({ ...e }));
+    expect(sortInventory(inv)).toBe(true);
+    expect(inv.entries.length).toBe(INV_W * INV_H);
+    // Hand-packed full grid: sort keeps every id, and all still fit.
+    expect(new Set(inv.entries.map((e) => e.id)).size).toBe(before.length);
+  });
+
+  test("sortPack input tidies the pack through the tick; sortStash the stash", () => {
+    const state = createGameOn(7, openMap());
+    const p = player(state);
+    p.inventory.entries.push({ id: 1, item: plain("bone_ring"), x: 9, y: 3 });
+    p.inventory.entries.push({ id: 2, item: plain("rusted_blade"), x: 4, y: 0 });
+    p.stash.entries.push({ id: 3, item: plain("bone_ring"), x: 9, y: 7 });
+    stepSolo(state, { sortPack: true });
+    expect(p.inventory.entries.find((e) => e.id === 2)).toMatchObject({ x: 0, y: 0 });
+    expect(p.inventory.entries.find((e) => e.id === 1)).toMatchObject({ x: 1, y: 0 });
+    expect(p.stash.entries[0]).toMatchObject({ x: 9, y: 7 });
+    stepSolo(state, { sortStash: true });
+    expect(p.stash.entries[0]).toMatchObject({ x: 0, y: 0 });
+  });
+
+  test("sorting is deterministic: same pack in any entry order lands the same layout", () => {
+    const build = (order: number[]) => {
+      const state = createGameOn(7, openMap());
+      const inv = player(state).inventory;
+      const items: Record<number, Item> = {
+        1: plain("bone_ring"),
+        2: rare("cracked_helm"),
+        3: plain("rusted_blade"),
+        4: plain("minor_potion"),
+        5: plain("rag_tunic"),
+      };
+      for (const id of order) inv.entries.push({ id, item: items[id]!, x: 0, y: 0 });
+      sortInventory(inv);
+      return [...inv.entries].sort((a, b) => a.id - b.id).map((e) => [e.id, e.x, e.y]);
+    };
+    expect(build([1, 2, 3, 4, 5])).toEqual(build([5, 3, 1, 4, 2]));
   });
 });

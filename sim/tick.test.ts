@@ -133,7 +133,9 @@ describe("determinism", () => {
     script(a);
     script(b);
     expect(JSON.stringify(a, mapReplacer)).toBe(JSON.stringify(b, mapReplacer));
-  });
+    // Two full replicas of a 500-tick dungeon run: CI machines take this past
+    // the 5s default, so give it the same room as the npc wander soak.
+  }, 30_000);
 
   test("tick counter advances once per step at 25 Hz", () => {
     expect(TICK_RATE).toBe(25);

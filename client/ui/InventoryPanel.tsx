@@ -11,6 +11,7 @@ import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
 import { ItemIcon } from "./ItemIcon";
 import { PanelChrome } from "./PanelChrome";
+import { SortButton } from "./SortButton";
 
 const CELL = 32;
 
@@ -62,6 +63,7 @@ export function InventoryPanel({
   onEquip,
   onUnequip,
   onDrop,
+  onSort,
   onClose,
   sellMode = false,
   onSell,
@@ -73,6 +75,8 @@ export function InventoryPanel({
   onEquip: (entryId: number) => void;
   onUnequip: (slot: EquipSlot) => void;
   onDrop: (entryId: number) => void;
+  /** Tidy the pack: big gear first, grouped by slot, best rarity leading. */
+  onSort: () => void;
   onClose: () => void;
   /** While the vendor is open, grid clicks sell instead of equipping. */
   sellMode?: boolean;
@@ -166,6 +170,21 @@ export function InventoryPanel({
             </div>
           );
         })}
+      </div>
+
+      {/* Grid header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 4,
+        }}
+      >
+        <span style={{ color: "#6b6455" }}>
+          pack · {p.inventory.entries.length} item{p.inventory.entries.length === 1 ? "" : "s"}
+        </span>
+        <SortButton onSort={onSort} hint="tidy the pack: big gear first, grouped by slot" />
       </div>
 
       {/* Grid */}

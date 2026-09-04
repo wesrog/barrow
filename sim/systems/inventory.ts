@@ -3,10 +3,13 @@ import {
   BELT_SIZE,
   POTION_HEAL,
   POTION_MANA,
+  STASH_H,
+  STASH_W,
   computeStats,
   placeItem,
   removeEntry,
   slotForItem,
+  sortInventory,
   type EquipSlot,
 } from "../character";
 import { BASES, potionKind } from "../items/bases";
@@ -314,4 +317,10 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
     recomputePlayerStats(state, p);
     state.events.push({ type: "item_unequipped", playerId: p.id, slot: input.unequip });
   }
+}
+
+/** Tidy the pack and/or stash on request. Pure re-arrangement: ids and items stay put. */
+export function applySortInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (input.sortPack) sortInventory(p.inventory);
+  if (input.sortStash) sortInventory(p.stash, STASH_W, STASH_H);
 }

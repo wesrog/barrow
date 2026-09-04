@@ -71,7 +71,7 @@ export const BASES: Record<string, ItemBase> = {
   fen_heart: base({ id: "fen_heart", name: "Fen Heart", slot: "quest", w: 1, h: 1, levelReq: 1 }),
 };
 
-/** Which belt row a potion base belongs to; null for anything undrinkable. */
+/** What drinking a potion base restores; null for anything undrinkable. */
 export function potionKind(baseId: string): "health" | "mana" | null {
   const base = BASES[baseId];
   if (!base || base.slot !== "potion") return null;

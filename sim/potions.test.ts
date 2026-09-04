@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
 import { stepSolo } from "./tick";
 import { createGameOn, player, playerZone } from "./test-helpers";
-import { BELT_SIZE, placeItem } from "./character";
+import { BELT_CAPACITY, BELT_SIZE, placeItem } from "./character";
 import { rollItem, type Item } from "./items/generate";
 import { createRng } from "./rng";
 import type { GameState } from "./state";
@@ -49,12 +49,37 @@ describe("potions", () => {
 
   test("picked-up potions fill the belt before the inventory", () => {
     const state = createGameOn(1, arena());
-    for (let i = 0; i < BELT_SIZE + 1; i++) {
+    for (let i = 0; i < BELT_CAPACITY + 1; i++) {
       const id = dropAt(state, potion(), 2.5, 1.5);
       stepSolo(state, { pickup: id });
       for (let t = 0; t < 40 && playerZone(state).groundItems.has(id); t++) stepSolo(state, {});
     }
-    expect(player(state).belt).toBe(BELT_SIZE);
+    expect(player(state).belt).toBe(BELT_CAPACITY);
+    expect(player(state).inventory.entries).toHaveLength(1);
+  });
+
+  test("a potion takes any free belt slot, even past its own row", () => {
+    const state = createGameOn(1, arena());
+    player(state).belt = BELT_SIZE; // healing row full, mana row empty
+    const id = dropAt(state, potion(), 2.5, 1.5);
+    stepSolo(state, { pickup: id });
+    for (let t = 0; t < 40 && playerZone(state).groundItems.has(id); t++) stepSolo(state, {});
+    expect(player(state).belt).toBe(BELT_SIZE + 1);
+    expect(player(state).inventory.entries).toHaveLength(0);
+  });
+
+  test("the belt is one shared pool: mixed potions overflow only when every slot is taken", () => {
+    const state = createGameOn(1, arena());
+    player(state).belt = BELT_CAPACITY - 1;
+    const mana = dropAt(state, manaPotion(), 2.5, 1.5);
+    stepSolo(state, { pickup: mana });
+    for (let t = 0; t < 40 && playerZone(state).groundItems.has(mana); t++) stepSolo(state, {});
+    expect(player(state).manaBelt).toBe(1); // last slot
+    expect(player(state).inventory.entries).toHaveLength(0);
+    const extra = dropAt(state, potion(), 2.5, 1.5);
+    stepSolo(state, { pickup: extra });
+    for (let t = 0; t < 40 && playerZone(state).groundItems.has(extra); t++) stepSolo(state, {});
+    expect(player(state).belt).toBe(BELT_CAPACITY - 1);
     expect(player(state).inventory.entries).toHaveLength(1);
   });
 

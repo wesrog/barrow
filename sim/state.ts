@@ -154,9 +154,9 @@ export interface Player {
   maxMana: number;
   /** Tick until which the class buff (Warcry / Focus) is active. */
   buffUntil: number;
-  /** Healing potions on the belt. */
+  /** Healing potions on the belt. Shares BELT_CAPACITY slots with manaBelt. */
   belt: number;
-  /** Mana potions on the belt's second row. */
+  /** Mana potions on the belt. */
   manaBelt: number;
   gold: number;
   inventory: Inventory;

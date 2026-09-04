@@ -1,6 +1,6 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
-import { BELT_SIZE } from "../../sim/character";
+import { BELT_CAPACITY } from "../../sim/character";
 import { POTION_PRICES } from "../../sim/systems/town";
 import type { GameState } from "../../sim/state";
 import { PanelChrome } from "./PanelChrome";
@@ -70,7 +70,7 @@ export function HealerPanel({
               <span style={{ color }}>{name}</span>
               <span style={{ color: "#6b6455" }}>
                 {" "}
-                · {note} · belt {carried}/{BELT_SIZE}
+                · {note} · {carried} on belt ({BELT_CAPACITY - p.belt - p.manaBelt} free)
               </span>
             </span>
             <span style={{ color: "#c9a84c" }}>{price}g</span>

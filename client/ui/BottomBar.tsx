@@ -1,6 +1,6 @@
 import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
-import { BELT_SIZE, xpForLevel } from "../../sim/character";
+import { BELT_CAPACITY, BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
 import { zoneFloor, type GameState } from "../../sim/state";
 import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
@@ -126,44 +126,85 @@ const barStyle: CSSProperties = {
   fontFamily: mono,
 };
 
-/** One belt row: its drink key, four charge slots, click to drink. */
-function BeltRow({
-  count,
-  keyLabel,
-  full,
-  empty,
-  glow,
-  title,
-  onDrink,
+const BELT_LOOK = {
+  health: {
+    full: "linear-gradient(to top, #a32222 70%, #4a1010 70%)",
+    glow: "rgba(163,34,34,.5)",
+    key: "1",
+    action: "drinkHealth" as const,
+    name: "healing",
+  },
+  mana: {
+    full: "linear-gradient(to top, #22409a 70%, #101c4a 70%)",
+    glow: "rgba(34,64,154,.55)",
+    key: "2",
+    action: "drinkMana" as const,
+    name: "mana",
+  },
+} as const;
+
+/** The belt: one pool of BELT_CAPACITY slots drawn as rows of BELT_SIZE, healing potions
+ * first, then mana. Click a potion to drink it; the 1/2 keys beside it drink by kind. */
+function Belt({
+  belt,
+  manaBelt,
+  onAction,
 }: {
-  count: number;
-  keyLabel: string;
-  full: string;
-  empty: string;
-  glow: string;
-  title: string;
-  onDrink: () => void;
+  belt: number;
+  manaBelt: number;
+  onAction: (action: HudAction) => void;
 }) {
+  const slots: ("health" | "mana" | null)[] = Array.from({ length: BELT_CAPACITY }, (_, i) =>
+    i < belt ? "health" : i < belt + manaBelt ? "mana" : null,
+  );
+  const rows = Array.from({ length: BELT_CAPACITY / BELT_SIZE }, (_, r) =>
+    slots.slice(r * BELT_SIZE, (r + 1) * BELT_SIZE),
+  );
   return (
     <div
-      onClick={onDrink}
-      title={title}
-      style={{ display: "flex", gap: 4, alignItems: "center", pointerEvents: "auto", cursor: "pointer" }}
+      title={`belt ${belt + manaBelt}/${BELT_CAPACITY} — 1 drinks healing (${belt}), 2 drinks mana (${manaBelt})`}
+      style={{ display: "flex", gap: 4, alignItems: "center", pointerEvents: "auto" }}
     >
-      <span style={{ color: "#6b6455", fontSize: 10, width: 8 }}>{keyLabel}</span>
-      {Array.from({ length: BELT_SIZE }, (_, i) => (
-        <div
-          key={i}
-          style={{
-            width: 24,
-            height: 13,
-            border: "1px solid #3a3442",
-            borderRadius: "3px 3px 5px 5px",
-            background: i < count ? full : empty,
-            boxShadow: i < count ? `0 0 6px ${glow}` : "none",
-          }}
-        />
-      ))}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {(["health", "mana"] as const).map((kind) => (
+          <span
+            key={kind}
+            onClick={() => onAction(BELT_LOOK[kind].action)}
+            title={`press ${BELT_LOOK[kind].key} — drink a ${BELT_LOOK[kind].name} potion`}
+            style={{
+              color: kind === "health" ? "#b04a4a" : "#4a62b0",
+              fontSize: 10,
+              width: 8,
+              height: 13,
+              lineHeight: "13px",
+              cursor: "pointer",
+            }}
+          >
+            {BELT_LOOK[kind].key}
+          </span>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {rows.map((row, r) => (
+          <div key={r} style={{ display: "flex", gap: 4 }}>
+            {row.map((kind, i) => (
+              <div
+                key={i}
+                onClick={() => kind && onAction(BELT_LOOK[kind].action)}
+                style={{
+                  width: 24,
+                  height: 13,
+                  border: "1px solid #3a3442",
+                  borderRadius: "3px 3px 5px 5px",
+                  background: kind ? BELT_LOOK[kind].full : "rgba(12,11,15,.8)",
+                  boxShadow: kind ? `0 0 6px ${BELT_LOOK[kind].glow}` : "none",
+                  cursor: kind ? "pointer" : "default",
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -219,28 +260,9 @@ export function BottomBar({
           })}
         </div>
 
-        {/* Belt rows + action buttons */}
+        {/* Belt + action buttons */}
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            <BeltRow
-              count={p.belt}
-              keyLabel="1"
-              full="linear-gradient(to top, #a32222 70%, #4a1010 70%)"
-              empty="rgba(12,11,15,.8)"
-              glow="rgba(163,34,34,.5)"
-              title={`healing potions ${p.belt}/${BELT_SIZE} — click or press 1`}
-              onDrink={() => onAction("drinkHealth")}
-            />
-            <BeltRow
-              count={p.manaBelt}
-              keyLabel="2"
-              full="linear-gradient(to top, #22409a 70%, #101c4a 70%)"
-              empty="rgba(12,11,15,.8)"
-              glow="rgba(34,64,154,.55)"
-              title={`mana potions ${p.manaBelt}/${BELT_SIZE} — click or press 2`}
-              onDrink={() => onAction("drinkMana")}
-            />
-          </div>
+          <Belt belt={p.belt} manaBelt={p.manaBelt} onAction={onAction} />
           <div style={{ display: "flex", gap: 4, pointerEvents: "auto" }}>
             {ACTION_BUTTONS.filter(
               (b) =>

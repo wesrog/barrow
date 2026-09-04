@@ -87,7 +87,7 @@ export function restock(state: GameState, p: Player): void {
 /** Sera's fixed potion prices — her supply never runs dry. */
 export const POTION_PRICES = { health: 25, mana: 30 } as const;
 
-/** Buy a potion from Sera: straight onto the belt, or into the pack if the row is full. */
+/** Buy a potion from Sera: straight onto the belt, or into the pack if the belt is full. */
 export function applyBuyPotionInput(state: GameState, p: Player, input: PlayerInput): void {
   const kind = input.buyPotion;
   if (!kind || !onCampGround(p)) return;

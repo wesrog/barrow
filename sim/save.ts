@@ -20,7 +20,7 @@ export interface CharacterSave {
   skillPoints: number;
   skills: Record<SkillId, number>;
   belt: number;
-  /** Mana potions on the belt's second row. Missing on older saves. */
+  /** Mana potions on the belt. Missing on older saves. */
   manaBelt?: number;
   gold?: number;
   inventory: Inventory;

@@ -6,7 +6,10 @@ export const INV_W = 10;
 export const INV_H = 4;
 export const STASH_W = 10;
 export const STASH_H = 8;
+/** Belt slots per row (the HUD draws two rows). */
 export const BELT_SIZE = 4;
+/** Total belt slots. The belt is one pool: any potion takes any free slot, whatever its kind. */
+export const BELT_CAPACITY = BELT_SIZE * 2;
 export const POTION_HEAL = 35;
 export const POTION_MANA = 25;
 

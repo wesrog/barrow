@@ -1,6 +1,6 @@
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
 import {
-  BELT_SIZE,
+  BELT_CAPACITY,
   POTION_HEAL,
   POTION_MANA,
   computeStats,
@@ -117,15 +117,12 @@ export function repairAll(state: GameState, p: Player): boolean {
   return true;
 }
 
-/** Stow a potion into its belt row if there's room. False means the row is full. */
+/** Stow a potion on the belt if any slot is free. The belt is one shared pool, so a healing
+ * potion still lands there when only "the mana row" has room. False means the belt is full. */
 export function stowPotion(p: Player, kind: "health" | "mana"): boolean {
-  if (kind === "mana") {
-    if (p.manaBelt >= BELT_SIZE) return false;
-    p.manaBelt++;
-  } else {
-    if (p.belt >= BELT_SIZE) return false;
-    p.belt++;
-  }
+  if (p.belt + p.manaBelt >= BELT_CAPACITY) return false;
+  if (kind === "mana") p.manaBelt++;
+  else p.belt++;
   return true;
 }
 

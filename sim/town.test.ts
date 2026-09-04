@@ -3,7 +3,7 @@ import { player, soloGame } from "./test-helpers";
 import { ensureDungeonFloor, stepSolo, travel } from "./tick";
 import { getZone } from "./state";
 import { inCamp } from "./map";
-import { placeItem } from "./character";
+import { BELT_CAPACITY, placeItem } from "./character";
 import type { GameState } from "./state";
 import { NPC_TALK_RANGE } from "./systems/quests";
 
@@ -105,12 +105,12 @@ describe("the healer", () => {
     expect(state.events.filter((e) => e.type === "bought")).toHaveLength(1);
   });
 
-  test("a full belt row spills potion purchases into the pack", () => {
+  test("a full belt spills potion purchases into the pack", () => {
     const state = soloGame(1);
     player(state).gold = 1000;
-    player(state).belt = 4;
+    player(state).belt = BELT_CAPACITY;
     stepSolo(state, { buyPotion: "health" });
-    expect(player(state).belt).toBe(4);
+    expect(player(state).belt).toBe(BELT_CAPACITY);
     expect(player(state).inventory.entries).toHaveLength(1);
   });
 

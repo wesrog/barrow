@@ -40,6 +40,65 @@ const panelStyle: CSSProperties = {
   boxShadow: "0 8px 30px rgba(0,0,0,.6)",
 };
 
+/** The unspent-point glow: injected once, shared by the panel banner and
+ * every learnable skill's + button so they breathe together. */
+const PULSE_KEYFRAMES = `@keyframes barrow-skill-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,.0); }
+  50% { box-shadow: 0 0 10px 2px rgba(201,168,76,.45); }
+}`;
+
+const bannerStyle: CSSProperties = {
+  margin: "6px 0 10px",
+  padding: "7px 10px",
+  border: "1px solid #c9a84c",
+  borderRadius: 3,
+  background: "rgba(201,168,76,.12)",
+  color: "#e8d9a8",
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  animation: "barrow-skill-pulse 2.2s ease-in-out infinite",
+};
+
+const spendButtonStyle: CSSProperties = {
+  width: 26,
+  height: 26,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontSize: 18,
+  lineHeight: 1,
+  fontWeight: 700,
+  border: "1px solid #c9a84c",
+  borderRadius: 3,
+  color: "#f0c96a",
+  background: "rgba(201,168,76,.18)",
+  cursor: "pointer",
+  userSelect: "none",
+  animation: "barrow-skill-pulse 2.2s ease-in-out infinite",
+  flexShrink: 0,
+};
+
+/** Rank as a row of pips: filled for ranks taken, hollow for room to grow. */
+function RankPips({ rank }: { rank: number }) {
+  return (
+    <span title={`rank ${rank}/${MAX_RANK}`} style={{ display: "inline-flex", gap: 2, letterSpacing: 0 }}>
+      {Array.from({ length: MAX_RANK }, (_, i) => (
+        <span
+          key={i}
+          style={{
+            width: 5,
+            height: 8,
+            borderRadius: 1,
+            background: i < rank ? "#c9a84c" : "transparent",
+            border: `1px solid ${i < rank ? "#c9a84c" : "#3a3442"}`,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 export function SkillPanel({
   game,
   hotbar,
@@ -59,10 +118,23 @@ export function SkillPanel({
   const tiers = [...new Set(roster.map((d) => d.levelReq))].sort((a, b) => a - b);
   return (
     <div style={panelStyle}>
-      <PanelChrome
-        title={`skills — level ${p.level} · ${p.skillPoints} point${p.skillPoints === 1 ? "" : "s"} to spend`}
-        onClose={onClose}
-      />
+      <style>{PULSE_KEYFRAMES}</style>
+      <PanelChrome title={`skills — level ${p.level}`} onClose={onClose} />
+      {p.skillPoints > 0 ? (
+        <div style={bannerStyle}>
+          <span style={{ ...spendButtonStyle, animation: "none", width: 20, height: 20, fontSize: 14, cursor: "default" }}>
+            +
+          </span>
+          <span>
+            <b style={{ color: "#f0c96a" }}>
+              {p.skillPoints} skill point{p.skillPoints === 1 ? "" : "s"}
+            </b>{" "}
+            — click <b style={{ color: "#f0c96a" }}>+</b> on a skill to learn it
+          </span>
+        </div>
+      ) : (
+        <div style={{ color: "#55503f", margin: "4px 0 8px" }}>no points to spend · gain a level to earn one</div>
+      )}
       {tiers.map((tier) => (
         <div key={tier} style={{ marginBottom: 6 }}>
           <div style={{ color: "#55503f", fontSize: 10, letterSpacing: 2, margin: "2px 0" }}>
@@ -76,34 +148,35 @@ export function SkillPanel({
               const prereqLocked = def.prereq !== undefined && p.skills[def.prereq] <= 0;
               const canSpend = !levelLocked && !prereqLocked && p.skillPoints > 0 && rank < MAX_RANK;
               const slot = hotbar.indexOf(def.id);
+              const edge = rank > 0 ? "#5a5468" : "#2c2833";
               return (
                 <div
                   key={def.id}
                   style={{
                     padding: "6px 8px",
                     marginBottom: 4,
-                    border: `1px solid ${rank > 0 ? "#5a5468" : "#2c2833"}`,
+                    // Longhands, not the `border` shorthand: React warns when a
+                    // shorthand and its longhand (the gold left edge) both change.
+                    borderStyle: "solid",
+                    borderWidth: canSpend ? "1px 1px 1px 3px" : 1,
+                    borderColor: canSpend ? `${edge} ${edge} ${edge} #c9a84c` : edge,
                     borderRadius: 3,
                     opacity: levelLocked || prereqLocked ? 0.45 : 1,
                     background: rank > 0 ? "rgba(48,42,60,.5)" : "transparent",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span
-                      onClick={() => canSpend && onSpend(def.id)}
-                      title={canSpend ? "click to spend a point" : undefined}
-                      style={{
-                        color: rank > 0 ? "#e8dcc0" : "#948c7d",
-                        cursor: canSpend ? "pointer" : "default",
-                      }}
-                    >
-                      {def.name}
-                      {canSpend && <span style={{ color: "#c9a84c" }}> +</span>}
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: rank > 0 ? "#e8dcc0" : "#948c7d" }}>{def.name}</span>
+                      {levelLocked ? (
+                        <span style={{ color: "#8f8778", fontSize: 10 }}>unlocks at level {def.levelReq}</span>
+                      ) : (
+                        <RankPips rank={rank} />
+                      )}
+                      {rank >= MAX_RANK && <span style={{ color: "#c9a84c", fontSize: 10 }}>maxed</span>}
                     </span>
                     <span style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                      <span style={{ color: "#8f8778", marginRight: 4 }}>
-                        {levelLocked ? `lvl ${def.levelReq}` : `rank ${rank}/${MAX_RANK}`} · {def.manaCost} mana
-                      </span>
+                      <span style={{ color: "#8f8778", marginRight: 4 }}>{def.manaCost} mana</span>
                       {/* Cast-key assignment: click a key to bind this skill there */}
                       {HOTBAR_KEYS.map((key, i) => (
                         <span
@@ -127,6 +200,16 @@ export function SkillPanel({
                           {key}
                         </span>
                       ))}
+                      {canSpend && (
+                        <span
+                          role="button"
+                          onClick={() => onSpend(def.id)}
+                          title={`spend a point: ${def.name} rank ${rank + 1}`}
+                          style={{ ...spendButtonStyle, marginLeft: 6 }}
+                        >
+                          +
+                        </span>
+                      )}
                     </span>
                   </div>
                   <div style={{ color: "#6b6455", marginTop: 2 }}>{DESCRIPTIONS[def.id]}</div>
@@ -141,7 +224,7 @@ export function SkillPanel({
         </div>
       ))}
       <div style={{ color: "#55503f", marginTop: 6 }}>
-        s or esc to close · q w e r to cast · click a key to rebind
+        s or esc to close · q w e r to cast · click a key to bind a learned skill to it
       </div>
     </div>
   );

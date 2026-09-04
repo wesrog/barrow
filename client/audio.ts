@@ -29,6 +29,7 @@ type SoundName =
   | "pickup"
   | "potion"
   | "levelup"
+  | "skillup"
   | "explode"
   | "warcry"
   | "leap"
@@ -600,6 +601,14 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice) => void> = {
     metal(c, { freq: 65, dur: 2.2, gain: 0.24 });
     noise(c, { dur: 1.2, gain: 0.12, filterFrom: 150, filterTo: 600, q: 1.5, attack: 0.5 });
     sub(c, { from: 65, to: 42, dur: 0.9, gain: 0.3 });
+  },
+  skillup: (c) => {
+    // a point committed: a chisel striking a rune — one bright metallic tick
+    // over a stone tap, then a short dark ring. Kin to levelup, a fraction its size.
+    impact(c, { size: 0.5, p: 1.3, at: 0 });
+    metal(c, { freq: 392, dur: 0.45, gain: 0.09, partials: 5, at: 0.02 });
+    metal(c, { freq: 131, dur: 0.7, gain: 0.08, partials: 4, at: 0.05 });
+    noise(c, { dur: 0.25, gain: 0.06, filterFrom: 300, filterTo: 900, q: 2, attack: 0.05, at: 0.05 });
   },
   explode: (c) => {
     impact(c, { size: 1.6, p: 0.7, rumble: true });

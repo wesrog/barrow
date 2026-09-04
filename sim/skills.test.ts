@@ -42,6 +42,22 @@ describe("skill points", () => {
     expect(player(state).skillPoints).toBe(0);
   });
 
+  test("a successful spend announces the skill and its new rank", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 2, 2);
+    stepSolo(state, { spendSkill: "cleave" });
+    stepSolo(state, { spendSkill: "cleave" });
+    const learned = state.events.filter((e) => e.type === "skill_learned");
+    expect(learned).toEqual([{ type: "skill_learned", playerId: player(state).id, skill: "cleave", rank: 2 }]);
+  });
+
+  test("a refused spend stays silent", () => {
+    const state = createGameOn(1, arena());
+    readyPlayer(state, 10, 0);
+    stepSolo(state, { spendSkill: "cleave" });
+    expect(state.events.some((e) => e.type === "skill_learned")).toBe(false);
+  });
+
   test("skills are gated by character level", () => {
     const state = createGameOn(1, arena());
     readyPlayer(state, 1, 5);

@@ -481,7 +481,11 @@ function Game({
             }
             case "level_up":
               scene.addDamageNumber(localPlayer(game).pos, `level ${e.level}!`, "#f0c96a");
+              pushToast("skill point earned — press s to spend it");
               play("levelup");
+              break;
+            case "skill_learned":
+              play("skillup");
               break;
             case "exploded":
               scene.addExplosion(e.pos, e.radius);

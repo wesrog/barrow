@@ -71,6 +71,24 @@ describe("potions", () => {
     expect(player(state).belt).toBe(0);
   });
 
+  test("a potion at full life is refused and the charge is kept", () => {
+    const state = createGameOn(1, arena());
+    player(state).belt = 2;
+    player(state).life = player(state).maxLife;
+    stepSolo(state, { drink: "health" });
+    expect(player(state).belt).toBe(2);
+    expect(state.events.some((e) => e.type === "potion_drunk")).toBe(false);
+  });
+
+  test("a mana potion at full mana is refused and the charge is kept", () => {
+    const state = createGameOn(1, arena());
+    player(state).manaBelt = 2;
+    player(state).mana = player(state).maxMana;
+    stepSolo(state, { drink: "mana" });
+    expect(player(state).manaBelt).toBe(2);
+    expect(state.events.some((e) => e.type === "potion_drunk")).toBe(false);
+  });
+
   test("mana potions fill their own belt row", () => {
     const state = createGameOn(1, arena());
     const id = dropAt(state, manaPotion(), 2.5, 1.5);

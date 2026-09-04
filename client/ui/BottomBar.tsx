@@ -306,8 +306,34 @@ export function BottomBar({
             : `floor ${zoneFloor(localPlayer(game).zoneId)}`}{" "}
           ·{" "}
           <span style={{ color: "#c9a84c" }}>{p.gold}g</span>
-          {p.skillPoints > 0 ? ` · ${p.skillPoints} skill pt (s)` : ""}
         </div>
+        {p.skillPoints > 0 && (
+          <div
+            role="button"
+            onClick={() => onAction("skills")}
+            title="open the skill tree (s)"
+            style={{
+              marginTop: 4,
+              padding: "3px 10px",
+              border: "1px solid #c9a84c",
+              borderRadius: 3,
+              background: "rgba(201,168,76,.16)",
+              color: "#f0c96a",
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: "pointer",
+              pointerEvents: "auto",
+              textShadow: "0 1px 3px #000",
+              animation: "barrow-skill-pulse 2.2s ease-in-out infinite",
+            }}
+          >
+            +{p.skillPoints} skill point{p.skillPoints === 1 ? "" : "s"} · press s
+          </div>
+        )}
+        <style>{`@keyframes barrow-skill-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(201,168,76,0); }
+          50% { box-shadow: 0 0 10px 2px rgba(201,168,76,.45); }
+        }`}</style>
       </div>
 
       <Globe value={p.mana} max={p.maxMana} color="#22409a" dark="#0d1230" label="mana" />

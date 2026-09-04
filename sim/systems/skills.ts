@@ -56,6 +56,7 @@ export function applySpendSkillInput(state: GameState, p: Player, input: PlayerI
   if (p.skills[id] >= MAX_RANK) return;
   p.skills[id]++;
   p.skillPoints--;
+  state.events.push({ type: "skill_learned", playerId: p.id, skill: id, rank: p.skills[id] });
 }
 
 /** Rank, mana, and the shared action cooldown all gate a cast; success starts it. */

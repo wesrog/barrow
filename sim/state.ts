@@ -201,6 +201,7 @@ export type SimEvent =
       champion: boolean;
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
+  | { type: "skill_learned"; playerId: PlayerId; skill: SkillId; rank: number }
   | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
   | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }

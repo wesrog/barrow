@@ -14,6 +14,8 @@ export interface ItemBase {
   classReq?: "warrior" | "witch";
   /** Weapons only: what the strike sounds like — a cutting edge or a crushing mass. */
   edge?: WeaponEdge;
+  /** Weapons only: needs both hands, so nothing rides in the shield slot alongside it. */
+  twoHanded?: true;
   dmgMin?: number;
   dmgMax?: number;
   defense?: number;
@@ -31,14 +33,14 @@ export const BASES: Record<string, ItemBase> = {
   gnarled_staff: base({ id: "gnarled_staff", name: "Gnarled Staff", slot: "weapon", edge: "blunt", w: 1, h: 3, levelReq: 1, classReq: "witch", dmgMin: 1, dmgMax: 4 }),
   hatchet: base({ id: "hatchet", name: "Hatchet", slot: "weapon", edge: "sharp", w: 1, h: 3, levelReq: 3, dmgMin: 2, dmgMax: 8 }),
   ashen_orb: base({ id: "ashen_orb", name: "Ashen Orb", slot: "shield", w: 1, h: 2, levelReq: 4, classReq: "witch", dmgMin: 1, dmgMax: 5 }),
-  war_maul: base({ id: "war_maul", name: "War Maul", slot: "weapon", edge: "blunt", w: 2, h: 3, levelReq: 8, classReq: "warrior", dmgMin: 6, dmgMax: 14 }),
+  war_maul: base({ id: "war_maul", name: "War Maul", slot: "weapon", edge: "blunt", twoHanded: true, w: 2, h: 3, levelReq: 8, classReq: "warrior", dmgMin: 8, dmgMax: 18 }),
   ember_staff: base({ id: "ember_staff", name: "Ember Staff", slot: "weapon", edge: "blunt", w: 1, h: 3, levelReq: 11, classReq: "witch", dmgMin: 4, dmgMax: 10 }),
   twin_fang: base({ id: "twin_fang", name: "Twin Fang", slot: "weapon", edge: "sharp", w: 1, h: 2, levelReq: 12, dmgMin: 4, dmgMax: 10 }),
   fen_pearl: base({ id: "fen_pearl", name: "Fen Pearl", slot: "shield", w: 1, h: 2, levelReq: 14, classReq: "witch", dmgMin: 5, dmgMax: 12 }),
-  grave_scythe: base({ id: "grave_scythe", name: "Grave Scythe", slot: "weapon", edge: "sharp", w: 2, h: 3, levelReq: 16, classReq: "warrior", dmgMin: 8, dmgMax: 18 }),
-  dire_flail: base({ id: "dire_flail", name: "Dire Flail", slot: "weapon", edge: "blunt", w: 2, h: 3, levelReq: 19, classReq: "warrior", dmgMin: 11, dmgMax: 24 }),
+  grave_scythe: base({ id: "grave_scythe", name: "Grave Scythe", slot: "weapon", edge: "sharp", twoHanded: true, w: 2, h: 3, levelReq: 16, classReq: "warrior", dmgMin: 11, dmgMax: 25 }),
+  dire_flail: base({ id: "dire_flail", name: "Dire Flail", slot: "weapon", edge: "blunt", twoHanded: true, w: 2, h: 3, levelReq: 19, classReq: "warrior", dmgMin: 15, dmgMax: 32 }),
   wyrmwood_staff: base({ id: "wyrmwood_staff", name: "Wyrmwood Staff", slot: "weapon", edge: "blunt", w: 1, h: 3, levelReq: 20, classReq: "witch", dmgMin: 8, dmgMax: 18 }),
-  moon_glaive: base({ id: "moon_glaive", name: "Moon Glaive", slot: "weapon", edge: "sharp", w: 2, h: 3, levelReq: 23, classReq: "warrior", dmgMin: 14, dmgMax: 30 }),
+  moon_glaive: base({ id: "moon_glaive", name: "Moon Glaive", slot: "weapon", edge: "sharp", twoHanded: true, w: 2, h: 3, levelReq: 23, classReq: "warrior", dmgMin: 19, dmgMax: 41 }),
   grave_star: base({ id: "grave_star", name: "Grave Star", slot: "shield", w: 1, h: 2, levelReq: 26, classReq: "witch", dmgMin: 12, dmgMax: 26 }),
   kingsbane: base({ id: "kingsbane", name: "Kingsbane", slot: "weapon", edge: "sharp", w: 1, h: 3, levelReq: 28, dmgMin: 18, dmgMax: 38 }),
   // --- shields ---

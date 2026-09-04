@@ -211,6 +211,21 @@ describe("class-restricted weapons", () => {
     expect(Math.max(...casters.map((c) => c.levelReq))).toBeGreaterThanOrEqual(20);
   });
 
+  test("heavy two-wide weapons are two-handed; blades, staves and orbs are not", () => {
+    for (const id of ["war_maul", "grave_scythe", "dire_flail", "moon_glaive"]) {
+      expect(BASES[id]!.twoHanded).toBe(true);
+    }
+    for (const id of ["rusted_blade", "hatchet", "twin_fang", "kingsbane", "gnarled_staff", "wyrmwood_staff", "ashen_orb"]) {
+      expect(BASES[id]!.twoHanded).toBeUndefined();
+    }
+  });
+
+  test("a two-hander out-damages the one-hander nearest its level, paying for the lost shield", () => {
+    // moon_glaive (23) vs kingsbane (28): the glaive must not be strictly worse.
+    expect(BASES["moon_glaive"]!.dmgMax!).toBeGreaterThan(BASES["kingsbane"]!.dmgMax!);
+    expect(BASES["war_maul"]!.dmgMax!).toBeGreaterThan(BASES["twin_fang"]!.dmgMax! + 4);
+  });
+
   test("heavy two-wide weapons are warrior-only, one-wide blades unrestricted", () => {
     expect(BASES["war_maul"]!.classReq).toBe("warrior");
     expect(BASES["grave_scythe"]!.classReq).toBe("warrior");

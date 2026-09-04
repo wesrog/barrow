@@ -1,5 +1,6 @@
 import {
   computeStats,
+  isTwoHanded,
   slotForItem,
   type DerivedStats,
   type Equipment,
@@ -31,6 +32,9 @@ export function equipDelta(
 ): StatDelta {
   const slot = slotForItem(item, eq, into);
   const swapped: Equipment = { ...eq, [slot]: item };
+  // A two-hander knocks the shield off; computeStats already ignores a shield
+  // beside one, so the refused case (shield onto a two-hander) reads as no change.
+  if (isTwoHanded(item)) swapped.shield = null;
   const before = computeStats(eq, level, klass);
   const after = computeStats(swapped, level, klass);
   return {

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { slotForItem, type Equipment } from "../../sim/character";
+import { isTwoHanded, slotForItem, type Equipment } from "../../sim/character";
 import { BASES, type Slot } from "../../sim/items/bases";
 import type { Item, ItemMod } from "../../sim/items/generate";
 import type { Klass } from "../../sim/skills";
@@ -51,7 +51,14 @@ const MOD_LABELS: Record<ItemMod["stat"], (v: number) => string> = {
   lifeRegen: (v) => `replenish life +${v}`,
 };
 
-export function itemDetail(item: Item, playerLevel: number, playerKlass?: Klass): {
+/** `equipment` lets two-handers name the shield they'd evict, and shields warn
+ *  when a two-hander already fills both hands. */
+export function itemDetail(
+  item: Item,
+  playerLevel: number,
+  playerKlass?: Klass,
+  equipment?: Equipment,
+): {
   lines: { text: string; color?: string }[];
   color: string;
 } {
@@ -60,6 +67,13 @@ export function itemDetail(item: Item, playerLevel: number, playerKlass?: Klass)
   lines.push({ text: typeLine(item), color: "#6b6455" });
   if (base.dmgMin !== undefined) lines.push({ text: `damage ${base.dmgMin}–${base.dmgMax}` });
   if (base.defense !== undefined) lines.push({ text: `defense ${base.defense}` });
+  if (base.twoHanded) {
+    const shield = equipment?.shield;
+    lines.push({ text: shield ? `two-handed — unequips ${shield.name}` : "two-handed" });
+  }
+  if (base.slot === "shield" && equipment?.weapon && isTwoHanded(equipment.weapon)) {
+    lines.push({ text: "cannot hold with a two-handed weapon", color: "#d6675c" });
+  }
   if (base.levelReq > 1) {
     const unmet = base.levelReq > playerLevel;
     lines.push({
@@ -193,7 +207,7 @@ export function ItemHoverDetail({
   klass: Klass;
   compare: boolean;
 }) {
-  const detail = itemDetail(item, level, klass);
+  const detail = itemDetail(item, level, klass, compare ? equipment : undefined);
   const comparable = compare && isComparable(item);
   const replaces = comparable ? equipment[slotForItem(item, equipment)] : null;
   const deltas = comparable ? deltaLines(equipDelta(equipment, item, level, klass)) : [];

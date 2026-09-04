@@ -1,7 +1,7 @@
 import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
-import { INV_H, INV_W, computeStats, type EquipSlot } from "../../sim/character";
+import { INV_H, INV_W, computeStats, isTwoHanded, type EquipSlot } from "../../sim/character";
 import { BASES, potionKind } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import { ItemHoverDetail, RARITY_CSS, secondRingChoice } from "./ItemHoverDetail";
@@ -205,7 +205,9 @@ export function InventoryPanel({
           const base = BASES[e.item.baseId]!;
           const color = RARITY_CSS[e.item.rarity]!;
           const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
-          const locked = base.levelReq > p.level || classLocked;
+          const handsFull =
+            base.slot === "shield" && p.equipment.weapon !== null && isTwoHanded(p.equipment.weapon);
+          const locked = base.levelReq > p.level || classLocked || handsFull;
           const sellPrice = Math.max(1, Math.floor(itemValue(e.item) / 4));
           const ringChoice = secondRingChoice(e.item, p.equipment);
           return (
@@ -236,6 +238,8 @@ export function InventoryPanel({
                     ? "click to stow in the stash"
                     : classLocked
                     ? `${base.classReq} only · right-click to drop`
+                    : handsFull
+                      ? "both hands are full · right-click to drop"
                     : locked
                       ? `requires level ${base.levelReq} · right-click to drop`
                       : ringChoice

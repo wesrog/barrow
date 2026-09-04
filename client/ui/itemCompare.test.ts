@@ -21,9 +21,9 @@ describe("equipDelta", () => {
   test("weapon swap reports damage change vs currently equipped weapon", () => {
     const eq = createEquipment();
     eq.weapon = plain("rusted_blade"); // 1–6
-    const delta = equipDelta(eq, plain("war_maul"), 10, "warrior"); // 6–14
-    expect(delta.dmgMin).toBe(5);
-    expect(delta.dmgMax).toBe(8);
+    const delta = equipDelta(eq, plain("war_maul"), 10, "warrior"); // 8–18
+    expect(delta.dmgMin).toBe(7);
+    expect(delta.dmgMax).toBe(12);
     expect(delta.defense).toBe(0);
   });
 
@@ -43,12 +43,29 @@ describe("equipDelta", () => {
 
   test("percent damage mods interact with the weapon, not the item alone", () => {
     const eq = createEquipment();
-    eq.weapon = plain("war_maul"); // 6–14
+    eq.weapon = plain("war_maul"); // 8–18
     const withEd = plain("rusted_blade", [{ stat: "dmgPct", value: 50 }]); // 1–6 +50%
     const delta = equipDelta(eq, withEd, 10, "warrior");
-    // 1*1.5=1, 6*1.5=9 vs 6/14
-    expect(delta.dmgMin).toBe(-5);
-    expect(delta.dmgMax).toBe(-5);
+    // 1*1.5=1, 6*1.5=9 vs 8/18
+    expect(delta.dmgMin).toBe(-7);
+    expect(delta.dmgMax).toBe(-9);
+  });
+
+  test("a two-hander's delta counts the shield it would knock off", () => {
+    const eq = createEquipment();
+    eq.weapon = plain("rusted_blade"); // 1–6
+    eq.shield = plain("plank_buckler"); // defense 4
+    const delta = equipDelta(eq, plain("war_maul"), 10, "warrior"); // 8–18
+    expect(delta.dmgMin).toBe(7);
+    expect(delta.dmgMax).toBe(12);
+    expect(delta.defense).toBe(-4);
+  });
+
+  test("a shield beside a two-hander is a no-op, so its delta is zero", () => {
+    const eq = createEquipment();
+    eq.weapon = plain("war_maul");
+    const delta = equipDelta(eq, plain("plank_buckler"), 10, "warrior");
+    expect(delta.defense).toBe(0);
   });
 
   test("ring prefers the empty slot, so a second ring adds instead of replacing", () => {

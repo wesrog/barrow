@@ -6,6 +6,7 @@ import {
   STASH_H,
   STASH_W,
   computeStats,
+  isTwoHanded,
   placeItem,
   removeEntry,
   slotForItem,
@@ -295,15 +296,29 @@ export function applyEquipInput(state: GameState, p: Player, input: PlayerInput)
       return;
     }
     const slot = slotForItem(entry.item, p.equipment, input.equipInto);
-    const previous = p.equipment[slot];
+    // Both hands are spoken for: nothing rides in the off-hand beside a two-hander.
+    if (slot === "shield" && p.equipment.weapon && isTwoHanded(p.equipment.weapon)) {
+      placeItem(p.inventory, entry.id, entry.item);
+      return;
+    }
+    // A two-hander evicts the shield along with the old weapon.
+    const evicted: EquipSlot[] = isTwoHanded(entry.item) && p.equipment.shield ? [slot, "shield"] : [slot];
+    const previous = evicted.map((s) => p.equipment[s]);
     p.equipment[slot] = entry.item;
-    if (previous) {
-      if (!placeItem(p.inventory, state.nextId++, previous)) {
-        // No room for the swapped-out item: revert the whole equip.
-        p.equipment[slot] = previous;
-        placeItem(p.inventory, entry.id, entry.item);
-        return;
+    const packed: number[] = [];
+    for (const [i, old] of previous.entries()) {
+      if (i > 0) p.equipment[evicted[i]!] = null;
+      if (!old) continue;
+      const id = state.nextId++;
+      if (placeItem(p.inventory, id, old)) {
+        packed.push(id);
+        continue;
       }
+      // No room for a swapped-out item: revert the whole equip.
+      for (const pid of packed) removeEntry(p.inventory, pid);
+      for (const [j, s] of evicted.entries()) p.equipment[s] = previous[j]!;
+      placeItem(p.inventory, entry.id, entry.item);
+      return;
     }
     recomputePlayerStats(state, p);
     state.events.push({ type: "item_equipped", playerId: p.id, slot });

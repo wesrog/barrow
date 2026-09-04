@@ -9,6 +9,7 @@ import {
   removeEntry,
   slotForItem,
   computeStats,
+  isTwoHanded,
   BASE_STATS,
 } from "./character";
 import type { Item } from "./items/generate";
@@ -123,6 +124,24 @@ describe("orbs as off-hands", () => {
     const s = computeStats(eq);
     expect(s.dmgMin).toBe(BASE_STATS.dmgMin);
     expect(s.dmgMax).toBe(BASE_STATS.dmgMax);
+  });
+});
+
+describe("two-handed weapons", () => {
+  test("isTwoHanded reads the base flag", () => {
+    expect(isTwoHanded(plain("war_maul"))).toBe(true);
+    expect(isTwoHanded(plain("rusted_blade"))).toBe(false);
+    expect(isTwoHanded(plain("plank_buckler"))).toBe(false);
+  });
+
+  test("a shield next to a two-hander contributes nothing (stale saves, corpses)", () => {
+    const eq = createEquipment();
+    eq.weapon = plain("war_maul");
+    eq.shield = plain("barrow_bulwark"); // defense 22
+    const withShield = computeStats(eq, 10);
+    eq.shield = null;
+    const without = computeStats(eq, 10);
+    expect(withShield.defense).toBe(without.defense);
   });
 });
 

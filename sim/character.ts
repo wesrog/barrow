@@ -217,6 +217,12 @@ export function isBroken(item: Item): boolean {
   return item.durability !== undefined && item.durability.cur <= 0;
 }
 
+/** Two-handers fill both hands: equipping one empties the shield slot, and a shield
+ * that sneaks in beside one (a stale save, a reclaimed corpse) is inert. */
+export function isTwoHanded(item: Item): boolean {
+  return BASES[item.baseId]!.twoHanded === true;
+}
+
 export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior"): DerivedStats {
   const cls = CLASS_STATS[klass];
   const weapon = eq.weapon && !isBroken(eq.weapon) ? eq.weapon : null;
@@ -233,8 +239,10 @@ export function computeStats(eq: Equipment, level = 1, klass: Klass = "warrior")
   let magicFind = 0;
   let lifeRegen = 0;
 
-  for (const item of Object.values(eq)) {
+  const bothHandsFull = eq.weapon !== null && isTwoHanded(eq.weapon);
+  for (const [slot, item] of Object.entries(eq) as [EquipSlot, Item | null][]) {
     if (!item || isBroken(item)) continue;
+    if (slot === "shield" && bothHandsFull) continue;
     const base = BASES[item.baseId]!;
     if (base.slot !== "weapon" && base.defense) defense += base.defense;
     // Off-hand orbs carry base damage that stacks with the main hand.

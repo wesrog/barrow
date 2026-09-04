@@ -178,6 +178,83 @@ describe("equip", () => {
   });
 });
 
+describe("two-handed weapons", () => {
+  function armedGame(): GameState {
+    const state = bareGame(1);
+    player(state).level = 30;
+    return state;
+  }
+
+  test("equipping a two-hander sends the shield back to the pack", () => {
+    const state = armedGame();
+    const p = player(state);
+    p.equipment.shield = plain("plank_buckler", "buckler");
+    recomputePlayerStats(state, p);
+    const before = p.defense;
+    const id = state.nextId++;
+    placeItem(p.inventory, id, plain("war_maul"));
+    stepSolo(state, { equip: id });
+    expect(p.equipment.weapon?.baseId).toBe("war_maul");
+    expect(p.equipment.shield).toBeNull();
+    expect(p.inventory.entries.map((e) => e.item.name)).toEqual(["buckler"]);
+    expect(p.defense).toBe(before - BASES["plank_buckler"]!.defense!);
+  });
+
+  test("a two-hander swaps out both the old weapon and the shield", () => {
+    const state = armedGame();
+    const p = player(state);
+    p.equipment.weapon = plain("rusted_blade", "blade");
+    p.equipment.shield = plain("plank_buckler", "buckler");
+    const id = state.nextId++;
+    placeItem(p.inventory, id, plain("war_maul"));
+    stepSolo(state, { equip: id });
+    expect(p.equipment.weapon?.baseId).toBe("war_maul");
+    expect(p.equipment.shield).toBeNull();
+    expect(p.inventory.entries.map((e) => e.item.name).sort()).toEqual(["blade", "buckler"]);
+  });
+
+  test("the whole equip reverts when the pack can't hold the shield too", () => {
+    const state = armedGame();
+    const p = player(state);
+    p.equipment.weapon = plain("rusted_blade", "blade");
+    p.equipment.shield = plain("barrow_bulwark", "bulwark"); // 2x3
+    const id = state.nextId++;
+    placeItem(p.inventory, id, plain("war_maul")); // 2x3, leaves 8x4 + 2x1
+    // Fill everything else so only the maul's own 2x3 hole remains after removal.
+    for (let i = 0; i < INV_W * INV_H; i++) placeItem(p.inventory, state.nextId++, plain("bone_ring"));
+    stepSolo(state, { equip: id });
+    expect(p.equipment.weapon?.name).toBe("blade");
+    expect(p.equipment.shield?.name).toBe("bulwark");
+    expect(p.inventory.entries.some((e) => e.id === id)).toBe(true);
+    expect(state.events.some((e) => e.type === "item_equipped")).toBe(false);
+  });
+
+  test("a shield is refused while a two-hander is wielded", () => {
+    const state = armedGame();
+    const p = player(state);
+    p.equipment.weapon = plain("war_maul");
+    const id = state.nextId++;
+    placeItem(p.inventory, id, plain("plank_buckler"));
+    stepSolo(state, { equip: id });
+    expect(p.equipment.shield).toBeNull();
+    expect(p.inventory.entries).toHaveLength(1);
+    expect(state.events.some((e) => e.type === "item_equipped")).toBe(false);
+  });
+
+  test("swapping to a one-hander frees the off-hand again", () => {
+    const state = armedGame();
+    const p = player(state);
+    p.equipment.weapon = plain("war_maul");
+    const blade = state.nextId++;
+    placeItem(p.inventory, blade, plain("rusted_blade"));
+    stepSolo(state, { equip: blade });
+    const shield = state.nextId++;
+    placeItem(p.inventory, shield, plain("plank_buckler"));
+    stepSolo(state, { equip: shield });
+    expect(p.equipment.shield?.baseId).toBe("plank_buckler");
+  });
+});
+
 describe("unequip", () => {
   test("unequip returns the item to the inventory and stats revert", () => {
     const state = bareGame(1);

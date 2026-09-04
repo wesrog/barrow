@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { Equipment } from "../../sim/character";
+import { isTwoHanded, type Equipment } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import {
@@ -145,7 +145,7 @@ const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean }> = 
   gnarled_staff: { model: "skeleton_staff", twoHanded: false },
   ember_staff: { model: "skeleton_staff", twoHanded: false },
   wyrmwood_staff: { model: "skeleton_staff", twoHanded: false },
-  dire_flail: { model: "axe_1handed", twoHanded: false },
+  dire_flail: { model: "axe_2handed", twoHanded: true },
   moon_glaive: { model: "axe_2handed", twoHanded: true },
   kingsbane: { model: "sword_1handed", twoHanded: false },
 };
@@ -306,10 +306,13 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     }
     // Orbs share the shield slot but float over the off hand instead of
     // un-hiding the skinned shield prop.
-    const offhandOrb = eq.shield && BASES[eq.shield.baseId]!.dmgMin !== undefined ? eq.shield : null;
+    // A two-hander fills both hands: the sim keeps the shield slot empty beside
+    // one, and anything stale in it (an old save) is inert, so show nothing.
+    const offhand = eq.weapon && isTwoHanded(eq.weapon) ? null : eq.shield;
+    const offhandOrb = offhand && BASES[offhand.baseId]!.dmgMin !== undefined ? offhand : null;
     if (shieldProp) {
-      shieldProp.visible = !!eq.shield && !offhandOrb;
-      const glow = eq.shield && !offhandOrb ? RARITY_GLOW[eq.shield.rarity] : undefined;
+      shieldProp.visible = !!offhand && !offhandOrb;
+      const glow = offhand && !offhandOrb ? RARITY_GLOW[offhand.rarity] : undefined;
       shieldProp.traverse((child) => {
         if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
           child.material.emissive.setHex(glow ?? 0x000000);

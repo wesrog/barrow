@@ -68,7 +68,10 @@ export function setMusicVariant(v: MusicVariant): void {
   }
   if (started && ctxRef) {
     teardownVariant();
-    buildVariant(ctxRef);
+    // Rebuild in "immediate" mode: a style switch must be audible at once.
+    // Without this the new style waits out its normal gap (up to ~22s for
+    // airs) and every style sounds identical — like nothing changed.
+    buildVariant(ctxRef, true);
   }
 }
 
@@ -134,7 +137,14 @@ function pluck(ctx: AudioContext, dest: AudioNode, freq: number, at: number, gai
   src.connect(g).connect(dest);
   src.start(t0);
   src.stop(t0 + PLUCK_SECONDS);
+  // Tracked so a style switch can cut it off mid-ring, dropped once it ends —
+  // a long session plays thousands of these.
   variantSources.push(src);
+  src.onended = () => {
+    const i = variantSources.indexOf(src);
+    if (i >= 0) variantSources.splice(i, 1);
+    g.disconnect();
+  };
 }
 
 /** Advance the home-biased random walk and return the next scale index. */
@@ -154,7 +164,7 @@ const degreeFreq = (i: number): number => ROOT * SCALE[Math.max(0, Math.min(SCAL
 // ---------------------------------------------------------------- variants
 
 /** The original bed: a low breathing drone, sparse random-walk plucks. */
-function buildDrone(ctx: AudioContext): void {
+function buildDrone(ctx: AudioContext, immediate: boolean): void {
   for (const [freq, g] of [
     [ROOT / 2, 0.5],
     [ROOT / 2 + 0.7, 0.3],
@@ -174,8 +184,10 @@ function buildDrone(ctx: AudioContext): void {
     trem.start();
     variantSources.push(osc, trem);
   }
+  let first = immediate;
   const motif = () => {
-    const gapMs = combat ? 2500 + Math.random() * 4000 : 6000 + Math.random() * 12000;
+    const gapMs = first ? 250 : combat ? 2500 + Math.random() * 4000 : 6000 + Math.random() * 12000;
+    first = false;
     later(gapMs, () => {
       pluck(ctx, variantOut!, degreeFreq(walkScale()), 0, 0.3);
       if (Math.random() < 0.45) pluck(ctx, variantOut!, degreeFreq(walkScale()), 0.35 + Math.random() * 0.4, 0.22);
@@ -187,9 +199,11 @@ function buildDrone(ctx: AudioContext): void {
 
 /** No drone at all: the strings carry the air with fuller, more frequent
  * phrases, low root plucks as punctuation, and the odd open-fifth dyad. */
-function buildStrings(ctx: AudioContext): void {
+function buildStrings(ctx: AudioContext, immediate: boolean): void {
+  let first = immediate;
   const phrase = () => {
-    const gapMs = combat ? 2500 + Math.random() * 3500 : 4500 + Math.random() * 7500;
+    const gapMs = first ? 250 : combat ? 2500 + Math.random() * 3500 : 4500 + Math.random() * 7500;
+    first = false;
     later(gapMs, () => {
       const notes = 2 + Math.floor(Math.random() * 4); // 2-5 notes
       let at = 0;
@@ -220,10 +234,12 @@ const AIRS: [number, number][][] = [
   [[7, 2], [5, 1], [4, 2], [5, 1], [4, 1], [2, 1], [0, 3]],
 ];
 
-function buildAirs(ctx: AudioContext): void {
+function buildAirs(ctx: AudioContext, immediate: boolean): void {
   const beat = 0.42;
+  let first = immediate;
   const play = () => {
-    const gapMs = combat ? 6000 + Math.random() * 6000 : 11000 + Math.random() * 11000;
+    const gapMs = first ? 200 : combat ? 6000 + Math.random() * 6000 : 11000 + Math.random() * 11000;
+    first = false;
     later(gapMs, () => {
       const air = AIRS[Math.floor(Math.random() * AIRS.length)]!;
       const up = Math.random() < 0.3 ? 2 : 1; // sometimes an octave higher
@@ -262,7 +278,7 @@ const CHORDS: number[][] = [
   [1.8, 2.25, 2.7], // VII
 ];
 
-function buildVigil(ctx: AudioContext): void {
+function buildVigil(ctx: AudioContext, immediate: boolean): void {
   let chordIndex = 0;
   const swellChord = () => {
     const ratios = CHORDS[chordIndex]!;
@@ -287,8 +303,11 @@ function buildVigil(ctx: AudioContext): void {
     later((dur - 4 + Math.random() * 3) * 1000, swellChord); // overlap the tails
   };
   swellChord();
+  let first = immediate;
   const motif = () => {
-    later(8000 + Math.random() * 9000, () => {
+    const gapMs = first ? 500 : 8000 + Math.random() * 9000;
+    first = false;
+    later(gapMs, () => {
       pluck(ctx, variantOut!, degreeFreq(walkScale()), 0, 0.24);
       if (Math.random() < 0.35) pluck(ctx, variantOut!, degreeFreq(walkScale()), 0.5, 0.16);
       motif();
@@ -297,17 +316,30 @@ function buildVigil(ctx: AudioContext): void {
   motif();
 }
 
-const BUILDERS: Record<MusicVariant, (ctx: AudioContext) => void> = {
+const BUILDERS: Record<MusicVariant, (ctx: AudioContext, immediate: boolean) => void> = {
   drone: buildDrone,
   strings: buildStrings,
   airs: buildAirs,
   vigil: buildVigil,
 };
 
-function buildVariant(ctx: AudioContext): void {
+/**
+ * Rough loudness match between styles, measured off the master bus: the
+ * pluck-only styles peak far quieter than the ones with a sustained bed, and
+ * an unmatched A/B just tells you which style is louder.
+ */
+const VARIANT_TRIM: Record<MusicVariant, number> = {
+  drone: 1,
+  strings: 2.4,
+  airs: 1.5,
+  vigil: 1.6,
+};
+
+function buildVariant(ctx: AudioContext, immediate = false): void {
   variantOut = ctx.createGain();
+  variantOut.gain.value = VARIANT_TRIM[variant];
   variantOut.connect(gate!);
-  BUILDERS[variant](ctx);
+  BUILDERS[variant](ctx, immediate);
 }
 
 // ------------------------------------------------------------------ engine

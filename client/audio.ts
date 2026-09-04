@@ -315,8 +315,8 @@ interface ImpactOpts {
   flesh?: boolean;
   /** add a long low rumble tail (heavy landings, explosions) */
   rumble?: boolean;
-  /** weapon character: "sharp" thins the thump and adds a slicing sweep,
-   * "blunt" mutes the crack and doubles down on the sub */
+  /** "blunt" mutes the crack and doubles down on the sub; sharp hits are
+   * a different sound entirely — see `slash` */
   edge?: WeaponEdge;
   at?: number;
 }
@@ -327,24 +327,23 @@ interface ImpactOpts {
 function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, edge, at = 0 }: ImpactOpts = {}): void {
   // humanize: the whole hit lands a hair off the tick grid
   const t = at + rnd(0, 0.025);
-  const sharp = edge === "sharp";
   const blunt = edge === "blunt";
   // crack — the first 10ms of high-frequency snap; sometimes barely there.
-  // A blade bites with a bright, sure crack; a club lands with almost none.
+  // A club lands with almost none.
   noise(c, {
-    dur: sharp ? 0.018 : 0.012,
-    gain: rnd(0.1, 0.28) * size * (sharp ? 1.5 : blunt ? 0.4 : 1),
-    filterFrom: rnd(4200, 5600) * p * (sharp ? 1.3 : blunt ? 0.75 : 1),
+    dur: 0.012,
+    gain: rnd(0.1, 0.28) * size * (blunt ? 0.4 : 1),
+    filterFrom: rnd(4200, 5600) * p * (blunt ? 0.75 : 1),
     filterType: "highpass",
     at: t,
     sat: true,
   });
   // body — the mid punch, sweeping down as the energy dissipates.
-  // Blunt: longer, lower, fatter. Sharp: tighter and sitting higher.
+  // Blunt: longer, lower, fatter.
   noise(c, {
-    dur: rnd(0.06, 0.13) * size * (blunt ? 1.5 : sharp ? 0.8 : 1),
+    dur: rnd(0.06, 0.13) * size * (blunt ? 1.5 : 1),
     gain: rnd(0.28, 0.42) * size * (blunt ? 1.2 : 1),
-    filterFrom: rnd(750, 1050) * p * (blunt ? 0.6 : sharp ? 1.35 : 1),
+    filterFrom: rnd(750, 1050) * p * (blunt ? 0.6 : 1),
     filterTo: rnd(180, 260) * p * (blunt ? 0.6 : 1),
     q: rnd(0.7, 1.1) * (blunt ? 0.8 : 1),
     at: t + rnd(0, 0.006),
@@ -355,32 +354,10 @@ function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, edge, at = 0 
   sub(c, {
     from: rnd(125, 155) * p * (blunt ? 0.85 : 1),
     to: rnd(42, 54) * p * (blunt ? 0.8 : 1),
-    dur: rnd(0.11, 0.19) * size * (blunt ? 1.6 : sharp ? 0.6 : 1),
-    gain: rnd(0.42, 0.62) * size * (blunt ? 1.3 : sharp ? 0.45 : 1),
+    dur: rnd(0.11, 0.19) * size * (blunt ? 1.6 : 1),
+    gain: rnd(0.42, 0.62) * size * (blunt ? 1.3 : 1),
     at: t + rnd(0.002, 0.01),
   });
-  if (sharp) {
-    // the slice: a narrow, bright band tearing downward through the cut,
-    // plus a brief edge-ring as the steel leaves the wound
-    noise(c, {
-      dur: rnd(0.07, 0.12),
-      gain: rnd(0.16, 0.26) * size,
-      filterFrom: rnd(3200, 4400) * p,
-      filterTo: rnd(900, 1400) * p,
-      q: rnd(4, 7),
-      at: t + rnd(0.004, 0.01),
-      sat: true,
-    });
-    if (Math.random() < 0.5) {
-      noise(c, {
-        dur: rnd(0.08, 0.14),
-        gain: rnd(0.04, 0.08) * size,
-        filterFrom: rnd(5200, 6800) * p,
-        q: rnd(14, 22),
-        at: t + rnd(0.01, 0.02),
-      });
-    }
-  }
   if (blunt) {
     // the thud's aftermath: a dull, dark low-mid slump as the mass settles
     noise(c, {
@@ -393,7 +370,7 @@ function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, edge, at = 0 
       sat: true,
     });
   }
-  if (flesh && Math.random() < (sharp ? 0.9 : 0.75)) {
+  if (flesh && Math.random() < 0.75) {
     // wet squish: high-Q resonant sweep through low mids; absent one hit in four
     noise(c, {
       dur: rnd(0.05, 0.11),
@@ -415,6 +392,62 @@ function impact(c: AudioContext, { size = 1, p = 1, flesh, rumble, edge, at = 0 
       at: t + 0.02,
     });
   }
+}
+
+/** A blade landing: no thump at all. The sound is the cut — a bright,
+ * narrow band tearing down through the top end, a wet ripping squish
+ * underneath it, a snap of steel biting, and a short edge-ring as it
+ * pulls free. Reads as "sliced", never "clubbed". */
+function slash(c: AudioContext, p = 1, at = 0): void {
+  const t = at + rnd(0, 0.02);
+  // bite — a bright, longer snap than a thump's crack: steel meeting meat
+  noise(c, {
+    dur: rnd(0.02, 0.03),
+    gain: rnd(0.22, 0.34),
+    filterFrom: rnd(5000, 6800) * p,
+    filterType: "highpass",
+    at: t,
+    sat: true,
+  });
+  // the cut — the dominant layer, a resonant band sweeping fast from high to mid
+  noise(c, {
+    dur: rnd(0.09, 0.15),
+    gain: rnd(0.34, 0.48),
+    filterFrom: rnd(3600, 4800) * p,
+    filterTo: rnd(700, 1100) * p,
+    q: rnd(3, 5),
+    at: t + rnd(0.002, 0.006),
+    sat: true,
+  });
+  // the tear — wet, ragged, resonant low-mids; the flesh giving way
+  noise(c, {
+    dur: rnd(0.07, 0.13),
+    gain: rnd(0.16, 0.26),
+    filterFrom: rnd(1100, 1500) * p,
+    filterTo: rnd(200, 320) * p,
+    q: rnd(6, 10),
+    at: t + rnd(0.01, 0.02),
+    sat: true,
+  });
+  // edge-ring — the blade singing as it leaves; comes and goes
+  if (Math.random() < 0.7) {
+    noise(c, {
+      dur: rnd(0.1, 0.18),
+      gain: rnd(0.05, 0.1),
+      filterFrom: rnd(5200, 7200) * p,
+      q: rnd(16, 26),
+      at: t + rnd(0.015, 0.03),
+    });
+  }
+  // only a whisper of weight behind it — enough to feel the arm, no more
+  noise(c, {
+    dur: rnd(0.04, 0.07),
+    gain: rnd(0.06, 0.1),
+    filterFrom: rnd(300, 420) * p,
+    filterTo: rnd(120, 180) * p,
+    filterType: "lowpass",
+    at: t + rnd(0.004, 0.01),
+  });
 }
 
 interface GrowlOpts {
@@ -675,7 +708,8 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     }
   },
   hit: (c, _v, edge) => {
-    impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
+    if (edge === "sharp") slash(c, rnd(0.85, 1.2));
+    else impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
   },
   hurt: (c, v) => {
     growl(c, { v: v ?? NEUTRAL_VOICE, dur: rnd(0.16, 0.24), gain: rnd(0.3, 0.4), fall: 0.6 });

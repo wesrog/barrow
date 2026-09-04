@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createEquipment } from "../../sim/character";
 import type { Item } from "../../sim/items/generate";
-import { equipDelta, isComparable } from "./itemCompare";
+import { equipDelta, groundVerdict, isComparable, upgradeVerdict } from "./itemCompare";
 
 function plain(baseId: string, mods: Item["mods"] = []): Item {
   return { baseId, rarity: "normal", name: baseId, affixIds: [], mods, ilvl: 1 };
@@ -87,5 +87,27 @@ describe("equipDelta", () => {
     const vsSecond = equipDelta(eq, ring, 10, "warrior", "ring2");
     expect(vsSecond.maxLife).toBe(4);
     expect(vsSecond.maxMana).toBe(-5);
+  });
+});
+
+describe("upgradeVerdict", () => {
+  const zero = { dmgMin: 0, dmgMax: 0, attackRating: 0, defense: 0, maxLife: 0, maxMana: 0, magicFind: 0 };
+  test("all gains is better, all losses is worse", () => {
+    expect(upgradeVerdict({ ...zero, defense: 5 })).toBe("better");
+    expect(upgradeVerdict({ ...zero, dmgMin: -1, dmgMax: -3 })).toBe("worse");
+  });
+  test("gains and losses together are mixed; nothing moved is same", () => {
+    expect(upgradeVerdict({ ...zero, defense: 5, maxLife: -10 })).toBe("mixed");
+    expect(upgradeVerdict(zero)).toBe("same");
+  });
+});
+
+describe("groundVerdict", () => {
+  test("potions have no verdict; gear reports against current equipment", () => {
+    const eq = createEquipment();
+    eq.weapon = plain("war_maul"); // 8–18
+    expect(groundVerdict(eq, plain("minor_potion"), 10, "warrior")).toBeNull();
+    expect(groundVerdict(eq, plain("rusted_blade"), 10, "warrior")).toBe("worse");
+    expect(groundVerdict(eq, plain("cracked_helm"), 10, "warrior")).toBe("better");
   });
 });

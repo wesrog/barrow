@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { fillLoopedNoise } from "./ambience";
+import { BEDS, fillLoopedNoise } from "./ambience";
+import { DUNGEON_STYLES, type DungeonStyleId } from "../sim/dungeons";
 
 /** RMS of `n` samples starting at `start`, wrapping around the loop. */
 function wrappedRms(data: Float32Array, start: number, n: number): number {
@@ -33,5 +34,19 @@ describe("fillLoopedNoise", () => {
     // white-noise step: bounded by the sample range, not an outlier spike.
     const seamStep = Math.abs(data[0]! - data[data.length - 1]!);
     expect(seamStep).toBeLessThanOrEqual(2);
+  });
+});
+
+describe("BEDS", () => {
+  test("dungeon beds carry no wind: the breathing-noise layer is surface-only", () => {
+    for (const style of Object.keys(DUNGEON_STYLES) as DungeonStyleId[]) {
+      expect(BEDS[style].noise).toBeUndefined();
+    }
+  });
+
+  test("surface biomes keep their air", () => {
+    for (const biome of ["moor", "fen", "mire", "crag", "ash", "hollow"] as const) {
+      expect(BEDS[biome].noise).toBeDefined();
+    }
   });
 });

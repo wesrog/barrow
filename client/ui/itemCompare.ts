@@ -47,3 +47,30 @@ export function equipDelta(
     magicFind: after.magicFind - before.magicFind,
   };
 }
+
+export type UpgradeVerdict = "better" | "worse" | "mixed" | "same";
+
+/** Collapse a stat delta to one word: every change a gain, every change a loss, both, or none. */
+export function upgradeVerdict(delta: StatDelta): UpgradeVerdict {
+  let gain = false;
+  let loss = false;
+  for (const v of Object.values(delta)) {
+    if (v > 0) gain = true;
+    else if (v < 0) loss = true;
+  }
+  if (gain && loss) return "mixed";
+  if (gain) return "better";
+  if (loss) return "worse";
+  return "same";
+}
+
+/** The at-a-glance verdict a ground label wears; null for things that don't equip. */
+export function groundVerdict(
+  eq: Equipment,
+  item: Item,
+  level: number,
+  klass: Klass,
+): UpgradeVerdict | null {
+  if (!isComparable(item)) return null;
+  return upgradeVerdict(equipDelta(eq, item, level, klass));
+}

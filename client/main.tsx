@@ -10,7 +10,7 @@ import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import type { Element } from "../sim/elements";
-import { assignHotbar, loadHotbar, resetHotbar, type Hotbar } from "./hotbar";
+import { HOTBAR_SIZE, assignHotbar, loadHotbar, resetHotbar, slotForKey, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
@@ -98,8 +98,12 @@ function Game({
     invOpen || skillsOpen || shopOpen || stashOpen || healerOpen || waypointsOpen ||
     questsOpen || dialogueNpc !== null;
   const [intro, setIntro] = useState<ZoneIntroMsg | null>(null);
-  const [hotbar, setHotbar] = useState<Hotbar>([null, null, null, null]);
-  const hotbarRef = useRef<Hotbar>([null, null, null, null]);
+  const [hotbar, setHotbar] = useState<Hotbar>(Array(HOTBAR_SIZE).fill(null));
+  const hotbarRef = useRef<Hotbar>(Array(HOTBAR_SIZE).fill(null));
+  /** The skill under the cursor in the skill panel: a cast key pressed now binds instead of casting. */
+  const hoveredSkillRef = useRef<SkillId | null>(null);
+  const skillsOpenRef = useRef(false);
+  skillsOpenRef.current = skillsOpen;
   const [, setVersion] = useState(0);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const [desync, setDesync] = useState(false);
@@ -178,6 +182,8 @@ function Game({
       new Map([...game.players].map(([id, p]) => [id, { ...p.pos }] as const));
     let prevPositions = snapshotPositions();
     let mouseDown = false;
+    /** Right button held: the mouse slot recasts every tick, like holding a D2 skill. */
+    let rightDown = false;
     let lastPointer: { x: number; y: number } | null = null;
 
     let shiftDown = false;
@@ -261,12 +267,19 @@ function Game({
     };
     const onPointerDown = (e: PointerEvent) => {
       unlock(); // first gesture wakes the audio engine
-      if (e.button !== 0) return;
       // Only clicks on the scene canvas (the lone canvas mounted directly on
       // the game root) are world clicks — HUD panels, including canvases like
       // the inventory paperdoll, handle their own.
       if (!(e.target instanceof HTMLCanvasElement) || e.target.parentElement !== mount)
         return;
+      if (e.button === 2) {
+        // The right button is the mouse cast slot: aim at whatever is under the cursor.
+        rightDown = true;
+        lastPointer = { x: e.clientX, y: e.clientY };
+        castSlot(0);
+        return;
+      }
+      if (e.button !== 0) return;
       mouseDown = true;
       shiftDown = e.shiftKey;
       lastPointer = { x: e.clientX, y: e.clientY };
@@ -276,11 +289,12 @@ function Game({
       lastPointer = { x: e.clientX, y: e.clientY };
       shiftDown = e.shiftKey;
     };
-    const onPointerUp = () => {
-      mouseDown = false;
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.button === 2) rightDown = false;
+      else mouseDown = false;
     };
-    // Cast keys q/w/e/r fire whatever skill the player bound to each slot;
-    // each skill's targeting mode decides what the cursor contributes.
+    // The right button and the cast keys fire whatever skill the player bound
+    // to each slot; each skill's targeting mode decides what the cursor contributes.
     const castSlot = (slot: number) => {
       const id = hotbarRef.current[slot];
       if (!id) return;
@@ -308,6 +322,11 @@ function Game({
       } else if (picked?.kind === "ground") {
         input.cast = { skill: def.id, at: picked.world };
       }
+    };
+    const bindSlot = (slot: number, skill: SkillId) => {
+      const bar = assignHotbar(localPlayer(game).klass, slot, skill);
+      hotbarRef.current = bar;
+      setHotbar(bar);
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -350,10 +369,14 @@ function Game({
         setQuestFocus(null);
         setQuestsOpen((open) => !open);
       }
-      else if (e.key === "q") castSlot(0);
-      else if (e.key === "w") castSlot(1);
-      else if (e.key === "e") castSlot(2);
-      else if (e.key === "r") castSlot(3);
+      else if (slotForKey(e.key) > 0) {
+        const slot = slotForKey(e.key);
+        const hovered = hoveredSkillRef.current;
+        if (skillsOpenRef.current && hovered) {
+          // In the panel, a cast key over a learned skill binds it instead of casting.
+          if (localPlayer(game).skills[hovered] > 0) bindSlot(slot, hovered);
+        } else castSlot(slot);
+      }
     };
     mount.addEventListener("pointerdown", onPointerDown);
     mount.addEventListener("pointermove", onPointerMove);
@@ -649,6 +672,8 @@ function Game({
         // Holding the button re-aims every tick; the sim clears its target
         // after each swing, so this re-send is what makes hold = auto-attack.
         if (mouseDown && (shiftDown || pending.attack === undefined)) aimFromPointer(false);
+        // A held right button keeps recasting; the sim's cooldown paces it.
+        if (rightDown && !pending.cast) castSlot(0);
         Object.assign(pending, uiInputRef.current);
         uiInputRef.current = {};
       }
@@ -963,6 +988,9 @@ function Game({
               const bar = assignHotbar(localPlayer(game).klass, slot, skill);
               hotbarRef.current = bar;
               setHotbar(bar);
+            }}
+            onHover={(id) => {
+              hoveredSkillRef.current = id;
             }}
             onClose={() => setSkillsOpen(false)}
           />

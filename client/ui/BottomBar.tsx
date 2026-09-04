@@ -4,7 +4,7 @@ import { BELT_SIZE, xpForLevel } from "../../sim/character";
 import { SKILLS, type SkillId } from "../../sim/skills";
 import { zoneFloor, type GameState } from "../../sim/state";
 import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
-import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
+import { HOTBAR_KEYS, SLOT_LABELS, type Hotbar } from "../hotbar";
 
 const mono = "ui-monospace, monospace";
 
@@ -219,7 +219,7 @@ export function BottomBar({
             return (
               <div
                 key={key}
-                title={id ? `${SKILLS[id].name} — rank ${rank}` : "assign a skill in the skill panel (s)"}
+                title={id ? `${SKILLS[id].name} — rank ${rank} (${SLOT_LABELS[key]})` : "bind a skill in the skill panel (s)"}
                 style={{
                   width: 46,
                   height: 40,
@@ -235,7 +235,7 @@ export function BottomBar({
                   lineHeight: 1.25,
                 }}
               >
-                <span style={{ color: "#6b6455" }}>{key}</span>
+                <span style={{ color: "#6b6455", fontSize: key === "rmb" ? 8.5 : 10.5 }}>{SLOT_LABELS[key]}</span>
                 <span>{id ? SKILL_SHORT[id] : "·"}</span>
               </div>
             );

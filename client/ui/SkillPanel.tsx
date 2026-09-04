@@ -10,7 +10,7 @@ import {
 } from "../../sim/skills";
 import { canSpendOn } from "../../sim/systems/skills";
 import type { GameState, Player } from "../../sim/state";
-import { HOTBAR_KEYS, type Hotbar } from "../hotbar";
+import { HOTBAR_KEYS, SLOT_LABELS, type Hotbar } from "../hotbar";
 import { PanelChrome } from "./PanelChrome";
 
 const panelStyle: CSSProperties = {
@@ -138,6 +138,11 @@ function SkillCell({
       <div
         onMouseEnter={() => onHover(def.id)}
         onMouseLeave={() => onHover(null)}
+        onContextMenu={(e) => {
+          // Right-click binds the mouse slot — the same button that will cast it.
+          e.preventDefault();
+          if (def.kind === "active" && rank > 0) onAssign(0, def.id);
+        }}
         style={{
           padding: "6px 8px",
           // Longhands, not the `border` shorthand: React warns when a
@@ -158,29 +163,26 @@ function SkillCell({
             {rank >= MAX_RANK && <span style={{ color: "#c9a84c", fontSize: 10 }}>maxed</span>}
           </span>
           <span style={{ display: "flex", gap: 3, alignItems: "center", flexShrink: 0 }}>
-            {def.kind === "active" &&
-              HOTBAR_KEYS.map((key, i) => (
-                <span
-                  key={key}
-                  onClick={() => rank > 0 && onAssign(i, def.id)}
-                  title={rank > 0 ? `cast with ${key}` : "learn the skill first"}
-                  style={{
-                    width: 14,
-                    height: 15,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 9.5,
-                    border: `1px solid ${slot === i ? "#c9a84c" : "#2c2833"}`,
-                    borderRadius: 2,
-                    color: slot === i ? "#c9a84c" : "#6b6455",
-                    background: slot === i ? "rgba(201,168,76,.15)" : "transparent",
-                    cursor: rank > 0 ? "pointer" : "default",
-                  }}
-                >
-                  {key}
-                </span>
-              ))}
+            {def.kind === "active" && rank > 0 && (
+              <span
+                title={
+                  slot >= 0
+                    ? `bound to ${SLOT_LABELS[HOTBAR_KEYS[slot]!]} · hover and press a key, or right-click for the mouse`
+                    : "hover and press q w e r f to bind · right-click for the mouse slot"
+                }
+                style={{
+                  padding: "1px 5px",
+                  fontSize: 9.5,
+                  border: `1px solid ${slot >= 0 ? "#c9a84c" : "#2c2833"}`,
+                  borderRadius: 2,
+                  color: slot >= 0 ? "#c9a84c" : "#55503f",
+                  background: slot >= 0 ? "rgba(201,168,76,.15)" : "transparent",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {slot >= 0 ? SLOT_LABELS[HOTBAR_KEYS[slot]!] : "unbound"}
+              </span>
+            )}
             {canSpend && (
               <span
                 role="button"
@@ -218,16 +220,23 @@ export function SkillPanel({
   hotbar,
   onSpend,
   onAssign,
+  onHover,
   onClose,
 }: {
   game: GameState;
   hotbar: Hotbar;
   onSpend: (skill: SkillId) => void;
   onAssign: (slot: number, skill: SkillId) => void;
+  /** The skill under the cursor, so a cast key can bind it instead of casting. */
+  onHover: (skill: SkillId | null) => void;
   onClose: () => void;
 }) {
   const p = localPlayer(game);
-  const [hovered, setHovered] = useState<SkillId | null>(null);
+  const [hovered, setHoveredState] = useState<SkillId | null>(null);
+  const setHovered = (id: SkillId | null) => {
+    setHoveredState(id);
+    onHover(id);
+  };
   const trees = CLASS_TREES(p.klass);
   return (
     <div style={panelStyle}>
@@ -271,7 +280,7 @@ export function SkillPanel({
         ))}
       </div>
       <div style={{ color: "#55503f", marginTop: 8 }}>
-        s or esc to close · q w e r to cast · click a key to bind a learned skill · unlearn everything at Sera's
+        s or esc to close · hover a learned skill and press q w e r f to bind it, or right-click it for the mouse · unlearn everything at Sera's
       </div>
     </div>
   );

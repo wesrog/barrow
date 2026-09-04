@@ -51,8 +51,8 @@ const inputStyle: CSSProperties = {
 };
 
 const KLASS_BLURB: Record<Klass, string> = {
-  warrior: "a bruiser — cleave, crush, warcry, leap",
-  witch: "a caster — firebolt, frost nova, focus, blink",
+  warrior: "a bruiser — arms, warcries, and fury",
+  witch: "a caster — fire, frost, and hexes",
 };
 
 /** Pre-game overlay, now in two acts: pick (or forge) a character, then play

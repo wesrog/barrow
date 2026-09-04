@@ -35,6 +35,7 @@ import {
 } from "./modelRigs";
 import type { GameAssets } from "./models";
 import { playerCss, playerTint } from "./tints";
+import { groundVerdict, type UpgradeVerdict } from "../ui/itemCompare";
 
 const VIEW_HEIGHT = 16; // world units visible vertically
 
@@ -861,7 +862,25 @@ export function createScene(
     rare: { hex: 0xe8d95f, css: "#f0e68c" },
     unique: { hex: 0xc9884c, css: "#d9a05c" },
   };
-  const groundItemVisuals = new Map<number, { mesh: THREE.Mesh; label: HTMLDivElement }>();
+  const groundItemVisuals = new Map<
+    number,
+    { mesh: THREE.Mesh; label: HTMLDivElement; glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }
+  >();
+  // Loot answers "is this better than what I'm wearing?" before it's touched:
+  // a glyph before the name, judged against the local hero's current gear.
+  const VERDICT_GLYPH: Record<UpgradeVerdict, { text: string; css: string }> = {
+    better: { text: "▲ ", css: "#7fc978" },
+    worse: { text: "▼ ", css: "#d6675c" },
+    mixed: { text: "◆ ", css: "#d9b85c" },
+    same: { text: "= ", css: "#8c8578" },
+  };
+  const wearVerdict = (v: { glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }, verdict: UpgradeVerdict | null) => {
+    if (verdict === v.verdict) return;
+    v.verdict = verdict;
+    const g = verdict && VERDICT_GLYPH[verdict];
+    v.glyph.textContent = g ? g.text : "";
+    v.glyph.style.color = g ? g.css : "";
+  };
 
   // --- Monsters & corpses ---
   const monsterRigs = new Map<number, Rig>();
@@ -1298,7 +1317,9 @@ export function createScene(
           mesh.position.set(gi.pos.x, 0.16, gi.pos.y);
           scene.add(mesh);
           const label = document.createElement("div");
-          label.textContent = gi.item.name;
+          const glyph = document.createElement("span");
+          glyph.style.cssText = "font-weight:700;";
+          label.append(glyph, gi.item.name);
           label.style.cssText = `position:absolute;color:${colors.css};font-size:11.5px;transform:translate(-50%,-100%);background:rgba(8,8,10,.72);padding:1px 5px;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:auto;cursor:pointer;`;
           const id = gi.id;
           label.addEventListener("pointerdown", (e) => {
@@ -1306,8 +1327,12 @@ export function createScene(
             onItemClick?.(id);
           });
           overlay.appendChild(label);
-          v = { mesh, label };
+          v = { mesh, label, glyph, verdict: null };
           groundItemVisuals.set(gi.id, v);
+        }
+        // Gear changes only on a tick, so the verdict only needs re-judging then.
+        if (tickAdvanced || v.verdict === null) {
+          wearVerdict(v, groundVerdict(me.equipment, gi.item, me.level, me.klass));
         }
         v.mesh.rotation.y = performance.now() / 900;
         const at = worldToScreen(gi.pos, 0.6);

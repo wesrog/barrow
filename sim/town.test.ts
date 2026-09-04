@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { BASES } from "./items/bases";
 import { player, soloGame } from "./test-helpers";
 import { ensureDungeonFloor, stepSolo, travel } from "./tick";
 import { getZone } from "./state";
@@ -135,6 +136,29 @@ describe("the vendor", () => {
     stepSolo(state, {});
     expect(state.shop.length).toBeGreaterThanOrEqual(5);
     for (const entry of state.shop) expect(entry.price).toBeGreaterThan(0);
+  });
+
+  test("the stall carries the buyer's own class gear and never the other class's", () => {
+    const witchGear = (state: ReturnType<typeof soloGame>) =>
+      state.shop.filter((e) => BASES[e.item.baseId]!.classReq === "witch").length;
+    const warriorGear = (state: ReturnType<typeof soloGame>) =>
+      state.shop.filter((e) => BASES[e.item.baseId]!.classReq === "warrior").length;
+    let witchSaw = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const state = soloGame(seed);
+      player(state).klass = "witch";
+      player(state).level = 12;
+      stepSolo(state, {});
+      witchSaw += witchGear(state);
+      expect(warriorGear(state)).toBe(0);
+    }
+    expect(witchSaw).toBeGreaterThan(0);
+    for (let seed = 1; seed <= 12; seed++) {
+      const state = soloGame(seed);
+      player(state).level = 12;
+      stepSolo(state, {});
+      expect(witchGear(state)).toBe(0);
+    }
   });
 
   test("walking back into an empty camp restocks; an occupied camp keeps its stock", () => {

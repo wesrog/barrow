@@ -64,6 +64,16 @@ const SHOP_BASES = [
   "cragwalkers",
   "wight_band",
   "howler_charm",
+  // Caster gear: staves, wands and orbs. Restock filters by the buyer's class.
+  "gnarled_staff",
+  "bone_wand",
+  "ashen_orb",
+  "willow_wand",
+  "ember_staff",
+  "fen_pearl",
+  "hexwood_wand",
+  "wyrmwood_staff",
+  "grave_star",
 ];
 
 /** Refill Maren's stall for the arriving player. Runs when they walk into an
@@ -72,8 +82,12 @@ export function restock(state: GameState, p: Player): void {
   const rng = state.rng;
   const ilvl = Math.max(1, p.level);
   const stock: GameState["shop"] = [];
-  // Maren stocks what the buyer can grow into soon — not endgame steel at level 2.
-  const pool = SHOP_BASES.filter((id) => BASES[id]!.levelReq <= p.level + 3);
+  // Maren stocks what the buyer can grow into soon — not endgame steel at
+  // level 2, and never the other class's gear.
+  const pool = SHOP_BASES.filter((id) => {
+    const base = BASES[id]!;
+    return base.levelReq <= p.level + 3 && (base.classReq === undefined || base.classReq === p.klass);
+  });
   for (let i = 0; i < 6; i++) {
     const baseId = pool[rng.int(0, pool.length - 1)]!;
     // The last slot always carries something magic — the window-shopping hook.

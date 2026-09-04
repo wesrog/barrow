@@ -901,6 +901,23 @@ export function createScene(
   tooltipRole.style.cssText = "color:#9a917c;font-size:10.5px;";
   tooltip.append(tooltipName, tooltipRole);
   overlay.appendChild(tooltip);
+  const PLAIN_PLATE_BORDER = "1px solid rgba(200,190,160,.25)";
+  const cssHex = (hex: number) => `#${hex.toString(16).padStart(6, "0")}`;
+  /** Champion plates carry the modifier tint: coloured name, matching border, a glow. */
+  const stylePlate = (accent: number | null) => {
+    if (accent === null) {
+      tooltip.style.border = PLAIN_PLATE_BORDER;
+      tooltip.style.boxShadow = "none";
+      tooltipName.style.cssText = "color:#e8dfc8;font-size:12px;";
+      tooltipRole.style.color = "#9a917c";
+      return;
+    }
+    const c = cssHex(accent);
+    tooltip.style.border = `1px solid ${c}`;
+    tooltip.style.boxShadow = `0 0 8px ${c}66, inset 0 0 6px ${c}33`;
+    tooltipName.style.cssText = `color:${c};font-size:12.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;`;
+    tooltipRole.style.color = "#c9c0a8";
+  };
 
   // --- Hover highlight: brighten the rig under the cursor ---
   // Keyed by kind:id — monster 3 and portal 3 are different things.
@@ -1620,7 +1637,7 @@ export function createScene(
       const rect = renderer.domElement.getBoundingClientRect();
       const px = clientX - rect.left;
       const py = clientY - rect.top;
-      let tip: { name: string; role: string } | null = null;
+      let tip: { name: string; role: string; accent?: number } | null = null;
       if (picked?.kind === "npc") {
         const npc = zoneOf(state, localPlayer(state)).npcs.get(picked.id);
         const def = npc && NPCS[npc.npcId];
@@ -1629,9 +1646,11 @@ export function createScene(
         const m = zoneOf(state, localPlayer(state)).monsters.get(picked.id);
         const type = m && MONSTER_TYPES[m.typeId];
         if (m && type) {
+          const champion = m.rank === "champion";
           tip = {
             name: monsterDisplayName(m),
-            role: `${m.rank === "champion" ? "Champion" : "Monster"} — level ${m.mlvl}`,
+            role: `${champion ? "Champion" : "Monster"} — level ${m.mlvl}`,
+            accent: champion ? CHAMPION_TINTS[m.modifier ?? "swift"] : undefined,
           };
         }
       } else if (picked?.kind === "portal") {
@@ -1662,6 +1681,7 @@ export function createScene(
       if (tip) {
         tooltipName.textContent = tip.name;
         tooltipRole.textContent = tip.role;
+        stylePlate(tip.accent ?? null);
         tooltip.style.left = `${px}px`;
         tooltip.style.top = `${py}px`;
         tooltip.style.display = "block";

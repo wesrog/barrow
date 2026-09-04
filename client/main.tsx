@@ -10,7 +10,7 @@ import type { NetDriver } from "./net/driver";
 import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import type { Element } from "../sim/elements";
-import { assignHotbar, loadHotbar, type Hotbar } from "./hotbar";
+import { assignHotbar, loadHotbar, resetHotbar, type Hotbar } from "./hotbar";
 import { play, unlock } from "./audio";
 import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
@@ -498,6 +498,15 @@ function Game({
             case "skill_learned":
               play("skillup");
               break;
+            case "respec": {
+              // Every bound skill just vanished — fall back to the default loadout.
+              const bar = resetHotbar(localPlayer(game).klass);
+              hotbarRef.current = bar;
+              setHotbar(bar);
+              scene.addDamageNumber(localPlayer(game).pos, "unlearned", "#b07cf0");
+              play("skillup");
+              break;
+            }
             case "exploded":
               scene.addExplosion(e.pos, e.radius);
               play("explode");
@@ -896,6 +905,9 @@ function Game({
             game={gameRef.current}
             onBuy={(kind) => {
               uiInputRef.current.buyPotion = kind;
+            }}
+            onRespec={() => {
+              uiInputRef.current.respec = true;
             }}
             onClose={() => setHealerOpen(false)}
           />

@@ -8,7 +8,7 @@ import { campCorpseSpot, worldWaypointPos } from "./surface";
 import { ensureSurface } from "./world";
 import { isQuestId, QUESTS, type QuestLog } from "./quests";
 
-const VERSION = 1;
+const VERSION = 2;
 
 export interface CharacterSave {
   v: number;
@@ -111,21 +111,25 @@ export function newCharacterRaw(name: string, klass: Klass): string {
 
 /** Every known skill rank as a finite number, or null if the saved shape is
  * unusable. Ranks a save omits (an older save, a newer skill) come back as 0 —
- * never undefined, which would turn every damage number downstream into NaN. */
-function normalizeSkills(raw: unknown): Record<SkillId, number> | null {
+ * never undefined, which would turn every damage number downstream into NaN.
+ * A rank in a skill this build no longer knows is flagged: those points are
+ * refunded rather than lost. */
+function normalizeSkills(raw: unknown): { skills: Record<SkillId, number>; unknownRanked: boolean } | null {
   if (typeof raw !== "object" || raw === null) return null;
   const out = {} as Record<SkillId, number>;
-  for (const id of SKILL_IDS) {
-    const value = (raw as Record<string, unknown>)[id];
-    if (value === undefined) {
-      out[id] = 0;
+  const known = new Set<string>(SKILL_IDS);
+  let unknownRanked = false;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!known.has(key)) {
+      if (Number(value) > 0) unknownRanked = true;
       continue;
     }
     const n = Number(value);
     if (!Number.isFinite(n)) return null;
-    out[id] = n;
+    out[key as SkillId] = n;
   }
-  return out;
+  for (const id of SKILL_IDS) out[id] ??= 0;
+  return { skills: out, unknownRanked };
 }
 
 /** Restore a saved character onto a freshly joined player. Returns false on bad data. */
@@ -138,7 +142,8 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   } catch {
     return false;
   }
-  if (save?.v !== VERSION || !save.equipment) return false;
+  // v1 saves predate the skill trees; they load with every point refunded.
+  if ((save?.v !== VERSION && save?.v !== 1) || !save.equipment) return false;
   // Anything that reaches the sim is replayed identically on every client, so a
   // malformed save is a deterministic crash (or a NaN that spreads through the
   // damage chain) rather than one player's problem. Validate before applying.
@@ -146,15 +151,21 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   for (const field of ["level", "xp", "skillPoints", "belt"] as const) {
     if (!Number.isFinite(save[field])) return false;
   }
-  const skills = normalizeSkills(save.skills);
-  if (!skills) return false;
+  const normalized = normalizeSkills(save.skills);
+  if (!normalized) return false;
 
   p.name = typeof save.name === "string" && save.name.trim() ? save.name : "Wanderer";
   p.klass = save.klass === "witch" ? "witch" : "warrior";
   p.level = save.level;
   p.xp = save.xp;
-  p.skillPoints = save.skillPoints;
-  p.skills = skills;
+  if (save.v < VERSION || normalized.unknownRanked) {
+    // The tree changed under this character: a free respec, nothing lost.
+    p.skills = Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>;
+    p.skillPoints = Math.max(0, save.level - 1);
+  } else {
+    p.skills = normalized.skills;
+    p.skillPoints = save.skillPoints;
+  }
   p.belt = save.belt;
   p.manaBelt = Number.isFinite(save.manaBelt) ? save.manaBelt! : 0;
   p.gold = Number.isFinite(save.gold) ? save.gold! : 0;

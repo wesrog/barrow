@@ -1,4 +1,4 @@
-import { hasLineOfSight, isWalkable } from "../map";
+import { hasLineOfSight, inCamp, isWalkable } from "../map";
 import {
   BLINK_RANGE,
   SOULCHAIN_FALLOFF,
@@ -15,6 +15,8 @@ import {
   LEAP_STUN_RADIUS,
   MAX_RANK,
   SKILLS,
+  SKILL_IDS,
+  respecCost,
   soulchainDamage,
   applyBuff,
   BUFF_TICKS,
@@ -83,6 +85,26 @@ export function applySpendSkillInput(state: GameState, p: Player, input: PlayerI
   // Passives live in the derived stats, so a new rank has to reach them.
   recomputePlayerStats(state, p);
   state.events.push({ type: "skill_learned", playerId: p.id, skill: id, rank: p.skills[id] });
+}
+
+/** Unlearn everything: camp only, costs respecCost(level), refunds one point per rank. */
+export function applyRespecInput(state: GameState, p: Player, input: PlayerInput): void {
+  if (!input.respec || p.dead) return;
+  const zone = zoneOf(state, p);
+  if (!inCamp(zone.map, p.pos)) return;
+  const cost = respecCost(p.level);
+  if (p.gold < cost) return;
+  let refunded = 0;
+  for (const id of SKILL_IDS) {
+    refunded += p.skills[id];
+    p.skills[id] = 0;
+  }
+  if (refunded === 0) return;
+  p.gold -= cost;
+  p.skillPoints += refunded;
+  p.buffs = {};
+  recomputePlayerStats(state, p);
+  state.events.push({ type: "respec", playerId: p.id, cost });
 }
 
 /** Rank, mana, and the shared action cooldown all gate a cast; success starts it. */

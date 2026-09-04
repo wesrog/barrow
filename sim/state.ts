@@ -203,6 +203,7 @@ export type SimEvent =
     }
   | { type: "level_up"; playerId: PlayerId; level: number }
   | { type: "skill_learned"; playerId: PlayerId; skill: SkillId; rank: number }
+  | { type: "respec"; playerId: PlayerId; cost: number }
   | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
   | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
   | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }
@@ -280,6 +281,8 @@ export interface PlayerInput {
   dropItem?: number;
   /** Spend a skill point on this skill. */
   spendSkill?: SkillId;
+  /** Unlearn every skill at Sera's for respecCost(level) gold. */
+  respec?: boolean;
   /** Cast a skill, optionally at a ground position or monster target. */
   cast?: { skill: SkillId; at?: Vec; target?: number; breakable?: number };
   /** Drink a potion from the belt. Legacy `true` means "health". */

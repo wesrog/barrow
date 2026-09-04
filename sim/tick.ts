@@ -37,6 +37,7 @@ import {
 import {
   applyCastInput,
   applySpendSkillInput,
+  applyRespecInput,
   castPursuitSystem,
   leapSystem,
   chargeSystem,
@@ -383,6 +384,7 @@ export function step(state: GameState, frame: Frame): void {
     applyDropItemInput(state, p, input);
     applyDrinkInput(state, p, input);
     applySpendSkillInput(state, p, input);
+    applyRespecInput(state, p, input);
     applyTalkNpcInput(state, p, input);
     applyAcceptQuestInput(state, p, input);
     applyTurnInQuestInput(state, p, input);

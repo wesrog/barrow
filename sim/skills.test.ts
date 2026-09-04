@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { stepSolo } from "./tick";
-import { createGameOn, player, playerZone, spawnAt } from "./test-helpers";
+import { stepSolo, travel } from "./tick";
+import { dungeonZoneId } from "./state";
+import { inCamp } from "./map";
+import { respecCost } from "./skills";
+import { createGameOn, player, playerZone, soloGame, spawnAt } from "./test-helpers";
 import {
   LEAP_TICKS,
   MAX_RANK,
@@ -1099,5 +1102,46 @@ describe("soulchain drain", () => {
     expect(
       state.events.filter((e) => e.type === "monster_hit").every((e) => e.type === "monster_hit" && e.element === "shadow"),
     ).toBe(true);
+  });
+});
+
+describe("respec", () => {
+  function skilled(): GameState {
+    const state = soloGame(7); // camp
+    const p = player(state);
+    p.level = 10;
+    p.skillPoints = 2;
+    p.skills.cleave = 4;
+    p.skills.crush = 3;
+    p.gold = respecCost(10);
+    p.buffs.warcry = state.tick + 500;
+    return state;
+  }
+
+  test("refunds every rank, clears buffs, charges gold, and announces itself", () => {
+    const state = skilled();
+    expect(inCamp(playerZone(state).map, player(state).pos)).toBe(true);
+    stepSolo(state, { respec: true });
+    const p = player(state);
+    expect(p.skillPoints).toBe(9);
+    expect(p.skills.cleave).toBe(0);
+    expect(p.skills.crush).toBe(0);
+    expect(p.gold).toBe(0);
+    expect(p.buffs).toEqual({});
+    expect(state.events).toContainEqual({ type: "respec", playerId: 0, cost: respecCost(10) });
+  });
+
+  test("refuses without the gold", () => {
+    const state = skilled();
+    player(state).gold -= 1;
+    stepSolo(state, { respec: true });
+    expect(player(state).skills.cleave).toBe(4);
+  });
+
+  test("refuses outside camp", () => {
+    const state = skilled();
+    travel(state, player(state), dungeonZoneId("barrow", 1));
+    stepSolo(state, { respec: true });
+    expect(player(state).skills.cleave).toBe(4);
   });
 });

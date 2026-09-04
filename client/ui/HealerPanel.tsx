@@ -2,6 +2,7 @@ import { localPlayer } from "../local";
 import type { CSSProperties } from "react";
 import { BELT_SIZE } from "../../sim/character";
 import { POTION_PRICES } from "../../sim/systems/town";
+import { SKILL_IDS, respecCost } from "../../sim/skills";
 import type { GameState } from "../../sim/state";
 import { PanelChrome } from "./PanelChrome";
 
@@ -32,13 +33,18 @@ const WARES: { kind: "health" | "mana"; name: string; note: string; color: strin
 export function HealerPanel({
   game,
   onBuy,
+  onRespec,
   onClose,
 }: {
   game: GameState;
   onBuy: (kind: "health" | "mana") => void;
+  onRespec: () => void;
   onClose: () => void;
 }) {
   const p = localPlayer(game);
+  const cost = respecCost(p.level);
+  const ranks = SKILL_IDS.reduce((sum, id) => sum + p.skills[id], 0);
+  const canRespec = ranks > 0 && p.gold >= cost;
   return (
     <div style={panelStyle}>
       <PanelChrome title={`sister vess — your gold: ${p.gold}`} color="#7de08a" onClose={onClose} />
@@ -77,6 +83,27 @@ export function HealerPanel({
           </div>
         );
       })}
+      <div
+        onClick={() => canRespec && onRespec()}
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: "6px 8px",
+          marginTop: 8,
+          borderRadius: 3,
+          cursor: canRespec ? "pointer" : "default",
+          opacity: canRespec ? 1 : 0.45,
+          background: "rgba(38,34,46,.5)",
+        }}
+        title={ranks === 0 ? "nothing to unlearn" : canRespec ? "click to unlearn every skill" : "not enough gold"}
+      >
+        <span>
+          <span style={{ color: "#b07cf0" }}>Unlearn all skills</span>
+          <span style={{ color: "#6b6455" }}> · refunds every point ({ranks} spent)</span>
+        </span>
+        <span style={{ color: "#c9a84c" }}>{cost}g</span>
+      </div>
       <div style={{ color: "#55503f", marginTop: 8, textAlign: "center" }}>
         esc to close · 1 drinks red, 2 drinks blue
       </div>

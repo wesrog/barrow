@@ -1,4 +1,4 @@
-import { CLASS_SKILLS, SKILLS, type Klass, type SkillId } from "../sim/skills";
+import { CLASS_TREES, SKILLS, TREE_SKILLS, type Klass, type SkillId } from "../sim/skills";
 
 /** The four cast keys, in slot order. Purely client-side — the sim only ever
  * sees the resolved skill id, so assignments never touch lockstep state. */
@@ -10,10 +10,22 @@ export type Hotbar = (SkillId | null)[];
 
 const storageKey = (klass: Klass) => `barrow:hotbar:${klass}`;
 
-/** The default loadout: the class's first four skills in unlock order. */
+/** The default loadout: each tree's opener, then the first tree's second active. */
 function defaultHotbar(klass: Klass): Hotbar {
-  const skills = CLASS_SKILLS(klass);
-  return Array.from({ length: HOTBAR_SIZE }, (_, i) => skills[i]?.id ?? null);
+  const trees = CLASS_TREES(klass).map((t) => TREE_SKILLS(t.id).filter((d) => d.kind === "active"));
+  const picks = [trees[0]?.[0], trees[1]?.[0], trees[2]?.[0], trees[0]?.[1]];
+  return Array.from({ length: HOTBAR_SIZE }, (_, i) => picks[i]?.id ?? null);
+}
+
+/** Back to the default loadout (after a respec) and persist it. */
+export function resetHotbar(klass: Klass): Hotbar {
+  const bar = defaultHotbar(klass);
+  try {
+    localStorage.setItem(storageKey(klass), JSON.stringify(bar));
+  } catch {
+    // Private-mode storage failures just lose persistence, not the session.
+  }
+  return bar;
 }
 
 export function loadHotbar(klass: Klass): Hotbar {

@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.local
 .DS_Store
+
+# Licensed asset sources and their converted output (Synty EULA: not redistributable)
+assets-src/
+public/models/synty/

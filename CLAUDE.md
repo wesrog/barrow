@@ -8,6 +8,11 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
 - **Dev:** `bun run dev` (Vite, port 5197)
 - **Tests:** `bun test sim client`
 - **Typecheck/build:** `bun run build`
+- **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
+  needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
+  `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders
+  are gitignored: the Synty EULA forbids redistributing the source or anything derived from it.
+  Only the script is in git.
 
 ## Architecture — the one rule that matters
 
@@ -28,6 +33,40 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   items/ (bases, affixes, treasure, generate), character, skills (trees/tiers/rank math), map
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
+
+## Licensed assets (Synty)
+
+- Source zips come from the Synty store downloads ("Source Files"); unzip into
+  `assets-src/synty/<pack>/`. KayKit models under `public/models/` are CC0 and stay in git.
+- The converter builds one GLB per kit, every piece a top-level node at the origin named by its
+  FBX stem minus `SM_`/`SK_Chr_`/`SM_Chr_`, materials shared per texture. Kits ship without
+  normals so GLTFLoader flat-shades them. Materials come from each pack's `MaterialList_*.txt`;
+  meshes on triplanar or water shaders (Alpine snow, ice, moss) are skipped with a log line.
+  Textures are capped at 1024 and palette variants (`_B`, `_C`) fold onto `_A`, so each kit
+  carries one copy of each atlas. Alt-colour pieces therefore come out in the base palette.
+- `dungeon` (2018 pack): static pieces were authored in metres inside a cm file, so the script
+  scales them x100. Characters are the Unreal-flavour FBX: 43 bones, UE mannequin names
+  (`root`, `pelvis`, `hand_r`, `head`). Walls 5.24 wide and tall with an end pivot, floor tiles
+  5 x 5 with a corner pivot, characters 1.85 tall. The sim cell is 1 unit.
+- `goblin_war_camp`: all goblins live in one FBX on one armature; the script splits them into
+  one rig per character. Rig is Synty's own, 50 bones, PascalCase (`Root`, `Hips`, `Spine_01`,
+  `Neck`, `Head`, `Clavicle_L`, `Shoulder_L`, `Elbow_L`, `Hand_L`). `CharactersBR.fbx` holds
+  King_02 and the Troll on a 51-bone variant. The ANIMATION Goblin Locomotion pack targets this rig.
+- `alpine_mountain`: trees use one material that the Unity shader splits by vertex colour; the
+  script moves faces with blue > 0.5 to a leaf cutout material. Pines are 7 to 17 units tall.
+  The Rock_Cliff pieces, snow mounds, moss lumps, and stalactites sit on triplanar or glacier
+  shaders and are skipped; rocks, pebbles, bushes, grass, and props convert.
+- `viking_realm`: zip has a `SourceFiles/` level (the pack `root`). Ten humans plus 14 skinned
+  attachments on the same 50-bone rig as the goblins, split per character like them. Its
+  material list names textures on the slot line; 80 shield designs share one texture.
+- `goblin_locomotion` is a clip kit: `clips.glb` is a mesh-less goblin rig with one animation
+  per clip (Idle_Standing, Walk_F, Run_F, Sprint_F, shuffles, turns, transitions, jump and
+  land). Synty's clip skeleton has the same joints as the characters but differently
+  oriented joint frames (Unity Humanoid hides that), so the converter calibrates a per-bone
+  frame offset between the two T-poses (character bind pose vs clip joint orients) and keys
+  world rotations through it; hips carry translation in metres. Verified by rendering the
+  warrior mesh on the retargeted rig. Play clips on any goblin or viking character by bone
+  name. No attack or death clips: those still come from Mixamo, as do all dungeon-rig clips.
 
 ## Conventions
 

@@ -5,29 +5,38 @@ import type { Item } from "../../sim/items/generate";
 import {
   findNode,
   instantiate,
+  instantiateKit,
+  kitNode,
   type CharacterInstance,
+  type CharacterName,
   type GameAssets,
+  type KitName,
   type WeaponName,
 } from "./models";
+import { KAYKIT_RIG, SYNTY_RIG, type BoneRole, type ClipId, type RigSpec } from "./rigSpec";
 import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
 /**
- * Animated-model rigs on top of the KayKit characters. Same Rig contract as
- * the procedural ones: animate(now, phase, speed) each frame; the fx system
- * still owns group-level transforms.
+ * Animated-model rigs. Same Rig contract as the procedural ones:
+ * animate(now, phase, speed) each frame; the fx system still owns group-level
+ * transforms. The scene speaks in semantic ClipIds and bone roles; each model
+ * family's RigSpec translates them, so a KayKit skeleton and a Synty goblin
+ * are driven by the same calls.
  */
 
 export interface ModelRig extends Rig {
   /** Play a one-shot clip (attack, death, taunt), then return to locomotion. */
-  oneShot(name: string, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
+  oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
   /** Cancel a held one-shot (revive after a held death pose). */
   release(): void;
+  /** The named bone for a role, if this rig has it. */
+  bone(role: BoneRole): THREE.Object3D | null;
 }
 
 export interface HeroModelRig extends ModelRig {
   setEquipment(eq: Equipment): void;
-  /** Clip name for a basic attack with the current weapon. */
-  attackClip(): string;
+  /** Clip for a basic attack with the current weapon. */
+  attackClip(): ClipId;
 }
 
 const RARITY_GLOW: Record<string, number> = {
@@ -50,20 +59,21 @@ function applyRarityGlow(obj: THREE.Object3D, item: Item): void {
 class AnimRig implements ModelRig {
   group: THREE.Group;
   private inst: CharacterInstance;
+  private spec: RigSpec;
   private lastNow: number | null = null;
   private current: THREE.AnimationAction | null = null;
   private oneShotUntil = 0;
-  private idleName: string;
-  private walkName: string;
-  private walkSpeedRef: number;
+  private idleName: string | undefined;
+  private walkName: string | undefined;
 
-  constructor(inst: CharacterInstance, idleName: string, walkName: string, walkSpeedRef = 3.5) {
+  constructor(inst: CharacterInstance, spec: RigSpec, idle: ClipId, walk: ClipId) {
     this.inst = inst;
+    this.spec = spec;
     this.group = inst.group;
-    this.idleName = idleName;
-    this.walkName = walkName;
-    this.walkSpeedRef = walkSpeedRef;
-    this.play(idleName);
+    this.idleName = spec.clips[idle] ?? spec.clips.idle;
+    // A family without the requested gait walks normally rather than freezing.
+    this.walkName = spec.clips[walk] ?? spec.clips.walk;
+    if (this.idleName) this.play(this.idleName);
   }
 
   private play(name: string, fade = 0.18, loop = true, force = false): THREE.AnimationAction | null {
@@ -84,7 +94,9 @@ class AnimRig implements ModelRig {
 
   private moveCancels = true;
 
-  oneShot(name: string, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
+  oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
+    const name = this.spec.clips[clip];
+    if (!name) return;
     // Force a restart so back-to-back identical attacks replay from the top.
     const action = this.play(name, 0.08, false, true);
     if (!action) return;
@@ -98,6 +110,10 @@ class AnimRig implements ModelRig {
     this.oneShotUntil = 0;
   }
 
+  bone(role: BoneRole): THREE.Object3D | null {
+    return findNode(this.group, this.spec.bones[role]);
+  }
+
   animate(now: number, _phase: number, speed: number): void {
     const dt = this.lastNow === null ? 1 / 60 : Math.min(0.1, (now - this.lastNow) / 1000);
     this.lastNow = now;
@@ -107,10 +123,10 @@ class AnimRig implements ModelRig {
     }
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
-      if (speed > 0.4) {
+      if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
-        if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.walkSpeedRef));
-      } else {
+        if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));
+      } else if (this.idleName) {
         this.play(this.idleName);
       }
     }
@@ -127,10 +143,9 @@ class AnimRig implements ModelRig {
     this.attached[slot]?.removeFromParent();
     this.attached[slot] = obj;
     if (!obj) return;
-    // KayKit fits main-hand props yaw-flipped 180° in handslot.r (see the
-    // bundled 1H_Axe/1H_Sword nodes); without this an axe head faces backward.
-    obj.rotation.set(0, slot === "r" ? Math.PI : 0, 0);
-    obj.position.set(0, 0.033, 0);
+    const grip = this.spec.grip[slot];
+    obj.rotation.set(...grip.rotation);
+    obj.position.set(...grip.position);
     socket.add(obj);
   }
 }
@@ -228,11 +243,14 @@ const BOOT_LOOKS: Record<string, number> = {
   chain_greaves: 0x7a8086,
 };
 
+/** The hero stays a KayKit barbarian: it is the one rig with a full attack,
+ * cast, and death suite, and the gear overlays are sized for its bones. */
 export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
-  const inst = instantiate(assets.characters.barbarian);
+  const spec = KAYKIT_RIG;
+  const inst = instantiate(assets.characters.barbarian, spec);
   // Low ref speed = fast cadence: at 4.5 cells/s the run cycle plays ~1.8x,
   // matching feet to the ground actually covered.
-  const rig = new AnimRig(inst, "Idle", "Running_A", 2.5);
+  const rig = new AnimRig(inst, { ...spec, walkSpeedRef: 2.5 }, "idle", "run");
   rig.group.scale.setScalar(0.72);
   let twoHanded = false;
 
@@ -259,10 +277,9 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     }
   });
 
-  const boneOf = (name: string) => findNode(rig.group, name);
   const gear: THREE.Object3D[] = [];
-  const addGear = (boneName: string, mesh: THREE.Object3D, item: Item) => {
-    const bone = boneOf(boneName);
+  const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
+    const bone = rig.bone(role);
     if (!bone) return;
     applyRarityGlow(mesh, item);
     bone.add(mesh);
@@ -281,14 +298,14 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     if (eq.chest) {
       const look = CHEST_LOOKS[eq.chest.baseId] ?? CHEST_LOOKS.rag_tunic!;
       const size = look.big ? 0.34 : 0.26;
-      for (const side of ["l", "r"] as const) {
+      for (const side of ["upperArmL", "upperArmR"] as const) {
         const pauldron = new THREE.Mesh(
           new THREE.BoxGeometry(size, size * 0.7, size),
           flatMat(look.color, look.metal ? 0.45 : 0.75),
         );
         pauldron.castShadow = true;
         pauldron.position.y = 0.06;
-        addGear(`upperarm.${side}`, pauldron, eq.chest);
+        addGear(side, pauldron, eq.chest);
       }
       const plate = new THREE.Mesh(
         new THREE.BoxGeometry(0.52, 0.4, 0.34),
@@ -301,11 +318,11 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     // Boots: greaves on the lower legs
     if (eq.boots) {
       const color = BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530;
-      for (const side of ["l", "r"] as const) {
+      for (const side of ["lowerLegL", "lowerLegR"] as const) {
         const greave = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.22), flatMat(color, 0.7));
         greave.castShadow = true;
         greave.position.y = -0.12;
-        addGear(`lowerleg.${side}`, greave, eq.boots);
+        addGear(side, greave, eq.boots);
       }
     }
     // Orbs share the shield slot but float over the off hand instead of
@@ -352,155 +369,129 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
       rig.attach("r", null);
     }
   };
-  hero.attackClip = () =>
-    twoHanded ? "2H_Melee_Attack_Chop" : "1H_Melee_Attack_Slice_Diagonal";
+  hero.attackClip = () => (twoHanded ? "attack2h" : "attack1h");
   return hero;
 }
 
-/** Monster type -> character model, locomotion clips, scale, weapon. */
-const MONSTER_LOOKS: Record<
-  string,
-  {
-    model: keyof GameAssets["characters"];
-    idle: string;
-    walk: string;
-    scale: number;
-    weapon?: WeaponName;
-    tint?: number;
-  }
-> = {
+/** A monster's look in one model family. */
+interface MonsterLook {
+  idle: ClipId;
+  walk: ClipId;
+  /** Uniform scale bringing the model to the type's in-game height. */
+  scale: number;
+  /** Prop held in the right hand, if any. */
+  weapon?: string;
+  tint?: number;
+}
+
+/**
+ * Monster type -> how each family draws it. KayKit skeletons are the
+ * fallback; the Synty goblin camp is the look when its kits are present.
+ * Synty scales match the KayKit heights: KayKit characters stand 3.1-3.6
+ * units before scaling, Synty humanoids 1.8, the troll 1.82.
+ */
+interface MonsterLooks {
+  kaykit: MonsterLook & { model: CharacterName; weapon?: WeaponName };
+  synty?: MonsterLook & { kit: KitName; node: string };
+}
+
+export const MONSTER_LOOKS: Record<string, MonsterLooks> = {
   shambler: {
-    model: "skeleton_warrior",
-    idle: "Idle",
-    walk: "Walking_D_Skeletons",
-    scale: 0.62,
-    weapon: "skeleton_blade",
+    kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 0.62, weapon: "skeleton_blade" },
+    synty: { kit: "goblin_characters", node: "Warrior_Male_01", idle: "idle", walk: "shamble", scale: 1.23, weapon: "Wep_Club_01" },
   },
   skitter: {
-    model: "skeleton_minion",
-    idle: "Idle",
-    walk: "Running_A",
-    scale: 0.45,
-    tint: 0x8a5a5a,
+    kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.45, tint: 0x8a5a5a },
+    synty: { kit: "goblin_characters", node: "Prisoner_02", idle: "idle", walk: "run", scale: 0.79, tint: 0x8a5a5a },
   },
   gravespit: {
-    model: "skeleton_mage",
-    idle: "Idle",
-    walk: "Walking_A",
-    scale: 0.6,
-    weapon: "skeleton_staff",
-    tint: 0x9a8ab8,
+    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.6, weapon: "skeleton_staff", tint: 0x9a8ab8 },
+    synty: { kit: "goblin_characters", node: "Shaman_01", idle: "idle", walk: "walk", scale: 1.2, weapon: "Wep_Staff_01", tint: 0x9a8ab8 },
   },
   fen_howler: {
-    model: "skeleton_rogue",
-    idle: "Idle",
-    walk: "Running_A",
-    scale: 0.55,
-    tint: 0x6a8a4a,
+    kaykit: { model: "skeleton_rogue", idle: "idle", walk: "run", scale: 0.55, tint: 0x6a8a4a },
+    synty: { kit: "goblin_characters", node: "Ranger_01", idle: "idle", walk: "run", scale: 1.0, tint: 0x6a8a4a },
   },
   bog_maw: {
-    model: "skeleton_mage",
-    idle: "Idle",
-    walk: "Walking_A",
-    scale: 0.78,
-    weapon: "skeleton_staff",
-    tint: 0x5a7a52,
+    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.78, weapon: "skeleton_staff", tint: 0x5a7a52 },
+    synty: { kit: "goblin_characters", node: "Cook_01", idle: "idle", walk: "walk", scale: 1.56, weapon: "Wep_Cleaver_01", tint: 0x5a7a52 },
   },
   cairn_wight: {
-    model: "skeleton_warrior",
-    idle: "Idle_Combat",
-    walk: "Walking_A",
-    scale: 0.9,
-    weapon: "skeleton_axe",
-    tint: 0xd8d2c0,
+    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.9, weapon: "skeleton_axe", tint: 0xd8d2c0 },
+    synty: { kit: "goblin_characters", node: "Knight_01", idle: "idleCombat", walk: "walk", scale: 1.78, weapon: "Wep_Axe_01", tint: 0xd8d2c0 },
   },
   barrow_lord: {
-    model: "skeleton_warrior",
-    idle: "Idle_Combat",
-    walk: "Walking_A",
-    scale: 1.05,
-    weapon: "skeleton_axe",
-    tint: 0xc9b880,
+    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.05, weapon: "skeleton_axe", tint: 0xc9b880 },
+    synty: { kit: "goblin_characters", node: "King_02", idle: "idleCombat", walk: "walk", scale: 2.08, weapon: "Wep_Axe_02", tint: 0xc9b880 },
   },
   cinder_shade: {
-    model: "skeleton_minion",
-    idle: "Idle",
-    walk: "Running_A",
-    scale: 0.5,
-    tint: 0xc45a30,
+    kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.5, tint: 0xc45a30 },
+    synty: { kit: "goblin_characters", node: "Prisoner_01", idle: "idle", walk: "run", scale: 0.88, tint: 0xc45a30 },
   },
   ash_revenant: {
-    model: "skeleton_warrior",
-    idle: "Idle_Combat",
-    walk: "Walking_A",
-    scale: 0.8,
-    weapon: "skeleton_blade",
-    tint: 0x8a4a3a,
+    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.8, weapon: "skeleton_blade", tint: 0x8a4a3a },
+    synty: { kit: "goblin_characters", node: "Archer_Male_01", idle: "idleCombat", walk: "walk", scale: 1.59, weapon: "Wep_Sword_01", tint: 0x8a4a3a },
   },
   ember_hulk: {
-    model: "skeleton_warrior",
-    idle: "Idle",
-    walk: "Walking_D_Skeletons",
-    scale: 1.0,
-    tint: 0xd06428,
+    kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 1.0, tint: 0xd06428 },
+    synty: { kit: "goblin_characters", node: "Troll_01", idle: "idle", walk: "shamble", scale: 1.96, tint: 0xd06428 },
   },
   veil_screamer: {
-    model: "skeleton_mage",
-    idle: "Idle",
-    walk: "Walking_A",
-    scale: 0.68,
-    weapon: "skeleton_staff",
-    tint: 0x8a6ab8,
+    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.68, weapon: "skeleton_staff", tint: 0x8a6ab8 },
+    synty: { kit: "goblin_characters", node: "Wizard_01", idle: "idle", walk: "walk", scale: 1.36, weapon: "Wep_Staff_02", tint: 0x8a6ab8 },
   },
   crown_sentinel: {
-    model: "skeleton_warrior",
-    idle: "Idle_Combat",
-    walk: "Walking_A",
-    scale: 1.0,
-    weapon: "skeleton_axe",
-    tint: 0x6a7ab0,
+    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.0, weapon: "skeleton_axe", tint: 0x6a7ab0 },
+    synty: { kit: "goblin_characters", node: "King_01", idle: "idleCombat", walk: "walk", scale: 1.98, weapon: "Wep_Sword_02", tint: 0x6a7ab0 },
   },
-  // The camp vendor: an old knight minding the stall.
+  // The camp vendor: an old knight minding the stall, or a Viking villager.
   __vendor__: {
-    model: "knight",
-    idle: "Idle",
-    walk: "Walking_A",
-    scale: 0.72,
+    kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.72 },
+    synty: { kit: "viking_characters", node: "Peasant_Male_01", idle: "idle", walk: "walk", scale: 1.38 },
   },
   // The camp healer: a pale-robed knight keeping a quiet shrine.
   __healer__: {
-    model: "knight",
-    idle: "Idle",
-    walk: "Walking_A",
-    scale: 0.68,
-    tint: 0xf0e6c8,
+    kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.68, tint: 0xf0e6c8 },
+    synty: { kit: "viking_characters", node: "Peasant_Female_01", idle: "idle", walk: "walk", scale: 1.3, tint: 0xf0e6c8 },
   },
 };
 
+function tintRig(group: THREE.Object3D, tint: number): void {
+  group.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+      obj.material.color.lerp(new THREE.Color(tint), 0.35);
+    }
+  });
+}
+
 export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & Partial<ModelRig> {
-  const look = MONSTER_LOOKS[typeId];
-  if (!look) return makeProceduralRig(typeId); // tomb_bloat keeps its custom blob
-  const inst = instantiate(assets.characters[look.model]);
-  const rig = new AnimRig(inst, look.idle, look.walk, 3);
+  const looks = MONSTER_LOOKS[typeId];
+  if (!looks) return makeProceduralRig(typeId); // tomb_bloat keeps its custom blob
+
+  const synty = looks.synty;
+  const inst = synty && instantiateKit(assets.kits, synty.kit, synty.node, "goblin_clips", SYNTY_RIG);
+  if (synty && inst) {
+    const rig = new AnimRig(inst, SYNTY_RIG, synty.idle, synty.walk);
+    rig.group.scale.setScalar(synty.scale);
+    const weapon = synty.weapon ? kitNode(assets.kits, "goblin_weapons", synty.weapon) : null;
+    if (weapon) rig.attach("r", cloneWeapon(weapon));
+    if (synty.tint !== undefined) tintRig(rig.group, synty.tint);
+    return rig;
+  }
+
+  const look = looks.kaykit;
+  const rig = new AnimRig(instantiate(assets.characters[look.model], KAYKIT_RIG), KAYKIT_RIG, look.idle, look.walk);
   rig.group.scale.setScalar(look.scale);
   if (look.weapon) rig.attach("r", cloneWeapon(assets.weapons[look.weapon]));
-  if (look.tint !== undefined) {
-    rig.group.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-        obj.material.color.multiplyScalar(1).lerp(new THREE.Color(look.tint!), 0.35);
-      }
-    });
-  }
+  if (look.tint !== undefined) tintRig(rig.group, look.tint);
   return rig;
 }
 
 /** Attack clip for a monster swing. */
-export function monsterAttackClip(typeId: string): string {
-  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer")
-    return "Spellcast_Shoot";
-  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel")
-    return "2H_Melee_Attack_Slice";
+export function monsterAttackClip(typeId: string): ClipId {
+  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer") return "cast";
+  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel") return "attackSlice";
   if (typeId === "skitter" || typeId === "fen_howler" || typeId === "cinder_shade" || typeId === "ember_hulk")
-    return "Unarmed_Melee_Attack_Punch_A";
-  return "1H_Melee_Attack_Slice_Horizontal";
+    return "attackUnarmed";
+  return "slash";
 }

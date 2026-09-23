@@ -145,7 +145,7 @@ function Game({
       setReady(true);
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
-        (window as { __barrow?: unknown }).__barrow = { game, driver, input: uiInputRef };
+        (window as { __barrow?: unknown }).__barrow = { game, driver, input: uiInputRef, assets };
       }
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;

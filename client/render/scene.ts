@@ -190,7 +190,8 @@ export function createScene(
       cur.pal.ambientIntensity + (other.pal.ambientIntensity - cur.pal.ambientIntensity) * t;
   };
 
-  // --- Environment from the KayKit dungeon set: brick facades over dark cores ---
+  // --- Environment from the dungeon piece set (Synty stand-ins when the kits are
+  // present, else KayKit; both at KayKit footprints): brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
   const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
 
@@ -617,7 +618,7 @@ export function createScene(
   }
   for (const fn of placePieceLater) fn();
 
-  // --- NPCs: one knight-model rig per entity, tinted so each reads apart ---
+  // --- NPCs: one villager rig per entity, tinted so each reads apart ---
   const NPC_TINTS: Record<NpcId, number> = {
     maren: 0x8a5a2c, // camp trader — warm leather
     sera: 0xd8cfc0, // camp healer — pale cloth
@@ -793,7 +794,7 @@ export function createScene(
     torches.push({ flame, light, seed: 43 });
   }
 
-  // --- Heroes: one animated KayKit barbarian per player standing in this zone ---
+  // --- Heroes: one animated hero rig per player standing in this zone ---
   interface HeroEntry {
     rig: HeroModelRig;
     /** Renderer-side displacement for lunges; sim position stays authoritative. */
@@ -1150,7 +1151,7 @@ export function createScene(
         group.rotation.y = approachAngle(group.rotation.y, entry.targetYaw, frameDt * 14);
         // Death and revival play through animation clips, not a rotation hack.
         if (p.dead && !entry.wasDead) {
-          entry.rig.oneShot("Death_A", { hold: true });
+          entry.rig.oneShot("death", { hold: true });
         } else if (!p.dead && entry.wasDead) {
           entry.rig.release();
         }
@@ -1404,7 +1405,7 @@ export function createScene(
           rig.setEquipment(pc.equipment);
           tintRig(rig.group, playerTint(pc.playerId), 0.4);
           // The death clip ends face down; hold it so the body just lies there.
-          rig.oneShot("Death_A", { hold: true });
+          rig.oneShot("death", { hold: true });
           rig.group.position.set(pc.pos.x, 0, pc.pos.y);
           rig.group.rotation.y = (pc.id * 1.7) % (Math.PI * 2);
           scene.add(rig.group);
@@ -1722,7 +1723,7 @@ export function createScene(
         case "monster_windup": {
           // The boss telegraphs: a taunt, a growing blood ring, a darkening body.
           const rig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
-          rig?.oneShot?.("Taunt");
+          rig?.oneShot?.("taunt");
           if (rig) fx.flash(rig.group, 0x7a1010, event.ticks * 40);
           ring(event.pos, 2.0, 0xc03030, event.ticks * 40);
           break;
@@ -1812,7 +1813,7 @@ export function createScene(
             const mesh = rig.group;
             if (rig.oneShot) {
               // Play the death clip in place, keep the mixer running, then sink away.
-              rig.oneShot("Death_A", { hold: true });
+              rig.oneShot("death", { hold: true });
               const start = performance.now();
               fx.tween(1400, (t) => {
                 rig.animate!(start + t * 1400, 0, 0);
@@ -1865,59 +1866,59 @@ export function createScene(
             if (event.playerId === localId()) fx.shake(amount);
           };
           if (event.skill === "cleave") {
-            caster?.oneShot("2H_Melee_Attack_Spin", { timeScale: 1.5 });
+            caster?.oneShot("attackSpin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
             shake(0.08);
           } else if (event.skill === "warcry") {
-            caster?.oneShot("Cheer", { timeScale: 1.4 });
+            caster?.oneShot("cheer", { timeScale: 1.4 });
             ring(event.pos, 2.6, 0x6a9ad1, 500);
           } else if (event.skill === "leap") {
             // The leap's own motion spike must not cancel its jump clip.
-            caster?.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
+            caster?.oneShot("jump", { timeScale: 1.3, cancelOnMove: false });
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6); // takeoff kick-up
           } else if (event.skill === "charge") {
             // The rush itself renders as running; just kick up dust at the start line.
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6);
             shake(0.06);
           } else if (event.skill === "crush") {
-            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
+            caster?.oneShot("attackChop", { timeScale: 1.5 });
             shake(0.12);
           } else if (event.skill === "stomp") {
-            caster?.oneShot("2H_Melee_Attack_Slice", { timeScale: 1.4 });
+            caster?.oneShot("attackSlice", { timeScale: 1.4 });
             ring(event.pos, 2.2, 0xb5a582, 300);
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
             shake(0.16);
           } else if (event.skill === "deathblow") {
-            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.7 });
+            caster?.oneShot("attackChop", { timeScale: 1.7 });
             if (event.at) fx.burst(event.at.x, 0.5, event.at.y, 0xc03030, 14, 2.8);
             shake(0.2);
           } else if (event.skill === "fireball") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.4 });
+            caster?.oneShot("cast", { timeScale: 1.4 });
             shake(0.08); // the blast itself arrives as an `exploded` event
           } else if (event.skill === "soulchain") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6 });
+            caster?.oneShot("cast", { timeScale: 1.6 });
             ring(event.pos, 1.6, 0x9ad1f5, 220);
             shake(0.08);
           } else if (event.skill === "firebolt") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            caster?.oneShot("cast", { timeScale: 1.5 });
             if (event.at) boltFlight(event.pos, event.at, 0xffd27a, 0xe8722c);
             shake(0.06);
           } else if (event.skill === "frostbolt") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            caster?.oneShot("cast", { timeScale: 1.5 });
             if (event.at) boltFlight(event.pos, event.at, 0xd8f4ff, 0x7fc8f5);
             shake(0.06);
           } else if (event.skill === "weaken" || event.skill === "slow" || event.skill === "doom") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            caster?.oneShot("cast", { timeScale: 1.3 });
             if (event.at) ring(event.at, 2.5, 0xb07cf0, 360);
           } else if (event.skill === "frostnova") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            caster?.oneShot("cast", { timeScale: 1.3 });
             ring(event.pos, 2.5, 0x9ad8e8, 320);
             shake(0.1);
           } else if (event.skill === "focus") {
-            caster?.oneShot("Cheer", { timeScale: 1.4 });
+            caster?.oneShot("cheer", { timeScale: 1.4 });
             ring(event.pos, 2.2, 0xb08ad1, 500);
           } else if (event.skill === "blink") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6, cancelOnMove: false });
+            caster?.oneShot("cast", { timeScale: 1.6, cancelOnMove: false });
             // pos is the departure point, at the arrival — face the direction traveled.
             const to = event.at ?? event.pos;
             if (casterEntry) {
@@ -1937,7 +1938,7 @@ export function createScene(
           break;
         }
         case "charge_hit": {
-          heroOf(event.playerId)?.rig.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.6 });
+          heroOf(event.playerId)?.rig.oneShot("attackChop", { timeScale: 1.6 });
           fx.burst(event.pos.x, 0.3, event.pos.y, 0xd9dde8, 10, 2.2);
           if (event.playerId === localId()) fx.shake(0.14);
           break;

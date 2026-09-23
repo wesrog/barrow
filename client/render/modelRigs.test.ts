@@ -29,6 +29,7 @@ function fakeAssets(): GameAssets {
     characters: { skeleton_warrior: gltf } as GameAssets["characters"],
     weapons: { skeleton_blade: blade } as GameAssets["weapons"],
     dungeon: {} as GameAssets["dungeon"],
+    kits: {},
   };
 }
 
@@ -63,6 +64,7 @@ function fakeBarbarianAssets(): GameAssets {
     characters: { barbarian: gltf } as GameAssets["characters"],
     weapons: {} as GameAssets["weapons"],
     dungeon: {} as GameAssets["dungeon"],
+    kits: {},
   };
 }
 

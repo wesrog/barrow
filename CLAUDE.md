@@ -31,7 +31,14 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 - `sim/` — rng, state, tick, elements (resistances), debuffs, dungeons (registry), dungeon-gen (floor generator),
   systems/ (movement, ai, combat, death, xp),
   items/ (bases, affixes, treasure, generate), character, skills (trees/tiers/rank math), map
-- `client/render/` — Three.js scene, meshes, input raycast, damage numbers
+- `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
+  `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
+  semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
+  family's `RigSpec` maps them to its own names and weapon grip. `models.ts` loads KayKit plus
+  the optional Synty kits and normalizes Synty dungeon pieces to KayKit footprints, so a
+  missing kit (fresh clone, CI) falls back to KayKit with no code change. `modelRigs.ts` holds
+  the per-monster look tables for both families; the hero stays KayKit (full clip suite, gear
+  overlays sized to its bones). In dev, `window.__barrow` exposes game, driver, input, assets.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)
@@ -67,6 +74,11 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   world rotations through it; hips carry translation in metres. Verified by rendering the
   warrior mesh on the retargeted rig. Play clips on any goblin or viking character by bone
   name. No attack or death clips: those still come from Mixamo, as do all dungeon-rig clips.
+- GLTFLoader makes node names unique per file, so in a kit with many characters the second
+  rig's bones load as `Root_1`, `Hips_1`... `instantiateKit` restores the authored names on
+  each clone (only names the clips target), otherwise no clip track binds.
+- The goblin idles are hunched, so Viking NPCs driven by them crouch a little. A human
+  locomotion pack or Mixamo idle fixes that.
 
 ## Conventions
 

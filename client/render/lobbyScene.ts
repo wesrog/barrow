@@ -3,7 +3,8 @@ import type { Klass } from "../../sim/skills";
 import { createEquipment } from "../../sim/character";
 import type { Item } from "../../sim/items/generate";
 import { makeHeroModelRig } from "./modelRigs";
-import { findNode, instantiate, type GameAssets } from "./models";
+import { instantiate, type GameAssets } from "./models";
+import { KAYKIT_RIG } from "./rigSpec";
 
 /**
  * The lobby diorama: a small barrow-entrance vignette rendered live behind the
@@ -176,11 +177,11 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   }
 
   // --- A skeleton standing watch beside the doorway ---
-  const sentry = instantiate(assets.characters.skeleton_warrior);
+  const sentry = instantiate(assets.characters.skeleton_warrior, KAYKIT_RIG);
   sentry.group.position.set(-1.7, 0, -0.6);
   sentry.group.rotation.y = Math.PI * 0.8;
   sentry.group.scale.setScalar(0.9);
-  const idle = sentry.actions.get("Idle_Combat") ?? sentry.actions.get("Idle");
+  const idle = sentry.actions.get(KAYKIT_RIG.clips.idleCombat!) ?? sentry.actions.get(KAYKIT_RIG.clips.idle!);
   idle?.play();
   if (sentry.handSlotR) {
     const axe = assets.weapons.skeleton_axe.clone(true);
@@ -229,14 +230,14 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   const witchFlat = (color: number, roughness = 0.85) =>
     new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
   // Robe: a flared skirt from the hips and a mantle over the shoulders.
-  const hipsBone = findNode(witch.group, "hips") ?? findNode(witch.group, "chest");
+  const hipsBone = witch.bone("hips") ?? witch.bone("chest");
   if (hipsBone) {
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.8, 1.1, 8), witchFlat(0x2e2340));
     skirt.position.y = -0.45;
     skirt.castShadow = true;
     hipsBone.add(skirt);
   }
-  const chestBone = findNode(witch.group, "chest");
+  const chestBone = witch.bone("chest");
   if (chestBone) {
     const mantle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.52, 0.5, 8), witchFlat(0x392b4e));
     mantle.position.y = 0.1;
@@ -244,7 +245,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
     chestBone.add(mantle);
   }
   // Pointed hat with a faintly glowing band — the chibi head is huge (~r0.62).
-  const headBone = findNode(witch.group, "head");
+  const headBone = witch.bone("head");
   if (headBone) {
     const hat = new THREE.Group();
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.0, 0.09, 8), witchFlat(0x241a30));
@@ -267,7 +268,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
     headBone.add(hat);
   }
   // The off-hand orb: a witchlight hovering over the open left palm.
-  const orbSlot = findNode(witch.group, "handslot.l");
+  const orbSlot = witch.bone("handL");
   const orb = new THREE.Mesh(
     new THREE.IcosahedronGeometry(0.22, 1),
     new THREE.MeshStandardMaterial({
@@ -321,8 +322,8 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
 
   return {
     cheer(klass) {
-      if (klass === "warrior") warrior.oneShot("Cheer");
-      else witch.oneShot("Spellcast_Raise");
+      if (klass === "warrior") warrior.oneShot("cheer");
+      else witch.oneShot("castRaise");
     },
     dispose() {
       disposed = true;

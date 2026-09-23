@@ -37,8 +37,11 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   family's `RigSpec` maps them to its own names and weapon grip. `models.ts` loads KayKit plus
   the optional Synty kits and normalizes Synty dungeon pieces to KayKit footprints, so a
   missing kit (fresh clone, CI) falls back to KayKit with no code change. `modelRigs.ts` holds
-  the per-monster look tables for both families; the hero stays KayKit (full clip suite, gear
-  overlays sized to its bones). In dev, `window.__barrow` exposes game, driver, input, assets.
+  the per-monster look tables for both families and both hero builds: a Viking Realm human
+  (warrior male, leader female for the witch) dressed from the Viking weapon, shield, and helmet
+  kits when they loaded, else the KayKit barbarian with box overlays. Viking swords and knives
+  are authored along Z and get a quarter turn before the grip; shields a half turn. In dev,
+  `window.__barrow` exposes game, driver, input, assets.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { isTwoHanded, type Equipment } from "../../sim/character";
 import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
+import type { Klass } from "../../sim/skills";
 import {
   findNode,
   instantiate,
@@ -11,9 +12,10 @@ import {
   type CharacterName,
   type GameAssets,
   type KitName,
+  type Kits,
   type WeaponName,
 } from "./models";
-import { KAYKIT_RIG, SYNTY_RIG, type BoneRole, type ClipId, type RigSpec } from "./rigSpec";
+import { KAYKIT_RIG, SYNTY_RIG, type BoneRole, type ClipId, type RigFamily, type RigSpec } from "./rigSpec";
 import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
 /**
@@ -25,6 +27,7 @@ import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
  */
 
 export interface ModelRig extends Rig {
+  readonly family: RigFamily;
   /** Play a one-shot clip (attack, death, taunt), then return to locomotion. */
   oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
   /** Cancel a held one-shot (revive after a held death pose). */
@@ -45,19 +48,20 @@ const RARITY_GLOW: Record<string, number> = {
   unique: 0x8a5010,
 };
 
-function applyRarityGlow(obj: THREE.Object3D, item: Item): void {
+function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.35): void {
   const glow = RARITY_GLOW[item.rarity];
   if (glow === undefined) return;
   obj.traverse((child) => {
     if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
       child.material.emissive.setHex(glow);
-      child.material.emissiveIntensity = 0.35;
+      child.material.emissiveIntensity = intensity;
     }
   });
 }
 
 class AnimRig implements ModelRig {
   group: THREE.Group;
+  readonly family: RigFamily;
   private inst: CharacterInstance;
   private spec: RigSpec;
   private lastNow: number | null = null;
@@ -69,6 +73,7 @@ class AnimRig implements ModelRig {
   constructor(inst: CharacterInstance, spec: RigSpec, idle: ClipId, walk: ClipId) {
     this.inst = inst;
     this.spec = spec;
+    this.family = spec.family;
     this.group = inst.group;
     this.idleName = spec.clips[idle] ?? spec.clips.idle;
     // A family without the requested gait walks normally rather than freezing.
@@ -150,25 +155,6 @@ class AnimRig implements ModelRig {
   }
 }
 
-/** Weapon base id -> KayKit weapon model + whether it swings two-handed.
- *  `scale` shrinks a model that doubles for a smaller weapon (a staff as a wand). */
-const WEAPON_LOOKS: Record<string, { model: WeaponName; twoHanded: boolean; scale?: number }> = {
-  rusted_blade: { model: "sword_1handed", twoHanded: false },
-  hatchet: { model: "axe_1handed", twoHanded: false },
-  twin_fang: { model: "dagger", twoHanded: false },
-  war_maul: { model: "axe_2handed", twoHanded: true },
-  grave_scythe: { model: "sword_2handed", twoHanded: true },
-  gnarled_staff: { model: "skeleton_staff", twoHanded: true },
-  ember_staff: { model: "skeleton_staff", twoHanded: true },
-  wyrmwood_staff: { model: "skeleton_staff", twoHanded: true },
-  bone_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  willow_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  hexwood_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  dire_flail: { model: "axe_2handed", twoHanded: true },
-  moon_glaive: { model: "axe_2handed", twoHanded: true },
-  kingsbane: { model: "sword_1handed", twoHanded: false },
-};
-
 /** Held caster orb: a flat-shaded sphere floating just above the fist. */
 function makeOrbModel(): THREE.Group {
   const g = new THREE.Group();
@@ -186,24 +172,50 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Object3D.clone shares materials; give each held weapon its own so
- * per-instance hit flashes and tints don't leak across enemies. */
-function cloneWeapon(model: THREE.Object3D): THREE.Object3D {
+/** Object3D.clone shares materials; give each held prop its own so
+ * per-instance hit flashes, tints, and rarity glow don't leak. */
+function cloneProp(model: THREE.Object3D): THREE.Object3D {
   const clone = model.clone(true);
   clone.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) {
-      obj.material = obj.material.clone();
+    if (obj instanceof THREE.Mesh) {
+      obj.castShadow = true;
+      if (obj.material instanceof THREE.Material) obj.material = obj.material.clone();
     }
   });
   return clone;
 }
+
+/** Shared by both hero families: rarity glow on held weapons is stronger than on armor. */
+const WEAPON_GLOW = 0.5;
+
+// ---------------------------------------------------------------------------
+// KayKit hero (fallback): the chibi barbarian with box-built gear overlays.
+
+/** Weapon base id -> KayKit weapon model + whether it swings two-handed.
+ *  `scale` shrinks a model that doubles for a smaller weapon (a staff as a wand). */
+const KAYKIT_WEAPONS: Record<string, { model: WeaponName; twoHanded: boolean; scale?: number }> = {
+  rusted_blade: { model: "sword_1handed", twoHanded: false },
+  hatchet: { model: "axe_1handed", twoHanded: false },
+  twin_fang: { model: "dagger", twoHanded: false },
+  war_maul: { model: "axe_2handed", twoHanded: true },
+  grave_scythe: { model: "sword_2handed", twoHanded: true },
+  gnarled_staff: { model: "skeleton_staff", twoHanded: true },
+  ember_staff: { model: "skeleton_staff", twoHanded: true },
+  wyrmwood_staff: { model: "skeleton_staff", twoHanded: true },
+  bone_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
+  willow_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
+  hexwood_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
+  dire_flail: { model: "axe_2handed", twoHanded: true },
+  moon_glaive: { model: "axe_2handed", twoHanded: true },
+  kingsbane: { model: "sword_1handed", twoHanded: false },
+};
 
 /**
  * Armor meshes sized for the KayKit skeleton, attached straight to bones.
  * The chibi head is huge — ~1.08 wide, top at y+0.95 above the head bone —
  * so helms must be dome radius ~0.6+ to sit outside the skull.
  */
-function helmMesh(baseId: string): THREE.Group {
+function kaykitHelm(baseId: string): THREE.Group {
   const g = new THREE.Group();
   if (baseId === "bone_visage") {
     const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), flatMat(0xd9d4c4, 0.6));
@@ -243,9 +255,22 @@ const BOOT_LOOKS: Record<string, number> = {
   chain_greaves: 0x7a8086,
 };
 
-/** The hero stays a KayKit barbarian: it is the one rig with a full attack,
- * cast, and death suite, and the gear overlays are sized for its bones. */
-export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
+function chestLook(baseId: string) {
+  return CHEST_LOOKS[baseId] ?? CHEST_LOOKS.rag_tunic!;
+}
+
+/** Whether an off-hand item is a caster orb (a shield-slot item that deals damage). */
+function isOrb(item: Item): boolean {
+  return BASES[item.baseId]!.dmgMin !== undefined;
+}
+
+/** The off-hand item that shows: a two-hander fills both hands, so the sim keeps
+ * the shield slot empty beside one and anything stale in it (an old save) is inert. */
+function visibleOffhand(eq: Equipment): Item | null {
+  return eq.weapon && isTwoHanded(eq.weapon) ? null : eq.shield;
+}
+
+function makeKayKitHero(assets: GameAssets): HeroModelRig {
   const spec = KAYKIT_RIG;
   const inst = instantiate(assets.characters.barbarian, spec);
   // Low ref speed = fast cadence: at 4.5 cells/s the run cycle plays ~1.8x,
@@ -292,11 +317,11 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     gear.length = 0;
 
     // Only an equipped helm puts anything on the head.
-    if (eq.helm) addGear("head", helmMesh(eq.helm.baseId), eq.helm);
+    if (eq.helm) addGear("head", kaykitHelm(eq.helm.baseId), eq.helm);
 
     // Chest: pauldrons on the shoulders, a plate over the chest bone
     if (eq.chest) {
-      const look = CHEST_LOOKS[eq.chest.baseId] ?? CHEST_LOOKS.rag_tunic!;
+      const look = chestLook(eq.chest.baseId);
       const size = look.big ? 0.34 : 0.26;
       for (const side of ["upperArmL", "upperArmR"] as const) {
         const pauldron = new THREE.Mesh(
@@ -327,10 +352,8 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     }
     // Orbs share the shield slot but float over the off hand instead of
     // un-hiding the skinned shield prop.
-    // A two-hander fills both hands: the sim keeps the shield slot empty beside
-    // one, and anything stale in it (an old save) is inert, so show nothing.
-    const offhand = eq.weapon && isTwoHanded(eq.weapon) ? null : eq.shield;
-    const offhandOrb = offhand && BASES[offhand.baseId]!.dmgMin !== undefined ? offhand : null;
+    const offhand = visibleOffhand(eq);
+    const offhandOrb = offhand && isOrb(offhand) ? offhand : null;
     if (shieldProp) {
       shieldProp.visible = !!offhand && !offhandOrb;
       const glow = offhand && !offhandOrb ? RARITY_GLOW[offhand.rarity] : undefined;
@@ -350,19 +373,11 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
     }
 
     if (eq.weapon) {
-      const look = WEAPON_LOOKS[eq.weapon.baseId] ?? WEAPON_LOOKS.rusted_blade!;
+      const look = KAYKIT_WEAPONS[eq.weapon.baseId] ?? KAYKIT_WEAPONS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const model = cloneWeapon(assets.weapons[look.model]);
+      const model = cloneProp(assets.weapons[look.model]);
       if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
-      const glow = RARITY_GLOW[eq.weapon.rarity];
-      if (glow !== undefined) {
-        model.traverse((obj) => {
-          if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-            obj.material.emissive.setHex(glow);
-            obj.material.emissiveIntensity = 0.5;
-          }
-        });
-      }
+      applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       rig.attach("r", model);
     } else {
       twoHanded = false;
@@ -372,6 +387,196 @@ export function makeHeroModelRig(assets: GameAssets): HeroModelRig {
   hero.attackClip = () => (twoHanded ? "attack2h" : "attack1h");
   return hero;
 }
+
+// ---------------------------------------------------------------------------
+// Synty hero: a Viking Realm human on the goblin locomotion clips, dressed in
+// Viking weapons, shields, and helmets from the kits.
+
+/** Which Viking wears each class. */
+const SYNTY_HERO_NODES: Record<Klass, string> = {
+  warrior: "Warrior_Male_01",
+  witch: "Leader_Female_01",
+};
+
+/** KayKit heroes stand 3.39 units before their 0.72 scale; Synty humans stand 1.8. */
+const SYNTY_HERO_SCALE = (3.39 * 0.72) / 1.8;
+
+/**
+ * Weapon base id -> Synty weapon node. `axis` is the direction the weapon was
+ * authored along: most run along +Y (handle up), but Viking swords and knives
+ * lie along +Z and get turned onto Y before the grip applies.
+ */
+interface SyntyWeaponLook {
+  kit: KitName;
+  node: string;
+  twoHanded: boolean;
+  axis: "y" | "z";
+  scale?: number;
+}
+
+const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
+  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false, axis: "z" },
+  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false, axis: "z" },
+  hatchet: { kit: "viking_weapons", node: "Wep_Axe_01", twoHanded: false, axis: "y" },
+  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false, axis: "z" },
+  war_maul: { kit: "viking_weapons", node: "Wep_Hammer_01", twoHanded: true, axis: "y" },
+  grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true, axis: "y" },
+  dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true, axis: "y" },
+  moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true, axis: "y" },
+  gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
+  ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
+  wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
+  bone_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
+  willow_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
+  hexwood_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
+};
+
+/** Helm base id -> Viking attachment nodes stacked on the head. */
+const SYNTY_HELMS: Record<string, string[]> = {
+  cracked_helm: ["Attach_Helmet_02"],
+  bone_visage: ["Attach_Helmet_03", "Attach_Helmet_Horns_01"],
+  iron_barbute: ["Attach_Helmet_01"],
+  wyrm_skull: ["Attach_Helmet_04", "Attach_Helmet_Wings_01"],
+};
+const SYNTY_HELM_DEFAULT = ["Attach_Helmet_01"];
+// Helmets pivot where the head bone sits; a hair's breadth up seats the rim on the brow.
+const SYNTY_HELM_OFFSET: [number, number, number] = [0, 0.02, 0];
+
+/** Shield base id -> Viking shield node (round shields share one pivot at the centre back). */
+const SYNTY_SHIELDS: Record<string, string> = {
+  plank_buckler: "Wep_Shield_Set_02",
+  bone_targe: "Wep_Shield_Set_05",
+  rimed_kite: "Wep_Shield_01",
+  barrow_bulwark: "Wep_Shield_Set_07",
+};
+const SYNTY_SHIELD_DEFAULT = "Wep_Shield_Set_01";
+
+/**
+ * Box overlays for chest and boots in the Synty rig's bone frames, where X
+ * runs along the bone, Y points backward, and Z sideways (measured on the
+ * rig). Sizes are in the model's 1.8-unit-tall space.
+ */
+const SYNTY_OVERLAYS = {
+  pauldron: { size: [0.16, 0.16, 0.16] as const, big: [0.2, 0.2, 0.2] as const, offset: [0.03, 0, 0] as const },
+  plate: { size: [0.3, 0.18, 0.36] as const, offset: [0.05, -0.04, 0] as const },
+  greave: { size: [0.26, 0.13, 0.13] as const, offset: [0.2, 0, 0] as const },
+};
+
+/** Wrap a Synty weapon so its authored axis lands on +Y, the grip's convention. */
+function orientWeapon(model: THREE.Object3D, look: SyntyWeaponLook): THREE.Object3D {
+  if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
+  if (look.axis === "y") return model;
+  // Measured in Blender: a quarter turn about X brings a +Z blade out the thumb side.
+  const wrapper = new THREE.Group();
+  model.rotation.x = Math.PI / 2;
+  wrapper.add(model);
+  return wrapper;
+}
+
+function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
+  const rig = new AnimRig(inst, { ...SYNTY_RIG, walkSpeedRef: 3 }, "idle", "run");
+  rig.group.scale.setScalar(SYNTY_HERO_SCALE);
+  let twoHanded = false;
+
+  const gear: THREE.Object3D[] = [];
+  const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
+    const bone = rig.bone(role);
+    if (!bone) return;
+    applyRarityGlow(mesh, item);
+    bone.add(mesh);
+    gear.push(mesh);
+  };
+  const box = (size: readonly [number, number, number], offset: readonly [number, number, number], mat: THREE.Material) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
+    mesh.position.set(...offset);
+    mesh.castShadow = true;
+    return mesh;
+  };
+
+  const hero = rig as unknown as HeroModelRig;
+  hero.setEquipment = (eq: Equipment) => {
+    for (const g of gear) g.parent?.remove(g);
+    gear.length = 0;
+
+    if (eq.helm) {
+      for (const name of SYNTY_HELMS[eq.helm.baseId] ?? SYNTY_HELM_DEFAULT) {
+        const src = kitNode(kits, "viking_attachments", name);
+        if (!src) continue;
+        const helm = cloneProp(src);
+        helm.position.set(...SYNTY_HELM_OFFSET);
+        addGear("head", helm, eq.helm);
+      }
+    }
+
+    if (eq.chest) {
+      const look = chestLook(eq.chest.baseId);
+      const mat = flatMat(look.color, look.metal ? 0.45 : 0.75);
+      const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
+      addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
+      addGear("upperArmR", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
+      addGear("chest", box(SYNTY_OVERLAYS.plate.size, SYNTY_OVERLAYS.plate.offset, mat), eq.chest);
+    }
+
+    if (eq.boots) {
+      const mat = flatMat(BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530, 0.7);
+      addGear("lowerLegL", box(SYNTY_OVERLAYS.greave.size, SYNTY_OVERLAYS.greave.offset, mat), eq.boots);
+      addGear("lowerLegR", box(SYNTY_OVERLAYS.greave.size, SYNTY_OVERLAYS.greave.offset, mat), eq.boots);
+    }
+
+    const offhand = visibleOffhand(eq);
+    if (offhand && isOrb(offhand)) {
+      const model = makeOrbModel();
+      applyRarityGlow(model, offhand);
+      rig.attach("l", model);
+    } else if (offhand) {
+      const src = kitNode(kits, "viking_weapons", SYNTY_SHIELDS[offhand.baseId] ?? SYNTY_SHIELD_DEFAULT);
+      if (src) {
+        // Shields face +Z with the boss forward; a half turn puts the painted
+        // face outward over the back of the hand (measured in Blender).
+        const shield = cloneProp(src);
+        shield.rotation.y = Math.PI;
+        const wrapper = new THREE.Group();
+        wrapper.add(shield);
+        applyRarityGlow(wrapper, offhand);
+        rig.attach("l", wrapper);
+      } else {
+        rig.attach("l", null);
+      }
+    } else {
+      rig.attach("l", null);
+    }
+
+    if (eq.weapon) {
+      const look = SYNTY_WEAPONS[eq.weapon.baseId] ?? SYNTY_WEAPONS.rusted_blade!;
+      twoHanded = look.twoHanded;
+      const src = kitNode(kits, look.kit, look.node);
+      if (src) {
+        const model = orientWeapon(cloneProp(src), look);
+        applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
+        rig.attach("r", model);
+      } else {
+        rig.attach("r", null);
+      }
+    } else {
+      twoHanded = false;
+      rig.attach("r", null);
+    }
+  };
+  hero.attackClip = () => (twoHanded ? "attack2h" : "attack1h");
+  return hero;
+}
+
+/**
+ * The player's rig: a Viking from the Synty kits when they loaded, else the
+ * KayKit barbarian. Both answer the same semantic clips and equipment calls.
+ */
+export function makeHeroModelRig(assets: GameAssets, klass: Klass): HeroModelRig {
+  const inst = instantiateKit(assets.kits, "viking_characters", SYNTY_HERO_NODES[klass], "goblin_clips", SYNTY_RIG);
+  return inst ? makeSyntyHero(inst, assets.kits) : makeKayKitHero(assets);
+}
+
+// ---------------------------------------------------------------------------
+// Monsters and NPCs
 
 /** A monster's look in one model family. */
 interface MonsterLook {
@@ -474,7 +679,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
     const rig = new AnimRig(inst, SYNTY_RIG, synty.idle, synty.walk);
     rig.group.scale.setScalar(synty.scale);
     const weapon = synty.weapon ? kitNode(assets.kits, "goblin_weapons", synty.weapon) : null;
-    if (weapon) rig.attach("r", cloneWeapon(weapon));
+    if (weapon) rig.attach("r", cloneProp(weapon));
     if (synty.tint !== undefined) tintRig(rig.group, synty.tint);
     return rig;
   }
@@ -482,7 +687,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   const look = looks.kaykit;
   const rig = new AnimRig(instantiate(assets.characters[look.model], KAYKIT_RIG), KAYKIT_RIG, look.idle, look.walk);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", cloneWeapon(assets.weapons[look.weapon]));
+  if (look.weapon) rig.attach("r", cloneProp(assets.weapons[look.weapon]));
   if (look.tint !== undefined) tintRig(rig.group, look.tint);
   return rig;
 }

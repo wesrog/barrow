@@ -74,7 +74,7 @@ function item(baseId: string, name: string): Item {
 
 describe("makeHeroModelRig shield slot", () => {
   test("equipping a shield keeps the round-shield prop attached and visible", () => {
-    const hero = makeHeroModelRig(fakeBarbarianAssets());
+    const hero = makeHeroModelRig(fakeBarbarianAssets(), "warrior");
     const eq = {
       weapon: null,
       shield: item("plank_buckler", "Plank Buckler"),
@@ -92,7 +92,7 @@ describe("makeHeroModelRig shield slot", () => {
   });
 
   test("unequipping the shield hides the prop without detaching it", () => {
-    const hero = makeHeroModelRig(fakeBarbarianAssets());
+    const hero = makeHeroModelRig(fakeBarbarianAssets(), "warrior");
     const bare = {
       weapon: null,
       shield: null,

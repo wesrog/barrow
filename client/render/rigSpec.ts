@@ -44,7 +44,10 @@ export interface Grip {
   position: [number, number, number];
 }
 
+export type RigFamily = "kaykit" | "synty";
+
 export interface RigSpec {
+  family: RigFamily;
   clips: Partial<Record<ClipId, string>>;
   /** Authored bone names; looked up with the same punctuation-stripping the loader applies. */
   bones: Record<BoneRole, string>;
@@ -55,6 +58,7 @@ export interface RigSpec {
 
 /** KayKit Adventurers/Skeletons: chibi rigs with handslot sockets and ~80 baked clips. */
 export const KAYKIT_RIG: RigSpec = {
+  family: "kaykit",
   clips: {
     idle: "Idle",
     idleCombat: "Idle_Combat",
@@ -101,6 +105,7 @@ export const KAYKIT_RIG: RigSpec = {
  * the fidget swipe and death borrows the hard landing until Mixamo clips land.
  */
 export const SYNTY_RIG: RigSpec = {
+  family: "synty",
   clips: {
     idle: "Idle_Standing",
     idleCombat: "Idle_Fidget_Menacing",

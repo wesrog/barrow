@@ -58,6 +58,8 @@ export const KIT_URLS = {
   goblin_weapons: "/models/synty/goblin_war_camp/weapons.glb",
   goblin_clips: "/models/synty/goblin_locomotion/clips.glb",
   viking_characters: "/models/synty/viking_realm/characters.glb",
+  viking_weapons: "/models/synty/viking_realm/weapons.glb",
+  viking_attachments: "/models/synty/viking_realm/attachments.glb",
 } as const;
 
 export type CharacterName = keyof typeof CHARACTER_URLS;

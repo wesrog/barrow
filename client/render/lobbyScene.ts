@@ -197,7 +197,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   // Both use the real hero rig + equipment path, so the gear here is the gear
   // you'd actually wear; the witch's robe, hat, and orb are lobby-side dressing
   // (no robe/orb item bases exist yet).
-  const warrior = makeHeroModelRig(assets);
+  const warrior = makeHeroModelRig(assets, "warrior");
   {
     const eq = createEquipment();
     eq.weapon = showpiece("kingsbane", "Kingsbane");
@@ -214,13 +214,17 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   warriorGlow.position.set(-2.9, 1.3, 2.2);
   scene.add(warriorGlow);
 
-  const witch = makeHeroModelRig(assets);
-  // Dusk-pale skin and darkened cloth before the robe goes on.
-  witch.group.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
-      obj.material.color.lerp(new THREE.Color(0x4a3a5e), 0.45);
-    }
-  });
+  const witch = makeHeroModelRig(assets, "witch");
+  // The KayKit barbarian doubles as the witch with dusk-pale skin, darkened
+  // cloth, and a built robe and hat; the Viking leader already looks the part.
+  const dressWitch = witch.family === "kaykit";
+  if (dressWitch) {
+    witch.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.lerp(new THREE.Color(0x4a3a5e), 0.45);
+      }
+    });
+  }
   {
     const eq = createEquipment();
     // A wand, so the witchlight orb in her other hand isn't sharing a staff's two hands.
@@ -230,14 +234,14 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   const witchFlat = (color: number, roughness = 0.85) =>
     new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
   // Robe: a flared skirt from the hips and a mantle over the shoulders.
-  const hipsBone = witch.bone("hips") ?? witch.bone("chest");
+  const hipsBone = dressWitch ? (witch.bone("hips") ?? witch.bone("chest")) : null;
   if (hipsBone) {
     const skirt = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.8, 1.1, 8), witchFlat(0x2e2340));
     skirt.position.y = -0.45;
     skirt.castShadow = true;
     hipsBone.add(skirt);
   }
-  const chestBone = witch.bone("chest");
+  const chestBone = dressWitch ? witch.bone("chest") : null;
   if (chestBone) {
     const mantle = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.52, 0.5, 8), witchFlat(0x392b4e));
     mantle.position.y = 0.1;
@@ -245,7 +249,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
     chestBone.add(mantle);
   }
   // Pointed hat with a faintly glowing band — the chibi head is huge (~r0.62).
-  const headBone = witch.bone("head");
+  const headBone = dressWitch ? witch.bone("head") : null;
   if (headBone) {
     const hat = new THREE.Group();
     const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.0, 0.09, 8), witchFlat(0x241a30));

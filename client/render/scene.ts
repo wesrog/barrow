@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { Klass } from "../../sim/skills";
 import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import {
   allPlayers,
@@ -819,8 +820,8 @@ export function createScene(
     });
   };
 
-  const makeHero = (id: PlayerId): HeroEntry => {
-    const rig = makeHeroModelRig(assets);
+  const makeHero = (id: PlayerId, klass: Klass): HeroEntry => {
+    const rig = makeHeroModelRig(assets, klass);
     scene.add(rig.group);
     let plate: HTMLDivElement | null = null;
     if (id !== localId()) {
@@ -1121,7 +1122,7 @@ export function createScene(
       let py = me.pos.y;
       for (const p of allPlayers(state)) {
         if (p.zoneId !== me.zoneId) continue;
-        const entry = heroes.get(p.id) ?? makeHero(p.id);
+        const entry = heroes.get(p.id) ?? makeHero(p.id, p.klass);
         // A player who just arrived (or teleported) has no meaningful previous
         // position — snap rather than sliding across the whole map.
         const prev = prevPositions.get(p.id) ?? p.pos;
@@ -1401,7 +1402,7 @@ export function createScene(
       for (const pc of zoneOf(state, me).playerCorpses.values()) {
         let v = playerCorpseVisuals.get(pc.id);
         if (!v) {
-          const rig = makeHeroModelRig(assets);
+          const rig = makeHeroModelRig(assets, state.players.get(pc.playerId)?.klass ?? "warrior");
           rig.setEquipment(pc.equipment);
           tintRig(rig.group, playerTint(pc.playerId), 0.4);
           // The death clip ends face down; hold it so the body just lies there.

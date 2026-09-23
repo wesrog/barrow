@@ -59,3 +59,93 @@ describe("instantiateKit", () => {
     expect(instantiateKit(kits, "goblin_characters", "Nobody", "goblin_clips", SYNTY_RIG)).toBeNull();
   });
 });
+
+import { makeHeroModelRig } from "./modelRigs";
+import type { GameAssets } from "./models";
+import type { Item } from "../../sim/items/generate";
+
+/** A Viking character kit plus weapon and attachment kits, shaped like the loader output. */
+function fakeHeroAssets(): GameAssets {
+  const character = new THREE.Object3D();
+  character.name = "Warrior_Male_01";
+  const bones: Record<string, THREE.Bone> = {};
+  for (const name of ["Root", "Hips", "Spine_02", "Head", "Shoulder_L", "Shoulder_R", "LowerLeg_L", "LowerLeg_R", "Hand_L", "Hand_R"]) {
+    bones[name] = new THREE.Bone();
+    bones[name]!.name = `${name}_3`;
+  }
+  bones.Root!.add(bones.Hips!);
+  bones.Hips!.add(bones.Spine_02!, bones.LowerLeg_L!, bones.LowerLeg_R!);
+  bones.Spine_02!.add(bones.Head!, bones.Shoulder_L!, bones.Shoulder_R!);
+  bones.Shoulder_L!.add(bones.Hand_L!);
+  bones.Shoulder_R!.add(bones.Hand_R!);
+  const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+  mesh.add(bones.Root!);
+  mesh.bind(new THREE.Skeleton(Object.values(bones)));
+  character.add(mesh);
+  const characters = new THREE.Group();
+  characters.add(character);
+
+  const clips = Object.keys(bones).map(
+    (name) => new THREE.QuaternionKeyframeTrack(`${name}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]),
+  );
+  const named = (name: string) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1, 0.1), new THREE.MeshStandardMaterial());
+    o.name = name;
+    return o;
+  };
+  const weapons = new THREE.Group();
+  weapons.add(named("Wep_Sword_02"), named("Wep_Shield_Set_02"), named("Wep_Hammer_01"));
+  const attachments = new THREE.Group();
+  attachments.add(named("Attach_Helmet_01"));
+  const gltf = (scene: THREE.Object3D, animations: THREE.AnimationClip[] = []) =>
+    ({ scene, animations }) as unknown as GameAssets["kits"]["viking_characters"];
+  return {
+    characters: {} as GameAssets["characters"],
+    weapons: {} as GameAssets["weapons"],
+    dungeon: {} as GameAssets["dungeon"],
+    kits: {
+      viking_characters: gltf(characters),
+      viking_weapons: gltf(weapons),
+      viking_attachments: gltf(attachments),
+      goblin_clips: gltf(new THREE.Group(), [new THREE.AnimationClip("Idle_Standing", 1, clips), new THREE.AnimationClip("Run_F", 1, clips)]),
+    },
+  };
+}
+
+function gearItem(baseId: string, rarity: Item["rarity"] = "normal"): Item {
+  return { baseId, rarity, name: baseId, affixIds: [], mods: [], ilvl: 1 };
+}
+
+const BARE = { weapon: null, shield: null, helm: null, chest: null, boots: null, amulet: null, ring1: null, ring2: null };
+
+describe("Synty hero", () => {
+  test("dresses a Viking from the kits and undresses cleanly", () => {
+    const hero = makeHeroModelRig(fakeHeroAssets(), "warrior");
+    expect(hero.family).toBe("synty");
+    hero.setEquipment({ ...BARE, weapon: gearItem("rusted_blade", "rare"), shield: gearItem("plank_buckler"), helm: gearItem("iron_barbute"), chest: gearItem("grave_plate"), boots: gearItem("worn_boots") });
+    expect(hero.group.getObjectByName("Hand_R")!.getObjectByName("Wep_Sword_02")).toBeTruthy();
+    expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeTruthy();
+    expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeTruthy();
+    // Pauldrons, plate, and greaves are plain boxes: one on each of five bones.
+    expect(hero.group.getObjectByName("Spine_02")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
+    expect(hero.attackClip()).toBe("attack1h");
+
+    hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
+    expect(hero.attackClip()).toBe("attack2h");
+    // A two-hander hides the shield even though the slot still holds one.
+    expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
+    expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();
+
+    hero.setEquipment(BARE);
+    expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
+  });
+
+  test("falls back to the KayKit barbarian without the kits", () => {
+    const assets = fakeHeroAssets();
+    assets.kits = {};
+    const barbarian = new THREE.Group();
+    barbarian.add(new THREE.Object3D());
+    assets.characters = { barbarian: { scene: barbarian, animations: [] } } as unknown as GameAssets["characters"];
+    expect(makeHeroModelRig(assets, "witch").family).toBe("kaykit");
+  });
+});

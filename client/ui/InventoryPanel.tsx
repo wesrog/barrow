@@ -95,7 +95,7 @@ export function InventoryPanel({
 
       {/* Character */}
       {assets && (
-        <CharacterView assets={assets} equipment={p.equipment} width={INV_W * CELL} />
+        <CharacterView assets={assets} equipment={p.equipment} klass={p.klass} width={INV_W * CELL} />
       )}
 
       {/* Identity */}

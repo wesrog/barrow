@@ -25,6 +25,11 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   browses it with set filters, tint swatches, variant and size controls. `client/ui/itemIcons.ts`
   maps each item base to a piece: renders draw as images with a rarity glow, silhouettes as
   tinted masks, and the game-icons SVGs in git remain the fallback when the manifest is absent.
+  `client/ui/ItemSlot.tsx` owns the inventory cell (`CELL`, 56px) and the framed slot every
+  grid and the equipped list build from: a slate box under a nine-slice of the Warrior HUD's
+  `Frame_Box12` (plain rarity border without the art). Side-view renders are 2048x1024 with the
+  weapon lying across the middle; `ItemIcon` sizes them by the slot's long side, turns them
+  upright in tall slots and clips the transparent margins.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

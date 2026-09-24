@@ -2,32 +2,21 @@ import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { INV_H, INV_W, computeStats, isTwoHanded, type EquipSlot } from "../../sim/character";
-import { BASES, potionKind } from "../../sim/items/bases";
+import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import { ItemHoverDetail, RARITY_CSS, secondRingChoice } from "./ItemHoverDetail";
 import { itemValue } from "../../sim/systems/town";
 import type { GameState } from "../../sim/state";
 import type { GameAssets } from "../render/models";
 import { CharacterView } from "./CharacterView";
-import { ItemIcon } from "./ItemIcon";
+import { CELL, ItemSlot, slotStyle } from "./ItemSlot";
 import { PanelChrome } from "./PanelChrome";
 import { SortButton } from "./SortButton";
 
-const CELL = 32;
-
 export { RARITY_CSS } from "./ItemHoverDetail";
 
-// Potion icons tint by what they restore, not rarity.
-const POTION_CSS: Record<"health" | "mana", string> = {
-  health: "#d05c5c",
-  mana: "#6b8fe8",
-};
-
-/** Icon tint: potions by kind, everything else by rarity. */
-function iconColor(item: Item): string {
-  const kind = potionKind(item.baseId);
-  return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
-}
+/** Equipped gear shows in a small framed slot beside its name. */
+const EQUIP_SLOT_PX = 40;
 
 const EQUIP_SLOTS: { slot: EquipSlot; label: string }[] = [
   { slot: "weapon", label: "weapon" },
@@ -95,7 +84,7 @@ export function InventoryPanel({
 
       {/* Character */}
       {assets && (
-        <CharacterView assets={assets} equipment={p.equipment} klass={p.klass} width={INV_W * CELL} />
+        <CharacterView assets={assets} equipment={p.equipment} klass={p.klass} width={INV_W * CELL} height={250} />
       )}
 
       {/* Identity */}
@@ -136,8 +125,8 @@ export function InventoryPanel({
         ))}
       </div>
 
-      {/* Equipment */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 10px", marginBottom: 10 }}>
+      {/* Equipment: a framed slot per piece, its name and slot beside it */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", marginBottom: 10 }}>
         {EQUIP_SLOTS.map(({ slot, label }) => {
           const item = p.equipment[slot];
           return (
@@ -146,28 +135,27 @@ export function InventoryPanel({
               onClick={() => item && onUnequip(slot)}
               onMouseEnter={() => item && setHovered({ item, fromGrid: false })}
               onMouseLeave={() => setHovered(null)}
-              style={{
-                cursor: item ? "pointer" : "default",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-              }}
+              style={{ cursor: item ? "pointer" : "default", display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
               title={item ? "click to unequip" : undefined}
             >
-              <span style={{ color: "#6b6455" }}>{label} </span>
-              {item && <ItemIcon baseId={item.baseId} color={iconColor(item)} size={14} />}
-              <span
-                style={{
-                  color: item ? RARITY_CSS[item.rarity] : "#494339",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {item ? item.name : "—"}
-              </span>
+              {item ? (
+                <ItemSlot item={item} width={EQUIP_SLOT_PX} height={EQUIP_SLOT_PX} style={{ flex: "none" }} />
+              ) : (
+                <div style={{ ...slotStyle(EQUIP_SLOT_PX, EQUIP_SLOT_PX, "#3a3442", false), flex: "none", opacity: 0.45 }} />
+              )}
+              <div style={{ minWidth: 0, lineHeight: 1.3 }}>
+                <div style={{ color: "#6b6455", fontSize: 11 }}>{label}</div>
+                <div
+                  style={{
+                    color: item ? RARITY_CSS[item.rarity] : "#494339",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {item ? item.name : "—"}
+                </div>
+              </div>
             </div>
           );
         })}
@@ -195,15 +183,14 @@ export function InventoryPanel({
           width: INV_W * CELL,
           height: INV_H * CELL,
           background:
-            "repeating-linear-gradient(0deg, #201d26 0 1px, transparent 1px 32px)," +
-            "repeating-linear-gradient(90deg, #201d26 0 1px, transparent 1px 32px)," +
+            `repeating-linear-gradient(0deg, #201d26 0 1px, transparent 1px ${CELL}px),` +
+            `repeating-linear-gradient(90deg, #201d26 0 1px, transparent 1px ${CELL}px),` +
             "#16141a",
           border: "1px solid #2c2833",
         }}
       >
         {p.inventory.entries.map((e) => {
           const base = BASES[e.item.baseId]!;
-          const color = RARITY_CSS[e.item.rarity]!;
           const classLocked = base.classReq !== undefined && base.classReq !== p.klass;
           const handsFull =
             base.slot === "shield" && p.equipment.weapon !== null && isTwoHanded(p.equipment.weapon);
@@ -211,8 +198,12 @@ export function InventoryPanel({
           const sellPrice = Math.max(1, Math.floor(itemValue(e.item) / 4));
           const ringChoice = secondRingChoice(e.item, p.equipment);
           return (
-            <div
+            <ItemSlot
               key={e.id}
+              item={e.item}
+              width={base.w * CELL - 2}
+              height={base.h * CELL - 2}
+              locked={locked}
               onClick={(ev) => {
                 if (sellMode && onSell) {
                   setHovered(null);
@@ -250,24 +241,9 @@ export function InventoryPanel({
                 position: "absolute",
                 left: e.x * CELL + 1,
                 top: e.y * CELL + 1,
-                width: base.w * CELL - 3,
-                height: base.h * CELL - 3,
-                background: locked ? "rgba(46,26,28,.9)" : "rgba(38,34,46,.9)",
-                border: `1px solid ${locked ? "#8a4640" : color}`,
-                borderRadius: 2,
                 cursor: sellMode || stashMode || !locked ? "pointer" : "not-allowed",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: locked ? 0.55 : 1,
               }}
-            >
-              <ItemIcon
-                baseId={e.item.baseId}
-                color={iconColor(e.item)}
-                size={Math.min(base.w, base.h) * CELL - 8}
-              />
-            </div>
+            />
           );
         })}
       </div>

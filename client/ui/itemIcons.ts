@@ -67,10 +67,14 @@ export interface ResolvedIcon {
   url: string;
   /** Masks are tinted by rarity; images carry their own colours and get a rarity glow. */
   kind: ItemIconKind;
+  /** A render's side view, lying along its width, for slots taller or wider than square. */
+  side?: string;
 }
 
 /** "set/piece" -> the file to draw and how, from the copied pack's manifest. */
 let available = new Map<string, ResolvedIcon>();
+/** "set/piece" -> url of the coloured UI sprites (frames, bars) the HUD may dress itself with. */
+let sprites = new Map<string, string>();
 
 /** The manifest scripts/ui-icons.ts writes; only the fields used here. */
 export interface IconManifest {
@@ -86,6 +90,7 @@ export async function loadItemIcons(): Promise<void> {
     const manifest = (await res.json()) as IconManifest;
     if (manifest.version !== 3) return;
     available = packIcons(manifest);
+    sprites = packSprites(manifest);
   } catch {
     // Offline or absent: the SVGs carry on.
   }
@@ -99,14 +104,32 @@ export function packIcons(manifest: IconManifest): Map<string, ResolvedIcon> {
     const render = p.kind === "render" ? p.files.Render : undefined;
     const file = render ?? p.files.Clean;
     if (!file) continue;
-    out.set(`${p.set}/${p.name}`, { url: `${BASE}/icons/synty/${file}`, kind: render ? "image" : "mask" });
+    const icon: ResolvedIcon = { url: `${BASE}/icons/synty/${file}`, kind: render ? "image" : "mask" };
+    if (render && p.files.Side) icon.side = `${BASE}/icons/synty/${p.files.Side}`;
+    out.set(`${p.set}/${p.name}`, icon);
   }
   return out;
 }
 
-/** Test seam: pretend these pack icons were copied. */
-export function setAvailableItemIcons(icons: Map<string, ResolvedIcon>): void {
+/** Every sprite piece's url keyed "set/name". */
+export function packSprites(manifest: IconManifest): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of manifest.pieces) {
+    const file = p.kind === "sprite" ? p.files[""] : undefined;
+    if (file) out.set(`${p.set}/${p.name}`, `${BASE}/icons/synty/${file}`);
+  }
+  return out;
+}
+
+/** Test seam: pretend these pack icons and sprites were copied. */
+export function setAvailableItemIcons(icons: Map<string, ResolvedIcon>, packSpriteUrls: Map<string, string> = new Map()): void {
   available = icons;
+  sprites = packSpriteUrls;
+}
+
+/** A UI sprite's url by manifest key, or null when the art is not copied. */
+export function uiSprite(key: string): string | null {
+  return sprites.get(key) ?? null;
 }
 
 /** The icon for a base: the pack's when present, else the SVG mask. */

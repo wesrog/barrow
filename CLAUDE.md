@@ -107,7 +107,13 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   the palm normal, so a quarter turn about X lays a handle along the knuckles with the blade
   toward the index finger (Synty right hand -Z, left +Z; the UE rig mirrors both). Check any
   new pack's grip in the viewer from the three-quarter "frame" view, not the game camera.
-- `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
+- `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels). `Lobby.tsx`
+  is the start screen: a night camp (`render/lobbyScene.ts`, its own renderer and pointer
+  handling) with a hero of each class at the fire. The figures are the class picker: hover
+  names the class, a click makes the figure perform (`FIGURES[klass].perform` cycles clips)
+  and puts that class in focus, and the panel below describes it (`KLASS_INFO`, `CLASS_STATS`,
+  the class's `TREES`) with the forge form. The card on the right holds the roster and, once a
+  character is chosen, play solo / host / join. The camp's props are the `CAMP` row table.
 
 ## Licensed assets (Synty)
 

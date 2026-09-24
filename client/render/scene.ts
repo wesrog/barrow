@@ -24,6 +24,8 @@ import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
 import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
+import { dressCamp } from "./campDressing";
+import { bakeScatter, ScatterBatch } from "./scatter";
 import type { DungeonStyleId } from "../../sim/dungeons";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
@@ -378,9 +380,11 @@ export function createScene(
     }
   } else {
     // --- Open ground: every region lays its own biome-tinted plane over its
-    // slice of the world, then instanced crags, dead pines and tufts in its
-    // own colors. Cell hashes stay keyed on world coordinates, so the scatter
-    // is the same wherever a region happens to sit in the layout. ---
+    // slice of the world, then instanced pines, standing stones, bushes and
+    // tufts from the Viking nature kit tinted for the biome, or primitive
+    // crags and cones when that kit is absent. Cell hashes stay keyed on world
+    // coordinates, so the scatter is the same wherever a region sits. ---
+    const baked = bakeScatter(assets.kits);
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
@@ -401,6 +405,7 @@ export function createScene(
     for (const areaId of AREA_ORDER) {
       const rect = areaRect(areaId);
       const pal = BIOME_PALETTES[AREAS[areaId].biome];
+      const batch = baked ? new ScatterBatch(baked, { foliage: pal.foliageTint, stone: pal.stoneTint }) : null;
       const rw = rect.x1 - rect.x0;
       const rh = rect.y1 - rect.y0;
       const ground = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh), flatMat(pal.ground, 1));
@@ -435,13 +440,26 @@ export function createScene(
               x === rect.x0 || y === rect.y0 || x === rect.x1 - 1 || y === rect.y1 - 1;
             if (border || h % 5 < 3) {
               const s = 0.85 + ((h >> 6) % 45) / 100;
-              eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
-              m.compose(
-                pos.set(jx, bh + 0.22 * s, jz),
-                quat.setFromEuler(eul),
-                scl.set(s, s * 0.75, s),
-              );
-              rockMats.push(m.clone());
+              if (batch) {
+                // Kit stones are authored half-buried: seat them at ridge height, leaning a little.
+                eul.set(((h >> 2) % 6) / 25, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 25);
+                m.compose(pos.set(jx, bh, jz), quat.setFromEuler(eul), scl.set(s, s, s));
+                batch.add("rock", h >>> 10, m, x, y);
+              } else {
+                eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
+                m.compose(
+                  pos.set(jx, bh + 0.22 * s, jz),
+                  quat.setFromEuler(eul),
+                  scl.set(s, s * 0.75, s),
+                );
+                rockMats.push(m.clone());
+              }
+            } else if (batch) {
+              const s = 0.75 + ((h >> 6) % 55) / 100;
+              quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+              m.compose(pos.set(jx, bh, jz), quat, scl.set(s, s, s));
+              // One copse cell in four grows a berry bush instead of a pine.
+              batch.add((h >>> 14) % 4 === 0 ? "bush" : "pine", h >>> 10, m, x, y);
             } else {
               const s = 0.75 + ((h >> 6) % 55) / 100;
               quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
@@ -453,17 +471,26 @@ export function createScene(
           } else if (h % 11 === 0) {
             quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
             const s = 0.7 + ((h >> 7) % 60) / 100;
-            m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
-            tuftMats.push(m.clone());
+            if (batch) {
+              m.compose(pos.set(jx, 0, jz), quat, scl.set(s, s, s));
+              batch.add("tuft", h >>> 10, m, x, y);
+            } else {
+              m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
+              tuftMats.push(m.clone());
+            }
           }
         }
       }
       const baseColor = new THREE.Color(pal.rock).multiplyScalar(0.55).getHex();
       addInstanced(new THREE.BoxGeometry(1, 1, 1), baseColor, baseMats, true);
-      addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
-      addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
-      addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
-      addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
+      if (batch) {
+        batch.build(scene);
+      } else {
+        addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
+        addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
+        addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
+        addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
+      }
     }
   }
 
@@ -585,9 +612,28 @@ export function createScene(
     scene.add(glow);
   }
 
+  // --- Camp dressing: Viking Realm props around the fixed markers when that
+  // kit loaded; the primitive stand-ins below cover whichever markers it left ---
+  const placeProp = (node: THREE.Object3D, x: number, z: number, ry: number, scale: number) => {
+    // Wrapped so a node's own authored offset (Prop_Chest_01 is centred by one) survives placement.
+    const wrap = new THREE.Group();
+    wrap.add(node.clone(true));
+    wrap.position.set(x, 0, z);
+    wrap.rotation.y = ry;
+    wrap.scale.setScalar(scale);
+    wrap.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+    env.add(wrap);
+  };
+  const dressed = dressCamp(assets.kits, map.markers, placeProp);
+
   // --- Market stall (town): crates and a barrel beside the V marker ---
   for (const marker of map.markers) {
-    if (marker.ch !== "V") continue;
+    if (marker.ch !== "V" || dressed.has("V")) continue;
     placePieceLater.push(() => {
       placePiece(assets.dungeon.crates, marker.x + 0.9, marker.y + 0.3, 0.4, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
@@ -760,32 +806,36 @@ export function createScene(
     torches.push({ flame, light, seed: (i * 37) % 100 });
   }
 
-  // --- Campfire (camp): stones, crossed logs, and a breathing flame ---
+  // --- Campfire (camp): a breathing flame over the kit's fire pit, or over
+  // primitive stones and crossed logs when the props kit is absent ---
   for (const marker of map.markers) {
     if (marker.ch !== "F") continue;
     const fire = new THREE.Group();
     fire.position.set(marker.x, 0, marker.y);
-    const stoneMat = flatMat(0x55524e, 1);
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
-      stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
-      stone.castShadow = true;
-      fire.add(stone);
-    }
-    const logMat = flatMat(0x3d2c1c, 1);
-    for (let i = 0; i < 3; i++) {
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
-      log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
-      log.position.y = 0.12;
-      log.castShadow = true;
-      fire.add(log);
+    if (!dressed.has("F")) {
+      const stoneMat = flatMat(0x55524e, 1);
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
+        stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
+        stone.castShadow = true;
+        fire.add(stone);
+      }
+      const logMat = flatMat(0x3d2c1c, 1);
+      for (let i = 0; i < 3; i++) {
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
+        log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
+        log.position.y = 0.12;
+        log.castShadow = true;
+        fire.add(log);
+      }
     }
     const flame = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.16, 0),
       new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: 0xff8c28, emissiveIntensity: 2.4 }),
     );
-    flame.position.y = 0.32;
+    // The kit pit's logs top out at 0.56 (0.93 authored x 0.6 scale).
+    flame.position.y = dressed.has("F") ? 0.58 : 0.32;
     fire.add(flame);
     scene.add(fire);
     const light = new THREE.PointLight(0xff9a45, 5, 8, 1.7);

@@ -8,6 +8,9 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
 - **Dev:** `bun run dev` (Vite, port 5197)
 - **Tests:** `bun test sim client`
 - **Typecheck/build:** `bun run build`
+- **Asset viewer:** `http://localhost:5197/viewer.html` on the dev server (second Vite page):
+  every character model in a grid with its idle, pack filters, search, a clip picker for all
+  or one figure, speed and pause. Use it to check a retarget or pick a look before wiring it in.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders
@@ -46,7 +49,14 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   order (KayKit copy first, goblin pack second) so a machine missing a clip kit still animates.
   Synty scales derive from KayKit's visible heights (2.15 to 2.6 units before a look's scale;
   the barbarian is 2.17 bare-headed), not the 3.39 the raw GLB bounding box suggests, which
-  includes Blender's bone-display sphere.
+  includes Blender's bone-display sphere. `scatter.ts` instances the Viking nature kit over
+  open ground (pines, half-buried standing stones, berry bushes, roof-grass tufts as ground
+  tufts) in 16-cell chunks for culling, tinted per biome by `foliageTint`/`stoneTint` in
+  `biomes.ts`; without the kit the scene keeps its primitive cones and icosahedra.
+  `campDressing.ts` is the row table of Viking props around the camp markers (fire pit, awning
+  stall, sickbed, banner, rune stone); the primitive campfire and dungeon-prop stall remain the
+  fallback. Kit nodes stand at the origin but a few carry a translation that centres an offset
+  mesh, so place them inside a wrapper group rather than overwriting their position.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)
@@ -73,7 +83,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   shaders and are skipped; rocks, pebbles, bushes, grass, and props convert.
 - `viking_realm`: zip has a `SourceFiles/` level (the pack `root`). Ten humans plus 14 skinned
   attachments on the same 50-bone rig as the goblins, split per character like them. Its
-  material list names textures on the slot line; 80 shield designs share one texture.
+  material list names textures on the slot line; 80 shield designs share one texture. Its
+  environment splits into `village` (buildings, docks, boats, cliffs) and a lean `nature` kit
+  (pines, bushes, stones, roof tufts, no pine groups) that the game loads for the outdoor
+  scatter; the single-material pines run 1.1k to 1.8k triangles, fit for thousands of instances.
 - `goblin_locomotion` is a clip kit: `clips.glb` is a mesh-less goblin rig with one animation
   per clip (Idle_Standing, Walk_F, Run_F, Sprint_F, shuffles, turns, transitions, jump and
   land). Synty's clip skeleton has the same joints as the characters but differently

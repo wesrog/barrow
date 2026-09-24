@@ -13,6 +13,14 @@ export interface BiomePalette {
   pine: number;
   trunk: number;
   tuft: number;
+  /**
+   * Multiplied into the Viking nature kit's textures when it stands in for the
+   * primitives: foliage covers pines, bushes and tufts; stone the standing
+   * stones. The albedo is a daylit palette, so these run well under white to
+   * keep the night.
+   */
+  foliageTint: number;
+  stoneTint: number;
 }
 
 export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
@@ -28,6 +36,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x17231a,
     trunk: 0x2c2018,
     tuft: 0x2a381f,
+    foliageTint: 0x9cb49a,
+    stoneTint: 0x868a94,
   },
   // Rust-red marshland under a closer, warmer murk.
   fen: {
@@ -41,6 +51,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x321c11,
     trunk: 0x241a10,
     tuft: 0x44301a,
+    foliageTint: 0xb8906a,
+    stoneTint: 0x92806c,
   },
   // Grey-green strangled channels, cold and drowned.
   mire: {
@@ -54,6 +66,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x16201c,
     trunk: 0x22201c,
     tuft: 0x2c3a2c,
+    foliageTint: 0x8ea69c,
+    stoneTint: 0x7c8884,
   },
   // Burnt grey-red waste, ember light under a smoke-choked sky.
   ash: {
@@ -67,6 +81,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x2c1a12,
     trunk: 0x261a14,
     tuft: 0x4a2c1a,
+    foliageTint: 0x9c7462,
+    stoneTint: 0x887870,
   },
   // Cold violet-black summit ruin, starlit and silent.
   hollow: {
@@ -80,6 +96,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x181424,
     trunk: 0x221c28,
     tuft: 0x322a44,
+    foliageTint: 0x8c82ac,
+    stoneTint: 0x7e7692,
   },
   // Slate and ochre steps, thin dry air.
   crag: {
@@ -93,6 +111,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     pine: 0x201c14,
     trunk: 0x282018,
     tuft: 0x3a3120,
+    foliageTint: 0xa89e80,
+    stoneTint: 0x948a78,
   },
 };
 

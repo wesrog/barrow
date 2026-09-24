@@ -230,11 +230,20 @@ PACKS = {
             },
             "attachments": {"include": ["FBX/SM_Chr_Attach_*.fbx"], "emissive": True},
             "village": {
-                "include": [
-                    "FBX/SM_Bld_*.fbx", "FBX/SM_Veh_*.fbx", "FBX/SM_Env_Tree_*.fbx",
-                    "FBX/SM_Env_Bush_*.fbx", "FBX/SM_Env_Stone_*.fbx", "FBX/SM_Env_Rock_*.fbx",
-                ],
+                "include": ["FBX/SM_Bld_*.fbx", "FBX/SM_Veh_*.fbx", "FBX/SM_Env_Rock_*.fbx"],
                 "emissive": True,
+            },
+            # The outdoor scatter set, kept lean because the game loads it for every
+            # surface region: single-material pines (1 to 2k triangles), berry bushes,
+            # standing stones, and the roof grass tufts, which double as ground tufts.
+            # The pre-grouped pine clumps are 10k-triangle set pieces and stay out.
+            "nature": {
+                "include": [
+                    "FBX/SM_Env_Tree_*.fbx", "FBX/SM_Env_Bush_*.fbx", "FBX/SM_Env_Stone_*.fbx",
+                    "FBX/SM_Bld_House_Roof_Grass_Tuft*.fbx",
+                ],
+                "exclude": ["SM_Env_Tree_Pine_Group_*"],
+                "emissive": False,
             },
             "props": {"include": ["FBX/SM_Prop_*.fbx"], "emissive": True},
             # 80 shield designs share one texture; the *_Optimised_* copies are excluded.
@@ -634,9 +643,10 @@ def pack_root(pack_name: str) -> Path:
 
 def list_sources(pack_dir: Path, kit: dict) -> list[Path]:
     files = []
+    excludes = EXCLUDE + kit.get("exclude", [])
     for pattern in kit["include"]:
         for f in sorted(pack_dir.glob(pattern)):
-            if any(fnmatch.fnmatch(f.name, ex) for ex in EXCLUDE):
+            if any(fnmatch.fnmatch(f.name, ex) for ex in excludes):
                 continue
             files.append(f)
     return files

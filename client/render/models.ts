@@ -62,6 +62,8 @@ export const KIT_URLS = {
   viking_characters: "/models/synty/viking_realm/characters.glb",
   viking_weapons: "/models/synty/viking_realm/weapons.glb",
   viking_attachments: "/models/synty/viking_realm/attachments.glb",
+  viking_props: "/models/synty/viking_realm/props.glb",
+  viking_nature: "/models/synty/viking_realm/nature.glb",
   // The KayKit clip suite retargeted onto each Synty rig (scripts/synty-to-glb.py).
   goblin_kaykit_clips: "/models/synty/kaykit_clips/goblin_rig.glb",
   dungeon_kaykit_clips: "/models/synty/kaykit_clips/dungeon_rig.glb",

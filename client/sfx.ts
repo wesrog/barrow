@@ -1,7 +1,8 @@
 /**
  * The sampled sound effects: Kenney's CC0 Impact Sounds, RPG Audio and
  * Interface Sounds packs, the clips the game uses copied under
- * public/sfx/kenney (with the licence). Each name is a variant pool; audio.ts
+ * public/sfx/kenney, and a Pixabay whoosh set under public/sfx/whoosh (each
+ * folder carries its licence). Each name is a variant pool; audio.ts
  * layers these over its synth recipes, so a hit is a recorded blade over the
  * synth's low thump rather than either alone. Rows, not code: a better clip
  * is a new file name here.
@@ -11,11 +12,15 @@ const DIR = "/sfx/kenney";
 const one = (...stems: string[]) => stems.map((s) => `${DIR}/${s}.ogg`);
 /** Kenney's numbered variants: stem_000 .. stem_004. */
 const five = (stem: string) => Array.from({ length: 5 }, (_, i) => `${DIR}/${stem}_00${i}.ogg`);
+/** The Pixabay whoosh compilation (ponjisk, id 187377) cut into single swings under public/sfx/whoosh:
+ * 01 to 05 are the bright ones, 06 to 15 darker and a little longer. */
+const whoosh = (...n: number[]) => n.map((i) => `/sfx/whoosh/whoosh_${String(i).padStart(2, "0")}.ogg`);
 
 export const SAMPLES: Record<string, string[]> = {
   // combat
-  swing_sharp: one("drawKnife1", "drawKnife2", "drawKnife3"),
-  swing_blunt: one("cloth1", "cloth2", "cloth3", "cloth4"),
+  swing_sharp: whoosh(1, 2, 3, 4, 5),
+  swing_blunt: whoosh(7, 9, 11, 12, 13, 15),
+  swing_bare: one("cloth1", "cloth2", "cloth3", "cloth4"),
   // enemy hits: the plate strikes, heavy and light shuffled together, with a blade's slice on top for sharp edges
   hit_plate: [...five("impactPlate_heavy"), ...five("impactPlate_light")],
   hit_sharp: one("knifeSlice", "knifeSlice2", "chop"),

@@ -289,8 +289,8 @@ interface SyntyWeaponLook {
   kit: KitName;
   node: string;
   twoHanded: boolean;
-  /** The basic swing: blades thrust, everything else cuts the diagonal slice. */
-  swing?: "stab" | "slice";
+  /** The basic swing: blades chop, everything else cuts the diagonal slice. */
+  swing?: "chop" | "slice";
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
    * is held by its handle end (the wands are cut-down staves). */
@@ -298,10 +298,10 @@ interface SyntyWeaponLook {
 }
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
-  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false, swing: "stab" },
-  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false, swing: "stab" },
+  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false, swing: "chop" },
+  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false, swing: "chop" },
   hatchet: { kit: "viking_weapons", node: "Wep_Axe_01", twoHanded: false },
-  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false, swing: "stab" },
+  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false, swing: "chop" },
   war_maul: { kit: "viking_weapons", node: "Wep_Hammer_01", twoHanded: true },
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
@@ -362,7 +362,7 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
   let armed = false;
-  let swing: "stab" | "slice" = "slice";
+  let swing: "chop" | "slice" = "slice";
 
   // Bone rest frames in the character's own space, captured before the first
   // mixer update: pieces authored in place over the bind pose (fur mantles)
@@ -454,10 +454,11 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.attach("r", null);
     }
   };
-  // Blades thrust; axes, hammers and staves cut the one-handed diagonal
-  // slice, two-handers included (the chop read as a windmill on the Viking);
-  // bare hands throw a punch. Skills pick their own clips.
-  hero.attackClip = () => (!armed ? "attackUnarmed" : swing === "stab" ? "attackStab" : "attack1h");
+  // Blades take the one-handed chop; axes, hammers and staves cut the
+  // one-handed diagonal slice, two-handers included (the two-handed chop read
+  // as a windmill on the Viking); bare hands throw a punch. Skills pick their
+  // own clips.
+  hero.attackClip = () => (!armed ? "attackUnarmed" : swing === "chop" ? "attackChop1h" : "attack1h");
   return hero;
 }
 

@@ -160,8 +160,8 @@ describe("Synty hero", () => {
     expect(mantle.position.y).toBeCloseTo(0.2);
     expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(2);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    // A blade thrusts.
-    expect(hero.attackClip()).toBe("attackStab");
+    // A blade chops.
+    expect(hero.attackClip()).toBe("attackChop1h");
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
     // Everything that is not a blade cuts the one-handed diagonal slice, two-handers included.

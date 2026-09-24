@@ -652,18 +652,19 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     const at = rnd(0, 0.05);
     const loud = rnd(0.6, 1.15); // some swings are half-hearted
     if (edge === "sharp") {
-      // a drawn blade's ring rides the synth air: steel through nothing
-      playSample("swing_sharp", { gain: 0.35 * loud, at, jitterCents: 150 });
-      swingSharp(c, p, at, loud);
+      // a bright recorded whoosh: steel through nothing, the synth air under it
+      playSample("swing_sharp", { gain: 0.75 * loud, at, jitterCents: 90 });
+      swingSharp(c, p, at, loud * 0.45);
       return;
     }
     if (edge === "blunt") {
-      // a haft hauled through air: cloth and sleeve over the dark whoosh
-      playSample("swing_blunt", { gain: 0.45 * loud, at, jitterCents: 150 });
-      swingBlunt(c, p, at, loud);
+      // a darker, longer whoosh for a haft hauled through air
+      playSample("swing_blunt", { gain: 0.7 * loud, at, jitterCents: 90 });
+      swingBlunt(c, p, at, loud * 0.5);
       return;
     }
-    playSample("swing_blunt", { gain: 0.35 * loud, at, jitterCents: 150 });
+    // bare hands: sleeve and cloth over the synth air
+    playSample("swing_bare", { gain: 0.35 * loud, at, jitterCents: 150 });
     const kind = Math.random();
     if (kind < 0.4) {
       // full arc — long displaced air

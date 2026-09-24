@@ -13,8 +13,8 @@ export type ClipId =
   | "shamble"
   | "run"
   | "attack1h"
-  /** The one-handed thrust: the hero's swing with a sword or knife in hand. */
-  | "attackStab"
+  /** The one-handed chop: the hero's swing with a sword or knife in hand. */
+  | "attackChop1h"
   /** A flat one-handed cut, the monsters' default swing. */
   | "slash"
   | "attack2h"
@@ -74,7 +74,7 @@ const KAYKIT_CLIPS = {
   shamble: "Walking_D_Skeletons",
   run: "Running_A",
   attack1h: "1H_Melee_Attack_Slice_Diagonal",
-  attackStab: "1H_Melee_Attack_Stab",
+  attackChop1h: "1H_Melee_Attack_Chop",
   slash: "1H_Melee_Attack_Slice_Horizontal",
   attack2h: "2H_Melee_Attack_Chop",
   attackUnarmed: "Unarmed_Melee_Attack_Punch_A",
@@ -123,7 +123,7 @@ const GOBLIN_FALLBACKS: Record<ClipId, string> = {
   shamble: "Walk_F",
   run: "Run_F",
   attack1h: "Idle_Fidget_Swipe",
-  attackStab: "Idle_Fidget_Swipe",
+  attackChop1h: "Idle_Fidget_Swipe",
   slash: "Idle_Fidget_Swipe",
   attack2h: "Idle_Fidget_Swipe",
   attackUnarmed: "Idle_Fidget_Swipe",

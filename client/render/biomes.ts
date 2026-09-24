@@ -32,7 +32,7 @@ export interface BiomePalette {
 }
 
 export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
-  // The moors: bare earth under a cold sky, heather tufts on it, pines in the copses.
+  // The moors: plain faceted dirt under a cold sky, a tuft here and there, pines in the copses.
   moor: {
     bg: 0x0c1310,
     fogNear: 24,
@@ -40,8 +40,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x70806e,
     ambientIntensity: 0.65,
     ground: 0x2a241d,
-    groundTexture: "dirt_pine",
-    groundTint: 0x90b6f2,
+    groundTexture: "dirt",
+    groundTint: 0x696967,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,

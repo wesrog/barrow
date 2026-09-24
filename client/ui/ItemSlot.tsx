@@ -5,8 +5,8 @@ import { RARITY_CSS } from "./ItemHoverDetail";
 import { ItemIcon } from "./ItemIcon";
 
 /**
- * One inventory slot: a plain slate box, borderless, with the rarity as a
- * faint inner glow and the item's icon centred in it. Every grid in the HUD
+ * One inventory slot: a plain slate box with a thin gold edge, the rarity as
+ * a faint inner glow and the item's icon centred in it. Every grid in the HUD
  * builds its cells from this so items look the same everywhere. Items come
  * in two footprints (1x1 for potions, rings, amulets and quest items, 2x2
  * for gear), so icons show at exactly two sizes.
@@ -27,7 +27,11 @@ export function iconColor(item: Item): string {
   return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
 }
 
-/** The slot's box: a slate fill with the rarity as a faint inner glow, no border.
+// The slot edge: the HUD's gold, kept faint so it frames without competing with rarity colour.
+const SLOT_EDGE = "rgba(201,168,76,.32)";
+const SLOT_EDGE_LOCKED = "rgba(138,70,64,.5)";
+
+/** The slot's box: a slate fill with a thin gold edge and the rarity as a faint inner glow.
  * Plain items get no glow at all, so the grid reads as slate with colour only where it means something. */
 export function slotStyle(width: number, height: number, color: string, locked: boolean, plain = false): CSSProperties {
   const glow = locked ? "#8a4640" : plain ? "transparent" : color;
@@ -35,6 +39,7 @@ export function slotStyle(width: number, height: number, color: string, locked: 
     width,
     height,
     boxSizing: "border-box",
+    border: `1px solid ${locked ? SLOT_EDGE_LOCKED : SLOT_EDGE}`,
     borderRadius: 3,
     background: locked
       ? "radial-gradient(ellipse at 50% 40%, #3a2426 0%, #221518 100%)"

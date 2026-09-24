@@ -78,11 +78,11 @@ const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 export { ensureDungeonFloor, ensureSurface } from "./world";
 
 /**
- * Where every arriving player stands first: the Barrow Crypt's first floor,
- * straight into the fight. The camp stays the checkpoint, so death and the
- * stairs up still lead back to safe ground.
+ * Where every arriving player stands first: the camp on the surface. A
+ * dungeon floor works here too (the crypt's first floor was the start for a
+ * while); the camp stays the checkpoint either way.
  */
-export const START_ZONE: ZoneId = dungeonZoneId("barrow", 1);
+export const START_ZONE: ZoneId = "surface";
 
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {

@@ -160,16 +160,19 @@ describe("Synty hero", () => {
     expect(mantle.position.y).toBeCloseTo(0.2);
     expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(2);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    expect(hero.attackClip()).toBe("attack1h");
+    // A blade thrusts.
+    expect(hero.attackClip()).toBe("attackStab");
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
-    // Every basic swing is the one-handed diagonal slice, two-handers included.
+    // Everything that is not a blade cuts the one-handed diagonal slice, two-handers included.
     expect(hero.attackClip()).toBe("attack1h");
     // A two-hander hides the shield even though the slot still holds one.
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();
 
     hero.setEquipment(BARE);
+    // Bare hands throw a punch.
+    expect(hero.attackClip()).toBe("attackUnarmed");
     expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
   });
 

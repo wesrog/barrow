@@ -31,12 +31,27 @@ export const GROUND_TEXTURE_FILES: Record<string, string> = {
   rock_moss: "Rock_Rough_Moss_Red_Texture_01.png",
 };
 
+/** The matching normal maps, where the pack has one: the relief that makes flat dirt read as dirt. */
+export const GROUND_NORMAL_FILES: Record<string, string> = {
+  dirt: "Dirt_Normals_01.png",
+  mud: "Mud_Normals_01.png",
+  rock: "Rock_Normals_01.png",
+  grass: "Grass_Normals_01.png",
+  grass_dark: "Grass_Normals_01.png",
+  needles: "Synty_Alpine_Ground_Pine_normal.png",
+  dirt_pine: "Synty_Alpine_Ground_DirtPine_01_normal.png",
+  rock_moss: "Rock_Rough_Moss_Normals_01.png",
+};
+
 await mkdir(OUT, { recursive: true });
-for (const [name, file] of Object.entries(GROUND_TEXTURE_FILES)) {
-  const out = join(OUT, `${name}.png`);
+let written = 0;
+const copy = async (file: string, out: string, label: string) => {
   // macOS ships sips; anywhere else the full-size copy still works.
   const sips = Bun.spawnSync(["sips", "-Z", String(SIZE), join(SRC, file), "--out", out], { stdout: "ignore", stderr: "ignore" });
   if (sips.exitCode !== 0) await copyFile(join(SRC, file), out);
-  console.log(`${name.padEnd(12)} <- ${file}${sips.exitCode === 0 ? ` (${SIZE}px)` : ""}`);
-}
-console.log(`wrote ${Object.keys(GROUND_TEXTURE_FILES).length} textures to ${OUT}`);
+  console.log(`${label.padEnd(18)} <- ${file}${sips.exitCode === 0 ? ` (${SIZE}px)` : ""}`);
+  written++;
+};
+for (const [name, file] of Object.entries(GROUND_TEXTURE_FILES)) await copy(file, join(OUT, `${name}.png`), name);
+for (const [name, file] of Object.entries(GROUND_NORMAL_FILES)) await copy(file, join(OUT, `${name}_normal.png`), `${name} (normal)`);
+console.log(`wrote ${written} textures to ${OUT}`);

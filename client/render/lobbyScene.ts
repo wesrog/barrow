@@ -129,7 +129,10 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   scene.add(moon.target);
 
   // --- Ground: the moor's turf with a few stones in it ---
-  const ground = new THREE.Mesh(groundGeometry(60, 60), groundMaterial(assets.ground[pal.groundTexture], pal));
+  const ground = new THREE.Mesh(
+    groundGeometry(60, 60, pal.groundTile),
+    groundMaterial(assets.ground[pal.groundTexture], assets.groundNormals[pal.groundTexture], pal),
+  );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);

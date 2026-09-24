@@ -18,6 +18,9 @@ export interface BiomePalette {
    * takes a faceted stone texture instead. */
   groundTexture: GroundTexture;
   groundTint: number;
+  /** Cells per texture repeat and normal-map strength; defaults in ground.ts. */
+  groundTile?: number;
+  groundRelief?: number;
   rock: number;
   pine: number;
   trunk: number;
@@ -42,6 +45,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ground: 0x2a241d,
     groundTexture: "dirt",
     groundTint: 0x696967,
+    groundTile: 4,
+    groundRelief: 0.8,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,

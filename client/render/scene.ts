@@ -573,7 +573,10 @@ export function createScene(
       const batch = baked ? new ScatterBatch(baked, { foliage: pal.foliageTint, stone: pal.stoneTint }) : null;
       const rw = rect.x1 - rect.x0;
       const rh = rect.y1 - rect.y0;
-      const ground = new THREE.Mesh(groundGeometry(rw, rh), groundMaterial(assets.ground[pal.groundTexture], pal));
+      const ground = new THREE.Mesh(
+        groundGeometry(rw, rh, pal.groundTile),
+        groundMaterial(assets.ground[pal.groundTexture], assets.groundNormals[pal.groundTexture], pal),
+      );
       ground.rotation.x = -Math.PI / 2;
       ground.position.set(rect.x0 + rw / 2, 0, rect.y0 + rh / 2);
       ground.receiveShadow = true;

@@ -50,6 +50,18 @@ export const GROUND_TEXTURE_URLS = {
 export type GroundTexture = keyof typeof GROUND_TEXTURE_URLS;
 export type GroundTextures = Partial<Record<GroundTexture, THREE.Texture>>;
 
+/** The normal map beside each ground texture that has one (scripts/ground-textures.ts). */
+export const GROUND_NORMAL_URLS: Partial<Record<GroundTexture, string>> = {
+  grass: "/textures/ground/grass_normal.png",
+  grass_dark: "/textures/ground/grass_dark_normal.png",
+  mud: "/textures/ground/mud_normal.png",
+  dirt: "/textures/ground/dirt_normal.png",
+  rock: "/textures/ground/rock_normal.png",
+  needles: "/textures/ground/needles_normal.png",
+  dirt_pine: "/textures/ground/dirt_pine_normal.png",
+  rock_moss: "/textures/ground/rock_moss_normal.png",
+};
+
 /**
  * One part of a dungeon piece. `scale` and `offset` normalize the Synty node
  * to the footprints the scene was laid out on (floor tiles 2x2 centred, walls
@@ -102,6 +114,8 @@ export interface GameAssets {
   kits: Kits;
   /** Outdoor ground textures; a missing one leaves that biome on its flat colour. */
   ground: GroundTextures;
+  /** Their normal maps, keyed the same way; a missing one just means no relief. */
+  groundNormals: GroundTextures;
 }
 
 /** A named piece of a kit, or null when that kit did not load. */
@@ -164,8 +178,23 @@ export async function loadAssets(): Promise<GameAssets> {
 
   const kitEntries = Object.entries(KIT_URLS) as [KitName, string][];
   const groundEntries = Object.entries(GROUND_TEXTURE_URLS) as [GroundTexture, string][];
+  const normalEntries = Object.entries(GROUND_NORMAL_URLS) as [GroundTexture, string][];
   const textureLoader = new THREE.TextureLoader();
-  const [kitGltfs, groundTextures] = await Promise.all([
+  const loadTiling = (name: string, url: string, colorSpace: string) =>
+    textureLoader
+      .loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url)
+      .then((tex) => {
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        tex.colorSpace = colorSpace;
+        tex.anisotropy = 4;
+        return tex;
+      })
+      .catch(() => {
+        console.warn(`Ground texture ${name} not loaded (${url}); run bun run assets:ground.`);
+        return null;
+      });
+  const [kitGltfs, groundTextures, normalTextures] = await Promise.all([
     Promise.all(
       kitEntries.map(([name, url]) =>
         load(url).catch((err: unknown) => {
@@ -174,28 +203,19 @@ export async function loadAssets(): Promise<GameAssets> {
         }),
       ),
     ),
-    Promise.all(
-      groundEntries.map(([name, url]) =>
-        textureLoader
-          .loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url)
-          .then((tex) => {
-            tex.wrapS = THREE.RepeatWrapping;
-            tex.wrapT = THREE.RepeatWrapping;
-            tex.colorSpace = THREE.SRGBColorSpace;
-            tex.anisotropy = 4;
-            return tex;
-          })
-          .catch(() => {
-            console.warn(`Ground texture ${name} not loaded (${url}); run bun run assets:ground.`);
-            return null;
-          }),
-      ),
-    ),
+    Promise.all(groundEntries.map(([name, url]) => loadTiling(name, url, THREE.SRGBColorSpace))),
+    // Normal maps hold vectors, not colours: they stay linear.
+    Promise.all(normalEntries.map(([name, url]) => loadTiling(`${name} normal`, url, THREE.NoColorSpace))),
   ]);
   const ground: GroundTextures = {};
   groundEntries.forEach(([name], i) => {
     const tex = groundTextures[i];
     if (tex) ground[name] = tex;
+  });
+  const groundNormals: GroundTextures = {};
+  normalEntries.forEach(([name], i) => {
+    const tex = normalTextures[i];
+    if (tex) groundNormals[name] = tex;
   });
   const kits: Kits = {};
   kitEntries.forEach(([name], i) => {
@@ -212,7 +232,7 @@ export async function loadAssets(): Promise<GameAssets> {
     }
     dungeon[name] = piece;
   }
-  return { dungeon, kits, ground };
+  return { dungeon, kits, ground, groundNormals };
 }
 
 export interface CharacterInstance {

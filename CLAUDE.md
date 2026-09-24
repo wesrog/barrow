@@ -42,7 +42,7 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   live in git under `public/sfx/kenney/` (Kenney's CC0 Impact, RPG Audio and Interface packs,
   licence beside them; `client/sfx.test.ts` checks every named file exists) plus a Pixabay whoosh
   compilation cut into single swings under `public/sfx/whoosh/`. Swings that miss carry a
-  bright whoosh (sharp), a darker one (blunt) or cloth (bare hands), landed hits a knife slice or a heavy punch
+  bright whoosh (sharp), a darker one (blunt) or cloth (bare hands), landed hits a plate strike (heavy and light shuffled)
   over a soft body, taking a hit a punch into a body under the grunt, breakables splintering
   wood (`smash`), and the hero's footsteps the carpet set, fired by the rig on each footfall of
   the walk clip (a shin's world height turning from falling to rising, `AnimRig.trackFootfalls`),

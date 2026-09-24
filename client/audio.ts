@@ -718,10 +718,9 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     // The recorded blade or punch carries the hit; the synth keeps the low
     // body and the flesh under it.
     // Every landed blow is a plate strike, heavy or light by the draw; a blade
-    // adds its slice on top, a haft the heavier body under it.
+    // keeps the synth cut over it, a haft the heavier body under it.
     playSample("hit_plate", { gain: 0.85, sat: true });
     if (edge === "sharp") {
-      playSample("hit_sharp", { gain: 0.5, at: 0.01 });
       slash(c, rnd(0.85, 1.2));
     } else {
       playSample("body_heavy", { gain: 0.4, at: 0.01 });
@@ -816,7 +815,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     const p = rnd(0.85, 1.15);
     // wider arc of air before a bigger hit
     noise(c, { dur: 0.1, gain: 0.18, filterFrom: 2400 * p, filterTo: 400 * p, q: 0.7 });
-    playSample("hit_sharp", { gain: 0.9, at: 0.04, sat: true });
+    playSample("hit_plate", { gain: 0.9, at: 0.04, sat: true });
     impact(c, { size: 1.2, p, flesh: true, at: 0.04 });
   },
   crush: (c) => {

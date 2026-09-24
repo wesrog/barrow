@@ -21,9 +21,8 @@ export const SAMPLES: Record<string, string[]> = {
   swing_sharp: whoosh(1, 2, 3, 4, 5),
   swing_blunt: whoosh(7, 9, 11, 12, 13, 15),
   swing_bare: one("cloth1", "cloth2", "cloth3", "cloth4"),
-  // enemy hits: the plate strikes, heavy and light shuffled together, with a blade's slice on top for sharp edges
+  // enemy hits: the plate strikes, heavy and light shuffled together
   hit_plate: [...five("impactPlate_heavy"), ...five("impactPlate_light")],
-  hit_sharp: one("knifeSlice", "knifeSlice2", "chop"),
   hit_blunt: five("impactPunch_heavy"),
   body_soft: five("impactSoft_medium"),
   body_heavy: five("impactSoft_heavy"),

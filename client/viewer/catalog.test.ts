@@ -24,27 +24,23 @@ function fakeAssets(): GameAssets {
   const clip = (name: string) => new THREE.AnimationClip(name, 1, [new THREE.QuaternionKeyframeTrack("Hips.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]);
   const gltf = (scene: THREE.Object3D, animations: THREE.AnimationClip[] = []) => ({ scene, animations }) as unknown as GameAssets["kits"]["goblin_characters"];
   return {
-    characters: { barbarian: gltf(rigged("Barbarian"), [clip("Idle"), clip("Cheer")]) } as unknown as GameAssets["characters"],
-    weapons: {} as GameAssets["weapons"],
     dungeon: {} as GameAssets["dungeon"],
     kits: { goblin_characters: gltf(goblins), goblin_clips: gltf(new THREE.Group(), [clip("Idle_Standing"), clip("Walk_F")]) },
   };
 }
 
 describe("asset catalog", () => {
-  test("lists every KayKit character and kit character except skinned attachments", () => {
+  test("lists every kit character except skinned attachments", () => {
     const entries = buildCatalog(fakeAssets());
-    expect(entries.map((e) => e.id)).toEqual(["kaykit/barbarian", "goblin_war_camp/Warrior_Male_01", "goblin_war_camp/Shaman_01"]);
-    expect(entries[0]!.clips).toEqual(["Cheer", "Idle"]);
-    expect(entries[1]!.clips).toEqual(["Idle_Standing", "Walk_F"]);
-    expect(defaultClip(entries[0]!)).toBe("Idle");
-    expect(defaultClip(entries[1]!)).toBe("Idle_Standing");
+    expect(entries.map((e) => e.id)).toEqual(["goblin_war_camp/Warrior_Male_01", "goblin_war_camp/Shaman_01"]);
+    expect(entries[0]!.clips).toEqual(["Idle_Standing", "Walk_F"]);
+    expect(defaultClip(entries[0]!)).toBe("Idle_Standing");
   });
 
   test("filters by pack and name, and counts clips across the visible set", () => {
     const entries = buildCatalog(fakeAssets());
     expect(filterEntries(entries, "", new Set(["goblin_war_camp"])).length).toBe(2);
-    expect(filterEntries(entries, "sham", new Set(["kaykit", "goblin_war_camp"])).map((e) => e.label)).toEqual(["Shaman 01"]);
+    expect(filterEntries(entries, "sham", new Set(["viking_realm", "goblin_war_camp"])).map((e) => e.label)).toEqual(["Shaman 01"]);
     expect(clipCounts(entries).find((c) => c.name === "Idle_Standing")?.count).toBe(2);
   });
 
@@ -70,19 +66,16 @@ describe("gear options", () => {
     attachments.add(named("Attach_Hat_01"), named("Attach_Backpack_01"));
     assets.kits.goblin_weapons = { scene: weapons, animations: [] } as unknown as GameAssets["kits"]["goblin_weapons"];
     assets.kits.goblin_attachments = { scene: attachments, animations: [] } as unknown as GameAssets["kits"]["goblin_attachments"];
-    assets.weapons = { sword_1handed: new THREE.Group() } as unknown as GameAssets["weapons"];
     return assets;
   }
 
-  test("lists a rig's weapons (shields marked) and attachments; KayKit rigs get KayKit weapons", () => {
+  test("lists a rig's weapons (shields marked) and its pack's attachments", () => {
     const assets = armed();
-    const [barbarian, warrior] = buildCatalog(assets);
+    const [warrior] = buildCatalog(assets);
     const held = heldOptions(assets, warrior!);
     expect(held.map((o) => o.id)).toEqual(["goblin_weapons/Wep_Sword_01", "goblin_weapons/Wep_Shield_01"]);
     expect(held.map((o) => o.kind)).toEqual(["weapon", "shield"]);
     expect(wornOptions(assets, warrior!).map((o) => o.label)).toEqual(["Hat 01", "Backpack 01"]);
-    expect(heldOptions(assets, barbarian!).map((o) => o.id)).toEqual(["kaykit/sword_1handed"]);
-    expect(wornOptions(assets, barbarian!)).toEqual([]);
     expect(warrior!.rest.size).toBeGreaterThan(0);
   });
 

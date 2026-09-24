@@ -125,8 +125,6 @@ function fakeHeroAssets(): GameAssets {
   const gltf = (scene: THREE.Object3D, animations: THREE.AnimationClip[] = []) =>
     ({ scene, animations }) as unknown as GameAssets["kits"]["viking_characters"];
   return {
-    characters: {} as GameAssets["characters"],
-    weapons: {} as GameAssets["weapons"],
     dungeon: {} as GameAssets["dungeon"],
     kits: {
       viking_characters: gltf(characters),
@@ -204,12 +202,9 @@ describe("Synty hero", () => {
     expect(hero.clipNames()).toContain("Run_F");
   });
 
-  test("falls back to the KayKit barbarian without the kits", () => {
+  test("says which kit is missing instead of drawing nothing", () => {
     const assets = fakeHeroAssets();
     assets.kits = {};
-    const barbarian = new THREE.Group();
-    barbarian.add(new THREE.Object3D());
-    assets.characters = { barbarian: { scene: barbarian, animations: [] } } as unknown as GameAssets["characters"];
-    expect(makeHeroModelRig(assets, "witch").family).toBe("kaykit");
+    expect(() => makeHeroModelRig(assets, "witch")).toThrow(/viking_characters/);
   });
 });

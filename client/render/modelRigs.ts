@@ -5,19 +5,15 @@ import type { Item } from "../../sim/items/generate";
 import type { Klass } from "../../sim/skills";
 import {
   findNode,
-  instantiate,
   instantiateKit,
   cloneProp, kitMeshes, kitNode,
   type CharacterInstance,
-  type CharacterName,
   type GameAssets,
   type KitName,
   type Kits,
-  type WeaponName,
 } from "./models";
 import { captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement } from "./gear";
 import {
-  KAYKIT_RIG,
   SYNTY_DUNGEON_RIG,
   SYNTY_GOBLIN_RIG,
   SYNTY_HUMAN_RIG,
@@ -203,61 +199,6 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
 const WEAPON_GLOW = 0.5;
 
 // ---------------------------------------------------------------------------
-// KayKit hero (fallback): the chibi barbarian with box-built gear overlays.
-
-/** Weapon base id -> KayKit weapon model + whether it swings two-handed.
- *  `scale` shrinks a model that doubles for a smaller weapon (a staff as a wand). */
-const KAYKIT_WEAPONS: Record<string, { model: WeaponName; twoHanded: boolean; scale?: number }> = {
-  rusted_blade: { model: "sword_1handed", twoHanded: false },
-  hatchet: { model: "axe_1handed", twoHanded: false },
-  twin_fang: { model: "dagger", twoHanded: false },
-  war_maul: { model: "axe_2handed", twoHanded: true },
-  grave_scythe: { model: "sword_2handed", twoHanded: true },
-  gnarled_staff: { model: "skeleton_staff", twoHanded: true },
-  ember_staff: { model: "skeleton_staff", twoHanded: true },
-  wyrmwood_staff: { model: "skeleton_staff", twoHanded: true },
-  bone_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  willow_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  hexwood_wand: { model: "skeleton_staff", twoHanded: false, scale: 0.5 },
-  dire_flail: { model: "axe_2handed", twoHanded: true },
-  moon_glaive: { model: "axe_2handed", twoHanded: true },
-  kingsbane: { model: "sword_1handed", twoHanded: false },
-};
-
-/**
- * Armor meshes sized for the KayKit skeleton, attached straight to bones.
- * The chibi head is huge — ~1.08 wide, top at y+0.95 above the head bone —
- * so helms must be dome radius ~0.6+ to sit outside the skull.
- */
-function kaykitHelm(baseId: string): THREE.Group {
-  const g = new THREE.Group();
-  if (baseId === "bone_visage") {
-    const skull = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), flatMat(0xd9d4c4, 0.6));
-    skull.scale.y = 0.85;
-    skull.position.y = 0.5;
-    skull.castShadow = true;
-    g.add(skull);
-    for (const side of [-1, 1]) {
-      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 4), flatMat(0xc4bca8, 0.7));
-      horn.position.set(side * 0.56, 0.78, 0);
-      horn.rotation.z = -side * 0.8;
-      horn.castShadow = true;
-      g.add(horn);
-    }
-  } else {
-    const dome = new THREE.Mesh(new THREE.IcosahedronGeometry(0.62, 0), flatMat(0x7a8086, 0.5));
-    dome.scale.y = 0.8;
-    dome.position.y = 0.55;
-    dome.castShadow = true;
-    // A band ringing the dome's lower edge, not a hat brim across the face.
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.63, 0.16, 8), flatMat(0x5a6066, 0.6));
-    brim.position.y = 0.34;
-    brim.castShadow = true;
-    g.add(dome, brim);
-  }
-  return g;
-}
-
 const CHEST_LOOKS: Record<string, { color: number; metal: boolean; big: boolean }> = {
   rag_tunic: { color: 0x6a5a44, metal: false, big: false },
   studded_jerkin: { color: 0x4a3a2c, metal: false, big: false },
@@ -284,124 +225,6 @@ function visibleOffhand(eq: Equipment): Item | null {
   return eq.weapon && isTwoHanded(eq.weapon) ? null : eq.shield;
 }
 
-function makeKayKitHero(assets: GameAssets): HeroModelRig {
-  const spec = KAYKIT_RIG;
-  const inst = instantiate(assets.characters.barbarian, spec);
-  // Low ref speed = fast cadence: at 4.5 cells/s the run cycle plays ~1.8x,
-  // matching feet to the ground actually covered.
-  const rig = new AnimRig(inst, { ...spec, walkSpeedRef: 2.5 }, "idle", "run");
-  rig.group.scale.setScalar(0.72);
-  let twoHanded = false;
-
-  // The model ships with prop meshes (axes, shield, a beer mug) — hide them,
-  // our equipment drives what shows.
-  for (const prop of [
-    "1H_Axe",
-    "1H_Axe_Offhand",
-    "2H_Axe",
-    "Mug",
-    "Barbarian_Round_Shield",
-    "Barbarian_Hat",
-  ]) {
-    const node = rig.group.getObjectByName(prop);
-    if (node) node.visible = false;
-  }
-  // The round shield stays part of the skinned model (so it tracks the left
-  // arm); equipping any shield base un-hides it. Clone its material so rarity
-  // glow doesn't bleed onto the shared character atlas.
-  const shieldProp = rig.group.getObjectByName("Barbarian_Round_Shield");
-  shieldProp?.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-      child.material = child.material.clone();
-    }
-  });
-
-  const gear: THREE.Object3D[] = [];
-  const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
-    const bone = rig.bone(role);
-    if (!bone) return;
-    applyRarityGlow(mesh, item);
-    bone.add(mesh);
-    gear.push(mesh);
-  };
-
-  const hero = rig as unknown as HeroModelRig;
-  hero.setEquipment = (eq: Equipment) => {
-    for (const g of gear) g.parent?.remove(g);
-    gear.length = 0;
-
-    // Only an equipped helm puts anything on the head.
-    if (eq.helm) addGear("head", kaykitHelm(eq.helm.baseId), eq.helm);
-
-    // Chest: pauldrons on the shoulders, a plate over the chest bone
-    if (eq.chest) {
-      const look = chestLook(eq.chest.baseId);
-      const size = look.big ? 0.34 : 0.26;
-      for (const side of ["upperArmL", "upperArmR"] as const) {
-        const pauldron = new THREE.Mesh(
-          new THREE.BoxGeometry(size, size * 0.7, size),
-          flatMat(look.color, look.metal ? 0.45 : 0.75),
-        );
-        pauldron.castShadow = true;
-        pauldron.position.y = 0.06;
-        addGear(side, pauldron, eq.chest);
-      }
-      const plate = new THREE.Mesh(
-        new THREE.BoxGeometry(0.52, 0.4, 0.34),
-        flatMat(look.color, look.metal ? 0.45 : 0.75),
-      );
-      plate.position.set(0, 0.1, 0.05);
-      addGear("chest", plate, eq.chest);
-    }
-
-    // Boots: greaves on the lower legs
-    if (eq.boots) {
-      const color = BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530;
-      for (const side of ["lowerLegL", "lowerLegR"] as const) {
-        const greave = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.3, 0.22), flatMat(color, 0.7));
-        greave.castShadow = true;
-        greave.position.y = -0.12;
-        addGear(side, greave, eq.boots);
-      }
-    }
-    // Orbs share the shield slot but float over the off hand instead of
-    // un-hiding the skinned shield prop.
-    const offhand = visibleOffhand(eq);
-    const offhandOrb = offhand && isOrb(offhand) ? offhand : null;
-    if (shieldProp) {
-      shieldProp.visible = !!offhand && !offhandOrb;
-      const glow = offhand && !offhandOrb ? RARITY_GLOW[offhand.rarity] : undefined;
-      shieldProp.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-          child.material.emissive.setHex(glow ?? 0x000000);
-          child.material.emissiveIntensity = glow !== undefined ? 0.35 : 0;
-        }
-      });
-    }
-    if (offhandOrb) {
-      const model = makeOrbModel();
-      applyRarityGlow(model, offhandOrb);
-      rig.attach("l", model);
-    } else {
-      rig.attach("l", null);
-    }
-
-    if (eq.weapon) {
-      const look = KAYKIT_WEAPONS[eq.weapon.baseId] ?? KAYKIT_WEAPONS.rusted_blade!;
-      twoHanded = look.twoHanded;
-      const model = cloneProp(assets.weapons[look.model]);
-      if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
-      applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
-      rig.attach("r", model);
-    } else {
-      twoHanded = false;
-      rig.attach("r", null);
-    }
-  };
-  hero.attackClip = () => (twoHanded ? "attack2h" : "attack1h");
-  return hero;
-}
-
 // ---------------------------------------------------------------------------
 // Synty hero: a Viking Realm human on the goblin locomotion clips, dressed in
 // Viking weapons, shields, and helmets from the kits.
@@ -412,7 +235,8 @@ const SYNTY_HERO_NODES: Record<Klass, string> = {
   witch: "Leader_Female_01",
 };
 
-/** The KayKit barbarian stands 2.17 units bare-headed before his 0.72 scale; Synty humans stand 1.8. */
+/** Heroes stand 1.56 units in the scene (2.17 x 0.72, the height everything was
+ * tuned against); Synty humans are authored 1.8 tall. */
 const SYNTY_HERO_SCALE = (2.17 * 0.72) / 1.8;
 
 /** Clip kits each Synty rig draws on, most wanted first (see rigSpec). */
@@ -595,23 +419,24 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   return hero;
 }
 
-/**
- * The player's rig: a Viking from the Synty kits when they loaded, else the
- * KayKit barbarian. Both answer the same semantic clips and equipment calls.
- */
+/** The player's rig: a Viking from the kits, dressed by equipment. */
 export function makeHeroModelRig(assets: GameAssets, klass: Klass): HeroModelRig {
   const inst = instantiateKit(assets.kits, "viking_characters", SYNTY_HERO_NODES[klass], CLIP_KITS.human, SYNTY_HUMAN_RIG);
-  return inst ? makeSyntyHero(inst, assets.kits) : makeKayKitHero(assets);
+  if (!inst) throw new Error("The hero needs the viking_characters kit and a clip kit; run bun run assets:synty.");
+  return makeSyntyHero(inst, assets.kits);
 }
 
 // ---------------------------------------------------------------------------
 // Monsters and NPCs
 
-/** A monster's look in one model family. */
+/** How a monster type is drawn: which kit character on which rig, its gaits, size, and prop. */
 interface MonsterLook {
+  rig: SyntyRigName;
+  kit: KitName;
+  node: string;
   idle: ClipId;
   walk: ClipId;
-  /** Uniform scale bringing the model to the type's in-game height. */
+  /** Uniform scale bringing the model to the type's in-game height (Synty humanoids are 1.8 tall). */
   scale: number;
   /** Prop held in the right hand, if any. */
   weapon?: string;
@@ -619,76 +444,26 @@ interface MonsterLook {
 }
 
 /**
- * Monster type -> how each family draws it. KayKit skeletons are the
- * fallback; with the Synty kits present the crypt fills with Dungeon Pack
- * undead and Goblin War Camp raiders. Scales match the KayKit heights: KayKit
- * characters stand 2.15-2.6 units before their look's scale, Synty humanoids
- * 1.8, the troll 1.82, the Dungeon Pack skeletons 1.8-1.95 and ghosts 1.8-1.9.
+ * Monster type -> look: Dungeon Pack undead and Goblin War Camp raiders.
+ * Scales keep the heights the game was tuned at (the hero stands 1.56).
  */
-interface MonsterLooks {
-  kaykit: MonsterLook & { model: CharacterName; weapon?: WeaponName };
-  synty?: MonsterLook & { rig: SyntyRigName; kit: KitName; node: string };
-}
-
-export const MONSTER_LOOKS: Record<string, MonsterLooks> = {
-  shambler: {
-    kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 0.62, weapon: "skeleton_blade" },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Slave_01", idle: "idle", walk: "shamble", scale: 0.89, weapon: "Wep_BrokenSword_01" },
-  },
-  skitter: {
-    kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.45, tint: 0x8a5a5a },
-    synty: { rig: "goblin", kit: "goblin_characters", node: "Prisoner_02", idle: "idle", walk: "run", scale: 0.54, tint: 0x8a5a5a },
-  },
-  gravespit: {
-    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.6, weapon: "skeleton_staff", tint: 0x9a8ab8 },
-    synty: { rig: "goblin", kit: "goblin_characters", node: "Shaman_01", idle: "idle", walk: "walk", scale: 0.87, weapon: "Wep_Staff_01", tint: 0x9a8ab8 },
-  },
-  fen_howler: {
-    kaykit: { model: "skeleton_rogue", idle: "idle", walk: "run", scale: 0.55, tint: 0x6a8a4a },
-    synty: { rig: "goblin", kit: "goblin_characters", node: "Ranger_01", idle: "idle", walk: "run", scale: 0.7, tint: 0x6a8a4a },
-  },
-  bog_maw: {
-    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.78, weapon: "skeleton_staff", tint: 0x5a7a52 },
-    synty: { rig: "goblin", kit: "goblin_characters", node: "Cook_01", idle: "idle", walk: "walk", scale: 1.13, weapon: "Wep_Cleaver_01", tint: 0x5a7a52 },
-  },
-  cairn_wight: {
-    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.9, weapon: "skeleton_axe", tint: 0xd8d2c0 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.18, weapon: "Wep_Straightsword_01", tint: 0xd8d2c0 },
-  },
-  barrow_lord: {
-    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.05, weapon: "skeleton_axe", tint: 0xc9b880 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.38, weapon: "Wep_Ornate_GreatAxe_01", tint: 0xc9b880 },
-  },
-  cinder_shade: {
-    kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.5, tint: 0xc45a30 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_01", idle: "idle", walk: "run", scale: 0.57, tint: 0xc45a30 },
-  },
-  ash_revenant: {
-    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.8, weapon: "skeleton_blade", tint: 0x8a4a3a },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Soldier_02", idle: "idleCombat", walk: "walk", scale: 1.15, weapon: "Wep_HandAxe_01", tint: 0x8a4a3a },
-  },
-  ember_hulk: {
-    kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 1.0, tint: 0xd06428 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Rock_Golem", idle: "idle", walk: "shamble", scale: 1.41, tint: 0xd06428 },
-  },
-  veil_screamer: {
-    kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.68, weapon: "skeleton_staff", tint: 0x8a6ab8 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_02", idle: "idle", walk: "walk", scale: 0.98, tint: 0x8a6ab8 },
-  },
-  crown_sentinel: {
-    kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.0, weapon: "skeleton_axe", tint: 0x6a7ab0 },
-    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.32, weapon: "Wep_Ornate_Sword_01", tint: 0x6a7ab0 },
-  },
+export const MONSTER_LOOKS: Record<string, MonsterLook> = {
+  shambler: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Slave_01", idle: "idle", walk: "shamble", scale: 0.89, weapon: "Wep_BrokenSword_01" },
+  skitter: { rig: "goblin", kit: "goblin_characters", node: "Prisoner_02", idle: "idle", walk: "run", scale: 0.54, tint: 0x8a5a5a },
+  gravespit: { rig: "goblin", kit: "goblin_characters", node: "Shaman_01", idle: "idle", walk: "walk", scale: 0.87, weapon: "Wep_Staff_01", tint: 0x9a8ab8 },
+  fen_howler: { rig: "goblin", kit: "goblin_characters", node: "Ranger_01", idle: "idle", walk: "run", scale: 0.7, tint: 0x6a8a4a },
+  bog_maw: { rig: "goblin", kit: "goblin_characters", node: "Cook_01", idle: "idle", walk: "walk", scale: 1.13, weapon: "Wep_Cleaver_01", tint: 0x5a7a52 },
+  cairn_wight: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.18, weapon: "Wep_Straightsword_01", tint: 0xd8d2c0 },
+  barrow_lord: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.38, weapon: "Wep_Ornate_GreatAxe_01", tint: 0xc9b880 },
+  cinder_shade: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_01", idle: "idle", walk: "run", scale: 0.57, tint: 0xc45a30 },
+  ash_revenant: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Soldier_02", idle: "idleCombat", walk: "walk", scale: 1.15, weapon: "Wep_HandAxe_01", tint: 0x8a4a3a },
+  ember_hulk: { rig: "dungeon", kit: "dungeon_characters", node: "Rock_Golem", idle: "idle", walk: "shamble", scale: 1.41, tint: 0xd06428 },
+  veil_screamer: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_02", idle: "idle", walk: "walk", scale: 0.98, tint: 0x8a6ab8 },
+  crown_sentinel: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.32, weapon: "Wep_Ornate_Sword_01", tint: 0x6a7ab0 },
   // The camp vendor: an old knight minding the stall, or a Viking villager.
-  __vendor__: {
-    kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.72 },
-    synty: { rig: "human", kit: "viking_characters", node: "Peasant_Male_01", idle: "idle", walk: "walk", scale: 0.98 },
-  },
+  __vendor__: { rig: "human", kit: "viking_characters", node: "Peasant_Male_01", idle: "idle", walk: "walk", scale: 0.98 },
   // The camp healer: a pale-robed knight keeping a quiet shrine.
-  __healer__: {
-    kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.68, tint: 0xf0e6c8 },
-    synty: { rig: "human", kit: "viking_characters", node: "Peasant_Female_01", idle: "idle", walk: "walk", scale: 0.93, tint: 0xf0e6c8 },
-  },
+  __healer__: { rig: "human", kit: "viking_characters", node: "Peasant_Female_01", idle: "idle", walk: "walk", scale: 0.93, tint: 0xf0e6c8 },
 };
 
 function tintRig(group: THREE.Object3D, tint: number): void {
@@ -700,23 +475,13 @@ function tintRig(group: THREE.Object3D, tint: number): void {
 }
 
 export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & Partial<ModelRig> {
-  const looks = MONSTER_LOOKS[typeId];
-  if (!looks) return makeProceduralRig(typeId); // tomb_bloat keeps its custom blob
-
-  const synty = looks.synty;
-  const inst = synty && instantiateKit(assets.kits, synty.kit, synty.node, CLIP_KITS[synty.rig], RIG_SPECS[synty.rig]);
-  if (synty && inst) {
-    const rig = new AnimRig(inst, RIG_SPECS[synty.rig], synty.idle, synty.walk);
-    rig.group.scale.setScalar(synty.scale);
-    if (synty.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[synty.rig], synty.weapon));
-    if (synty.tint !== undefined) tintRig(rig.group, synty.tint);
-    return rig;
-  }
-
-  const look = looks.kaykit;
-  const rig = new AnimRig(instantiate(assets.characters[look.model], KAYKIT_RIG), KAYKIT_RIG, look.idle, look.walk);
+  const look = MONSTER_LOOKS[typeId];
+  if (!look) return makeProceduralRig(typeId); // tomb_bloat keeps its custom blob
+  const inst = instantiateKit(assets.kits, look.kit, look.node, CLIP_KITS[look.rig], RIG_SPECS[look.rig]);
+  if (!inst) throw new Error(`Monster "${typeId}" needs the ${look.kit} kit and a clip kit; run bun run assets:synty.`);
+  const rig = new AnimRig(inst, RIG_SPECS[look.rig], look.idle, look.walk);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", cloneProp(assets.weapons[look.weapon]));
+  if (look.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[look.rig], look.weapon));
   if (look.tint !== undefined) tintRig(rig.group, look.tint);
   return rig;
 }

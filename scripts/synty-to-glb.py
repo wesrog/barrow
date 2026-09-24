@@ -104,7 +104,7 @@ KAYKIT_CLIPS = [
     "Hit_A", "Hit_B", "Death_A", "Death_B", "Lie_Idle", "Sit_Floor_Idle",
     "Skeletons_Awaken_Standing", "Spawn_Ground",
 ]
-KAYKIT_SOURCES = ["public/models/characters/Skeleton_Warrior.glb", "public/models/characters/Barbarian.glb"]
+KAYKIT_SOURCES = ["assets-src/kaykit/characters/Skeleton_Warrior.glb", "assets-src/kaykit/characters/Barbarian.glb"]
 
 # KayKit's chibi holds its short arms out at about 27 degrees below horizontal
 # while standing; on a human that reads as a zombie stance. Calm clips get the

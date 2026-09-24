@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { CLIP_KITS, MONSTER_LOOKS, WEAPON_KITS } from "./modelRigs";
 import { KIT_URLS, type KitName } from "./models";
-import { KAYKIT_RIG, SYNTY_DUNGEON_RIG, SYNTY_GOBLIN_RIG, SYNTY_HUMAN_RIG, type ClipId, type RigSpec } from "./rigSpec";
+import { SYNTY_DUNGEON_RIG, SYNTY_GOBLIN_RIG, SYNTY_HUMAN_RIG, type ClipId, type RigSpec } from "./rigSpec";
 
 const CLIP_IDS: ClipId[] = [
   "idle", "idleCombat", "walk", "shamble", "run", "attack1h", "slash", "attack2h", "attackUnarmed",
@@ -17,9 +17,8 @@ function candidates(spec: RigSpec, id: ClipId): string[] {
 }
 
 describe("rig specs", () => {
-  test("every family answers every clip id", () => {
+  test("every rig answers every clip id", () => {
     for (const id of CLIP_IDS) {
-      expect(KAYKIT_RIG.clips[id]).toBeTruthy();
       for (const spec of Object.values(SYNTY_SPECS)) expect(candidates(spec, id).length).toBeGreaterThan(0);
     }
   });

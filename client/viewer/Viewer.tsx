@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { gripInto, heldModel, wearPiece, wornPlacement } from "../render/gear";
-import { cloneProp, findNode, loadAssets, type GameAssets, type WeaponName } from "../render/models";
+import { findNode, loadAssets, type GameAssets } from "../render/models";
 import { display, mono } from "../ui/fonts";
 import { loadArtManifest, pieceFile, prettyName, setCounts, TINTS, VARIANTS, type ArtManifest, type Variant } from "./art";
 import { ArtGallery } from "./ArtGallery";
@@ -31,7 +31,7 @@ import {
  * grip), dress it in its pack's attachments, and fire its attack clips.
  */
 
-const ALL_PACKS: PackId[] = ["kaykit", "goblin_war_camp", "viking_realm", "dungeon_pack"];
+const ALL_PACKS: PackId[] = ["goblin_war_camp", "viking_realm", "dungeon_pack"];
 const IDLE = "(idle)";
 
 /**
@@ -65,10 +65,7 @@ function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption
   if (!option) return;
   const socket = slot === "r" ? live.entry.inst.handSlotR : live.entry.inst.handSlotL;
   if (!socket) return;
-  const obj =
-    option.kit === "kaykit"
-      ? cloneProp(assets.weapons[option.node as WeaponName])
-      : heldModel(assets.kits, option.kit, option.node);
+  const obj = heldModel(assets.kits, option.kit, option.node);
   if (!obj) return;
   gripInto(socket, live.entry.spec.grip[slot], obj);
   live.held[slot] = { id: option.id, obj };
@@ -83,7 +80,6 @@ function wearItem(assets: GameAssets, live: Live, option: GearOption, on: boolea
     live.worn.delete(option.id);
     return;
   }
-  if (option.kit === "kaykit") return;
   const placement = wornPlacement(assets.kits, option.kit, option.node);
   const bone = placement && findNode(live.entry.inst.group, live.entry.spec.bones[placement.role]);
   if (!placement || !bone) return;

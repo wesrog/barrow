@@ -193,8 +193,8 @@ export function createScene(
       cur.pal.ambientIntensity + (other.pal.ambientIntensity - cur.pal.ambientIntensity) * t;
   };
 
-  // --- Environment from the dungeon piece set (Synty stand-ins when the kits are
-  // present, else KayKit; both at KayKit footprints): brick facades over dark cores ---
+  // --- Environment from the dungeon piece set (Synty kit pieces normalized to
+  // the footprints the layout was tuned on): brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
   const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
 

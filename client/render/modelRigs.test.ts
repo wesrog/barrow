@@ -1,115 +1,53 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
-import { makeHeroModelRig, makeMonsterModelRig } from "./modelRigs";
+import { makeMonsterModelRig, MONSTER_LOOKS } from "./modelRigs";
 import type { GameAssets } from "./models";
-import type { Item } from "../../sim/items/generate";
 
-/** Minimal fake assets: one rigged-ish character with a hand slot, one weapon. */
+/** A Dungeon Pack kit the way the loader hands it over: one rigged skeleton, a sword kit, a clip kit. */
 function fakeAssets(): GameAssets {
-  const scene = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0xdddddd }),
-  );
-  // GLTFLoader would strip the "." from the authored "handslot.r".
-  const slot = new THREE.Object3D();
-  slot.name = "handslotr";
-  scene.add(body, slot);
-  const gltf = { scene, animations: [] } as unknown as GameAssets["characters"]["skeleton_warrior"];
+  const character = new THREE.Object3D();
+  character.name = "Skeleton_Slave_01";
+  const bones: Record<string, THREE.Bone> = {};
+  for (const name of ["root", "pelvis", "spine_02", "head", "hand_r", "hand_l"]) {
+    bones[name] = new THREE.Bone();
+    bones[name]!.name = name;
+  }
+  bones.root!.add(bones.pelvis!);
+  bones.pelvis!.add(bones.spine_02!);
+  bones.spine_02!.add(bones.head!, bones.hand_r!, bones.hand_l!);
+  const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+  mesh.add(bones.root!);
+  mesh.bind(new THREE.Skeleton(Object.values(bones)));
+  character.add(mesh);
+  const characters = new THREE.Group();
+  characters.add(character);
 
-  const blade = new THREE.Group();
-  blade.add(
-    new THREE.Mesh(
-      new THREE.BoxGeometry(0.1, 1, 0.1),
-      new THREE.MeshStandardMaterial({ color: 0x888888 }),
-    ),
-  );
+  const sword = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1, 0.1).translate(0, 0.4, 0), new THREE.MeshStandardMaterial({ color: 0x888888 }));
+  sword.name = "Wep_BrokenSword_01";
+  const weapons = new THREE.Group();
+  weapons.add(sword);
 
+  const clip = new THREE.AnimationClip("Idle", 1, [new THREE.QuaternionKeyframeTrack("pelvis.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]);
+  const gltf = (scene: THREE.Object3D, animations: THREE.AnimationClip[] = []) =>
+    ({ scene, animations }) as unknown as GameAssets["kits"]["dungeon_characters"];
   return {
-    characters: { skeleton_warrior: gltf } as GameAssets["characters"],
-    weapons: { skeleton_blade: blade } as GameAssets["weapons"],
     dungeon: {} as GameAssets["dungeon"],
-    kits: {},
+    kits: {
+      dungeon_characters: gltf(characters),
+      dungeon_weapons: gltf(weapons),
+      dungeon_kaykit_clips: gltf(new THREE.Group(), [clip]),
+    },
   };
 }
 
 function weaponMaterials(group: THREE.Object3D): THREE.Material[] {
-  const slot = group.getObjectByName("handslotr")!;
+  const hand = group.getObjectByName("hand_r")!;
   const mats: THREE.Material[] = [];
-  slot.traverse((obj) => {
-    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) {
-      mats.push(obj.material);
-    }
+  hand.traverse((obj) => {
+    if (obj instanceof THREE.Mesh && obj.material instanceof THREE.Material) mats.push(obj.material);
   });
   return mats;
 }
-
-/** Barbarian-shaped fake: the round shield prop ships as a child of handslot.l,
- * exactly as in the real GLB. */
-function fakeBarbarianAssets(): GameAssets {
-  const scene = new THREE.Group();
-  const slotL = new THREE.Object3D();
-  slotL.name = "handslotl";
-  const shield = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.1),
-    new THREE.MeshStandardMaterial({ color: 0x996633 }),
-  );
-  shield.name = "Barbarian_Round_Shield";
-  slotL.add(shield);
-  const slotR = new THREE.Object3D();
-  slotR.name = "handslotr";
-  scene.add(slotL, slotR);
-  const gltf = { scene, animations: [] } as unknown as GameAssets["characters"]["barbarian"];
-  return {
-    characters: { barbarian: gltf } as GameAssets["characters"],
-    weapons: {} as GameAssets["weapons"],
-    dungeon: {} as GameAssets["dungeon"],
-    kits: {},
-  };
-}
-
-function item(baseId: string, name: string): Item {
-  return { baseId, rarity: "normal", name, affixIds: [], mods: [], ilvl: 1 };
-}
-
-describe("makeHeroModelRig shield slot", () => {
-  test("equipping a shield keeps the round-shield prop attached and visible", () => {
-    const hero = makeHeroModelRig(fakeBarbarianAssets(), "warrior");
-    const eq = {
-      weapon: null,
-      shield: item("plank_buckler", "Plank Buckler"),
-      helm: null,
-      chest: null,
-      boots: null,
-      amulet: null,
-      ring1: null,
-      ring2: null,
-    };
-    hero.setEquipment(eq);
-    const shield = hero.group.getObjectByName("Barbarian_Round_Shield");
-    expect(shield).toBeTruthy();
-    expect(shield!.visible).toBe(true);
-  });
-
-  test("unequipping the shield hides the prop without detaching it", () => {
-    const hero = makeHeroModelRig(fakeBarbarianAssets(), "warrior");
-    const bare = {
-      weapon: null,
-      shield: null,
-      helm: null,
-      chest: null,
-      boots: null,
-      amulet: null,
-      ring1: null,
-      ring2: null,
-    };
-    hero.setEquipment({ ...bare, shield: item("plank_buckler", "Plank Buckler") });
-    hero.setEquipment(bare);
-    const shield = hero.group.getObjectByName("Barbarian_Round_Shield");
-    expect(shield).toBeTruthy();
-    expect(shield!.visible).toBe(false);
-  });
-});
 
 describe("makeMonsterModelRig", () => {
   test("two monsters of the same type don't share weapon materials (hit flash must not leak)", () => {
@@ -119,8 +57,18 @@ describe("makeMonsterModelRig", () => {
     const matsA = weaponMaterials(a.group);
     const matsB = weaponMaterials(b.group);
     expect(matsA.length).toBeGreaterThan(0);
-    for (const mat of matsA) {
-      expect(matsB).not.toContain(mat);
-    }
+    for (const mat of matsA) expect(matsB).not.toContain(mat);
+  });
+
+  test("scales the model to the type's look and names the missing kit otherwise", () => {
+    const rig = makeMonsterModelRig(fakeAssets(), "shambler");
+    expect(rig.group.scale.x).toBeCloseTo(MONSTER_LOOKS.shambler!.scale);
+    expect(() => makeMonsterModelRig({ dungeon: {} as GameAssets["dungeon"], kits: {} }, "shambler")).toThrow(/dungeon_characters/);
+  });
+
+  test("types without a look keep their procedural rig", () => {
+    const rig = makeMonsterModelRig(fakeAssets(), "tomb_bloat");
+    expect(rig.group).toBeTruthy();
+    expect(MONSTER_LOOKS.tomb_bloat).toBeUndefined();
   });
 });

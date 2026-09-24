@@ -1,7 +1,7 @@
 /**
  * What the scene asks a character rig to do, independent of which model set
  * the rig was built from. Each model family maps these to its own clip names,
- * bone names, and weapon grip so swapping KayKit for Synty is a data change.
+ * bone names, and weapon grip so swapping a model set is a data change.
  */
 
 /** Semantic animation ids. A family missing one plays nothing for it. */
@@ -44,7 +44,7 @@ export interface Grip {
   position: [number, number, number];
 }
 
-export type RigFamily = "kaykit" | "synty";
+export type RigFamily = "synty";
 
 /**
  * Clip names for a semantic id, most wanted first. Synty rigs draw on more
@@ -64,7 +64,7 @@ export interface RigSpec {
   walkSpeedRef: number;
 }
 
-/** The KayKit suite's names, shared by the KayKit rig and its retargeted copies. */
+/** The KayKit suite's clip names, as retargeted onto the Synty rigs (kaykit_clips kits). */
 const KAYKIT_CLIPS = {
   idle: "Idle",
   idleCombat: "Idle_Combat",
@@ -85,30 +85,6 @@ const KAYKIT_CLIPS = {
   taunt: "Taunt",
   death: "Death_A",
 } as const satisfies Record<ClipId, string>;
-
-/** KayKit Adventurers/Skeletons: chibi rigs with handslot sockets and ~80 baked clips. */
-export const KAYKIT_RIG: RigSpec = {
-  family: "kaykit",
-  clips: KAYKIT_CLIPS,
-  bones: {
-    handR: "handslot.r",
-    handL: "handslot.l",
-    head: "head",
-    chest: "chest",
-    hips: "hips",
-    upperArmL: "upperarm.l",
-    upperArmR: "upperarm.r",
-    lowerLegL: "lowerleg.l",
-    lowerLegR: "lowerleg.r",
-  },
-  // KayKit fits main-hand props yaw-flipped 180° in handslot.r (see the
-  // bundled 1H_Axe/1H_Sword nodes); without this an axe head faces backward.
-  grip: {
-    r: { rotation: [0, Math.PI, 0], position: [0, 0.033, 0] },
-    l: { rotation: [0, 0, 0], position: [0, 0.033, 0] },
-  },
-  walkSpeedRef: 3,
-};
 
 /**
  * Synty's humanoid rig (Goblin War Camp, Viking Realm). Bones and grip were

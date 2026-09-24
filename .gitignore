@@ -3,8 +3,10 @@ dist/
 *.local
 .DS_Store
 
-# Licensed asset sources and their converted output (Synty EULA: not redistributable)
-assets-src/
+# Licensed asset sources and their converted output (Synty EULA: not redistributable).
+# assets-src/kaykit is CC0 and stays: the clip retarget reads its GLBs.
+assets-src/*
+!assets-src/kaykit/
 public/models/synty/
 
 # Licensed UI icons copied by scripts/ui-icons.ts

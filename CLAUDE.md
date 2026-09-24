@@ -48,19 +48,16 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
-  family's `RigSpec` maps them to its own names and weapon grip. `models.ts` loads KayKit plus
-  the optional Synty kits and normalizes Synty dungeon pieces to KayKit footprints, so a
-  missing kit (fresh clone, CI) falls back to KayKit with no code change. `modelRigs.ts` holds
-  the per-monster look tables for both families (undead types on the Dungeon Pack rig, raiders
-  on the goblin rig, villagers on the human spec) and both hero builds: a Viking Realm human
-  (warrior male, leader female for the witch) dressed from the Viking weapon, shield, and helmet
-  kits when they loaded, else the KayKit barbarian with box overlays. Viking swords and knives
-  are authored along Z and get a quarter turn before the grip; shields a half turn. In dev,
+  family's `RigSpec` maps them to its own names and weapon grip. `models.ts` loads the Synty
+  kits (the only models; a missing kit throws with the kit's name and the lobby shows it) and
+  normalizes dungeon pieces to the footprints the scene was laid out on. `modelRigs.ts` holds
+  the per-monster look table (undead types on the Dungeon Pack rig, raiders on the goblin rig,
+  villagers on the human spec) and the hero build: a Viking Realm human (warrior male, leader
+  female for the witch) dressed from the Viking weapon, shield, helmet and fur kits. In dev,
   `window.__barrow` exposes game, driver, input, assets. Rig specs list clip candidates in
-  order (KayKit copy first, goblin pack second) so a machine missing a clip kit still animates.
-  Synty scales derive from KayKit's visible heights (2.15 to 2.6 units before a look's scale;
-  the barbarian is 2.17 bare-headed), not the 3.39 the raw GLB bounding box suggests, which
-  includes Blender's bone-display sphere. `scatter.ts` instances the Viking nature kit over
+  order (retargeted KayKit copy first, goblin pack second) so a machine missing a clip kit
+  still animates. The hero stands 1.56 units and monster scales keep the heights the game was
+  tuned at (Synty humanoids are authored 1.8 tall). `scatter.ts` instances the Viking nature kit over
   open ground (pines, half-buried standing stones, berry bushes, roof-grass tufts as ground
   tufts) in 16-cell chunks for culling, tinted per biome by `foliageTint`/`stoneTint` in
   `biomes.ts`; without the kit the scene keeps its primitive cones and icosahedra.
@@ -86,7 +83,9 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 ## Licensed assets (Synty)
 
 - Source zips come from the Synty store downloads ("Source Files"); unzip into
-  `assets-src/synty/<pack>/`. KayKit models under `public/models/` are CC0 and stay in git.
+  `assets-src/synty/<pack>/`. The CC0 KayKit GLBs live under `assets-src/kaykit/` (in git,
+  the one un-ignored folder there) only as the source of the retargeted clip kits; the game
+  no longer loads any KayKit model.
 - The converter builds one GLB per kit, every piece a top-level node at the origin named by its
   FBX stem minus `SM_`/`SK_Chr_`/`SM_Chr_`, materials shared per texture. Kits ship without
   normals so GLTFLoader flat-shades them. Materials come from each pack's `MaterialList_*.txt`;
@@ -119,7 +118,7 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   oriented joint frames (Unity Humanoid hides that), so the converter calibrates a per-bone
   frame offset between the two T-poses (character bind pose vs clip joint orients) and keys
   world rotations through it; hips carry translation in metres.
-- `kaykit_clips` (no source folder): the CC0 KayKit suite (Idle, walks, runs, every 1H/2H/unarmed
+- `kaykit_clips` (source `assets-src/kaykit/`): the CC0 KayKit suite (Idle, walks, runs, every 1H/2H/unarmed
   swing, spellcasts, Cheer, Taunt, dodges, jumps, hits, deaths) retargeted onto `goblin_rig`
   and `dungeon_rig` through an explicit bone map (`SYNTY_FROM_KAYKIT`, `UE_FROM_KAYKIT`) with
   rest-direction alignment and hip motion scaled by hip height. KayKit's chibi idle holds the

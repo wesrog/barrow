@@ -1061,19 +1061,38 @@ function Game({
  * driver and the assets exist — whichever finishes last gates the start. */
 function App() {
   const [assets, setAssets] = useState<GameAssets | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
   const [driver, setDriver] = useState<NetDriver | null>(null);
   const [roomCode, setRoomCode] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
     void (async () => {
-      const [loaded] = await Promise.all([loadAssets(), loadItemIcons()]);
-      if (!disposed) setAssets(loaded);
+      try {
+        const [loaded] = await Promise.all([loadAssets(), loadItemIcons()]);
+        if (!disposed) setAssets(loaded);
+      } catch (err) {
+        console.error(err);
+        if (!disposed) setAssetError(err instanceof Error ? err.message : String(err));
+      }
     })();
     return () => {
       disposed = true;
     };
   }, []);
+
+  if (assetError) {
+    return (
+      <div style={{ padding: 40, maxWidth: 560, color: "#d8d2c4", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
+        <div style={{ color: "#e8dcc0", fontSize: 18, marginBottom: 12 }}>The models are not here.</div>
+        <div>{assetError}</div>
+        <div style={{ color: "#8c8578", marginTop: 12 }}>
+          The game draws everything from the converted Synty kits under public/models/synty (gitignored).
+          Unzip the source packs into assets-src/synty and run <code>bun run assets:synty</code>.
+        </div>
+      </div>
+    );
+  }
 
   if (!driver) {
     return (

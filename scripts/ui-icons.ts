@@ -5,8 +5,10 @@
  * Core/, grouped into sets by folder and into pieces by name, with the
  * Clean/Stroke/Underlay variants of an icon folded into one piece. Icons are
  * white silhouettes on transparency, which the HUD masks and tints; sprites
- * (frames, bars, coins, logos) are coloured and drawn as they are. The
- * Samples folder (158 MB of example screenshots) stays out.
+ * (frames, bars, coins, logos) are coloured and drawn as they are. Samples/
+ * holds the pack's painted illustrations (hero cards, portraits, panel
+ * images, character parts) and comes along; its eleven 5040x2160 screenshots
+ * of the demo UI do not.
  *
  *   bun scripts/ui-icons.ts
  */
@@ -14,7 +16,9 @@ import { copyFile, mkdir, open, readdir, rm, writeFile } from "node:fs/promises"
 import { join, relative } from "node:path";
 
 const SRC = "assets-src/synty/fantasy_screens";
-const ROOTS = ["Sprites", "Core"];
+const ROOTS = ["Sprites", "Core", "Samples"];
+/** Demo-UI screenshots, not art to use in a game. */
+const SKIP = /ExampleScreenshot/;
 const OUT = "public/icons/synty";
 
 /** Folder ids the generic rule (strip Icons_, lowercase, join with -) gets wrong. */
@@ -26,6 +30,7 @@ const ICON_DIRS = /^(Icons_|Core\/Icons_)/;
 /** File-name prefixes that carry no information once the set is known. */
 const NAME_PREFIXES = [
   /^ICON_FantasyScreens_(Inventory|Menu|Character|Playback)_/,
+  /^SPR_FantasyScreens_Example_/,
   /^ICON_Input_/,
   /^ICON_Social_/,
   /^ICON_SM_Item_/,
@@ -64,7 +69,7 @@ async function* pngs(dir: string): AsyncGenerator<string> {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) yield* pngs(path);
-    else if (entry.name.toLowerCase().endsWith(".png")) yield path;
+    else if (entry.name.toLowerCase().endsWith(".png") && !SKIP.test(entry.name)) yield path;
   }
 }
 

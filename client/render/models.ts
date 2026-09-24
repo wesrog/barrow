@@ -4,51 +4,12 @@ import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.j
 import type { RigSpec } from "./rigSpec";
 
 /**
- * Model assets. Two sets load side by side:
- *
- * - KayKit CC0 GLBs (kaylousberg.com), committed under public/models. Characters
- *   carry full animation suites and handslot bones; weapons fit those slots.
- * - Synty POLYGON kits built by scripts/synty-to-glb.py under public/models/synty.
- *   Licensed and gitignored, so they are optional: a kit that fails to load is
- *   simply absent and everything that would use it falls back to KayKit.
+ * Model assets: the Synty POLYGON kits built by scripts/synty-to-glb.py under
+ * public/models/synty. Licensed and gitignored, so a machine has to convert
+ * them before the game runs; loadAssets says which kit is missing. The
+ * kaykit_clips kits are the CC0 KayKit animation suite retargeted onto the
+ * Synty rigs, the only KayKit data the game still uses.
  */
-
-const CHARACTER_URLS = {
-  barbarian: "/models/characters/Barbarian.glb",
-  knight: "/models/characters/Knight.glb",
-  skeleton_warrior: "/models/characters/Skeleton_Warrior.glb",
-  skeleton_minion: "/models/characters/Skeleton_Minion.glb",
-  skeleton_mage: "/models/characters/Skeleton_Mage.glb",
-  skeleton_rogue: "/models/characters/Skeleton_Rogue.glb",
-} as const;
-
-const WEAPON_URLS = {
-  sword_1handed: "/models/weapons/sword_1handed.gltf",
-  sword_2handed: "/models/weapons/sword_2handed.gltf",
-  axe_1handed: "/models/weapons/axe_1handed.gltf",
-  axe_2handed: "/models/weapons/axe_2handed.gltf",
-  dagger: "/models/weapons/dagger.gltf",
-  skeleton_blade: "/models/weapons/Skeleton_Blade.gltf",
-  skeleton_axe: "/models/weapons/Skeleton_Axe.gltf",
-  skeleton_staff: "/models/weapons/Skeleton_Staff.gltf",
-} as const;
-
-const DUNGEON_URLS = {
-  wall: "/models/dungeon/wall.glb",
-  wall_cracked: "/models/dungeon/wall_cracked.glb",
-  wall_broken: "/models/dungeon/wall_broken.glb",
-  floor: "/models/dungeon/floor_tile_small.glb",
-  floor_broken: "/models/dungeon/floor_tile_small_broken_A.glb",
-  floor_weeds: "/models/dungeon/floor_tile_small_weeds_A.glb",
-  pillar: "/models/dungeon/pillar.glb",
-  column: "/models/dungeon/column.glb",
-  torch_mounted: "/models/dungeon/torch_mounted.glb",
-  barrel: "/models/dungeon/barrel_large.glb",
-  crates: "/models/dungeon/crates_stacked.glb",
-  chest: "/models/dungeon/chest.glb",
-  chest_gold: "/models/dungeon/chest_gold.glb",
-  stairs: "/models/dungeon/stairs_narrow.glb",
-} as const;
 
 /** Synty kits: one GLB per kit, every piece a named top-level node. */
 export const KIT_URLS = {
@@ -71,18 +32,15 @@ export const KIT_URLS = {
   dungeon_kaykit_clips: "/models/synty/kaykit_clips/dungeon_rig.glb",
 } as const;
 
-export type CharacterName = keyof typeof CHARACTER_URLS;
-export type WeaponName = keyof typeof WEAPON_URLS;
-export type DungeonName = keyof typeof DUNGEON_URLS;
 export type KitName = keyof typeof KIT_URLS;
 export type Kits = Partial<Record<KitName, GLTF>>;
 
 /**
- * One part of a Synty stand-in for a KayKit dungeon piece. `scale` and
- * `offset` normalize the Synty node to the KayKit piece's footprint (measured
- * in Blender: KayKit floor tiles are 2x2 centred, walls 4 wide by 4 tall
- * centred on their edge, pillars 4 tall) so the scene's placement scales keep
- * working unchanged. `offset` is in the normalized piece's units.
+ * One part of a dungeon piece. `scale` and `offset` normalize the Synty node
+ * to the footprints the scene was laid out on (floor tiles 2x2 centred, walls
+ * 4 wide by 4 tall centred on their edge, pillars 4 tall; the KayKit set the
+ * game began with), so placement scales in the scene stay as they are.
+ * `offset` is in the normalized piece's units.
  */
 interface PiecePart {
   kit: KitName;
@@ -92,8 +50,8 @@ interface PiecePart {
   ry?: number;
 }
 
-/** Synty stand-ins for every KayKit dungeon piece. */
-const SYNTY_DUNGEON: Record<DungeonName, PiecePart[]> = {
+/** The dungeon piece set, by role. */
+const SYNTY_DUNGEON = {
   // Tiles are 5x5 with a corner pivot; walls 5.24 wide with an end pivot.
   floor: [{ kit: "dungeon", node: "Env_Tiles_01", scale: 0.4, offset: [-1, 0, -1] }],
   floor_broken: [{ kit: "dungeon", node: "Env_Tiles_03", scale: 0.4, offset: [-1, 0, -1] }],
@@ -117,14 +75,14 @@ const SYNTY_DUNGEON: Record<DungeonName, PiecePart[]> = {
     { kit: "dungeon_props", node: "Prop_Chest_Wood_01", scale: 1.47 },
     { kit: "dungeon_props", node: "Prop_Chest_Wood_Lid", scale: 1.47 },
   ],
-  // KayKit stairs span x -2..2, z 0..4; the Synty flight has a top-corner pivot.
+  // The flight spans x -2..2, z 0..4 once normalized; the Synty piece has a top-corner pivot.
   stairs: [{ kit: "dungeon", node: "Env_Stairs_01", scale: 0.8, offset: [1.97, 0.21, 4.03] }],
-};
+} satisfies Record<string, PiecePart[]>;
+
+export type DungeonName = keyof typeof SYNTY_DUNGEON;
 
 export interface GameAssets {
-  characters: Record<CharacterName, GLTF>;
-  weapons: Record<WeaponName, THREE.Group>;
-  /** Dungeon pieces at KayKit footprints: Synty stand-ins when the kits loaded, else KayKit. */
+  /** Dungeon pieces at the scene's footprints, assembled from the kits. */
   dungeon: Record<DungeonName, THREE.Group>;
   kits: Kits;
 }
@@ -167,8 +125,8 @@ export function kitMeshes(kits: Kits, kit: KitName, node: string): { mesh: THREE
   return out;
 }
 
-/** Assemble a dungeon piece from its Synty parts; null if any part is missing. */
-function buildPiece(kits: Kits, parts: PiecePart[]): THREE.Group | null {
+/** Assemble a dungeon piece from its parts; null if any part is missing. */
+function buildPiece(kits: Kits, parts: readonly PiecePart[]): THREE.Group | null {
   const group = new THREE.Group();
   for (const part of parts) {
     const src = kitNode(kits, part.kit, part.node);
@@ -187,46 +145,31 @@ export async function loadAssets(): Promise<GameAssets> {
   const load = (url: string) =>
     loader.loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url);
 
-  const characterEntries = Object.entries(CHARACTER_URLS) as [CharacterName, string][];
-  const weaponEntries = Object.entries(WEAPON_URLS) as [WeaponName, string][];
-  const dungeonEntries = Object.entries(DUNGEON_URLS) as [DungeonName, string][];
   const kitEntries = Object.entries(KIT_URLS) as [KitName, string][];
-  const [characterGltfs, weaponGltfs, dungeonGltfs, kitGltfs] = await Promise.all([
-    Promise.all(characterEntries.map(([, url]) => load(url))),
-    Promise.all(weaponEntries.map(([, url]) => load(url))),
-    Promise.all(dungeonEntries.map(([, url]) => load(url))),
-    Promise.all(
-      kitEntries.map(([name, url]) =>
-        load(url).catch((err: unknown) => {
-          console.warn(`Synty kit ${name} not loaded (${url}); falling back to KayKit.`, err);
-          return null;
-        }),
-      ),
+  const kitGltfs = await Promise.all(
+    kitEntries.map(([name, url]) =>
+      load(url).catch((err: unknown) => {
+        console.warn(`Synty kit ${name} not loaded (${url}).`, err);
+        return null;
+      }),
     ),
-  ]);
-
-  const characters = {} as Record<CharacterName, GLTF>;
-  characterEntries.forEach(([name], i) => {
-    characters[name] = characterGltfs[i]!;
-  });
-  const weapons = {} as Record<WeaponName, THREE.Group>;
-  weaponEntries.forEach(([name], i) => {
-    const scene = weaponGltfs[i]!.scene;
-    scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) obj.castShadow = true;
-    });
-    weapons[name] = scene;
-  });
+  );
   const kits: Kits = {};
   kitEntries.forEach(([name], i) => {
     const gltf = kitGltfs[i];
     if (gltf) kits[name] = gltf;
   });
   const dungeon = {} as Record<DungeonName, THREE.Group>;
-  dungeonEntries.forEach(([name], i) => {
-    dungeon[name] = buildPiece(kits, SYNTY_DUNGEON[name]) ?? dungeonGltfs[i]!.scene;
-  });
-  return { characters, weapons, dungeon, kits };
+  for (const name of Object.keys(SYNTY_DUNGEON) as DungeonName[]) {
+    const piece = buildPiece(kits, SYNTY_DUNGEON[name]);
+    if (!piece) {
+      throw new Error(
+        `Dungeon piece "${name}" needs the Synty dungeon kits under public/models/synty; run bun run assets:synty.`,
+      );
+    }
+    dungeon[name] = piece;
+  }
+  return { dungeon, kits };
 }
 
 export interface CharacterInstance {
@@ -305,13 +248,8 @@ function instantiateNode(
   };
 }
 
-/** Instantiate a KayKit character: its clips ship inside its own GLB. */
-export function instantiate(gltf: GLTF, spec: RigSpec): CharacterInstance {
-  return instantiateNode(gltf.scene, gltf.animations, spec);
-}
-
 /**
- * Instantiate a character from a Synty kit node, animated by clip kits whose
+ * Instantiate a character from a kit node, animated by clip kits whose
  * tracks address bones by name. Every clip kit that loaded contributes; null
  * when the character kit or all of its clip kits are missing.
  */

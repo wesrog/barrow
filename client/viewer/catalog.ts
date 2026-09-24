@@ -1,18 +1,17 @@
 import * as THREE from "three";
 import { captureRestInverses, isShieldNode } from "../render/gear";
 import { CLIP_KITS, RIG_SPECS } from "../render/modelRigs";
-import { instantiate, instantiateKit, type CharacterInstance, type GameAssets, type KitName } from "../render/models";
-import { KAYKIT_RIG, type ClipId, type RigSpec } from "../render/rigSpec";
+import { instantiateKit, type CharacterInstance, type GameAssets, type KitName } from "../render/models";
+import type { ClipId, RigSpec } from "../render/rigSpec";
 
 /**
  * Every character model the game can load, instantiated with its clips, for
  * the asset viewer. Pure data over the loaded assets: no DOM, no renderer.
  */
 
-export type PackId = "kaykit" | "goblin_war_camp" | "viking_realm" | "dungeon_pack";
+export type PackId = "goblin_war_camp" | "viking_realm" | "dungeon_pack";
 
 export const PACK_LABELS: Record<PackId, string> = {
-  kaykit: "KayKit",
   goblin_war_camp: "Goblin War Camp",
   viking_realm: "Viking Realm",
   dungeon_pack: "Dungeon Pack",
@@ -34,7 +33,7 @@ export interface CatalogEntry {
   rest: Map<THREE.Object3D, THREE.Matrix4>;
 }
 
-/** Character kits: which nodes are playable characters and how they animate. */
+/** Character kits: which nodes are playable characters and how they animate. Scale is the hero's. */
 const CHARACTER_KITS: { kit: KitName; pack: PackId; rig: keyof typeof CLIP_KITS; scale: number }[] = [
   { kit: "goblin_characters", pack: "goblin_war_camp", rig: "goblin", scale: 0.87 },
   { kit: "viking_characters", pack: "viking_realm", rig: "human", scale: 0.87 },
@@ -58,21 +57,6 @@ function prettify(name: string): string {
 
 export function buildCatalog(assets: GameAssets): CatalogEntry[] {
   const entries: CatalogEntry[] = [];
-  for (const [name, gltf] of Object.entries(assets.characters)) {
-    const inst = instantiate(gltf, KAYKIT_RIG);
-    entries.push({
-      id: `kaykit/${name}`,
-      label: prettify(name),
-      pack: "kaykit",
-      rig: "kaykit",
-      spec: KAYKIT_RIG,
-      inst,
-      clips: [...inst.actions.keys()].sort(),
-      scale: 0.72,
-      boneCount: countBones(inst.group),
-      rest: captureRestInverses(inst.group),
-    });
-  }
   for (const { kit, pack, rig, scale } of CHARACTER_KITS) {
     const scene = assets.kits[kit]?.scene;
     if (!scene) continue;
@@ -126,9 +110,9 @@ export function gridLayout(count: number, spacing = 2.4, rowSpacing = 3.0): { x:
 // ---------------------------------------------------------------------------
 // Gear a figure can hold or wear
 
-/** A kit piece by kit and node; "kaykit" names one of the KayKit weapon files. */
+/** A kit piece by kit and node. */
 export interface GearRef {
-  kit: KitName | "kaykit";
+  kit: KitName;
   node: string;
 }
 
@@ -158,17 +142,8 @@ const HELD_KITS: Record<string, KitName[]> = {
 /** Attachment kits per rig; the Dungeon Pack ships none. */
 const WORN_KITS: Record<string, KitName> = { human: "viking_attachments", goblin: "goblin_attachments" };
 
-/** Everything an entry could hold: KayKit weapons for KayKit rigs, the Synty weapon kits for the rest. */
+/** Everything an entry could hold, from the weapon kits its rig can grip. */
 export function heldOptions(assets: GameAssets, entry: CatalogEntry): GearOption[] {
-  if (entry.pack === "kaykit") {
-    return Object.keys(assets.weapons).map((name) => ({
-      id: gearId({ kit: "kaykit", node: name }),
-      label: prettify(name),
-      kit: "kaykit",
-      node: name,
-      kind: "weapon",
-    }));
-  }
   const out: GearOption[] = [];
   for (const kit of HELD_KITS[entry.rig] ?? []) {
     const scene = assets.kits[kit]?.scene;
@@ -199,7 +174,6 @@ export function wornOptions(assets: GameAssets, entry: CatalogEntry): GearOption
 
 /** What "arm everyone" hands each rig. */
 export const DEFAULT_ARMS: Record<string, { r?: GearRef; l?: GearRef }> = {
-  kaykit: { r: { kit: "kaykit", node: "sword_1handed" } },
   human: { r: { kit: "viking_weapons", node: "Wep_Sword_02" }, l: { kit: "viking_weapons", node: "Wep_Shield_Set_01" } },
   goblin: { r: { kit: "goblin_weapons", node: "Wep_Sword_01" }, l: { kit: "goblin_weapons", node: "Wep_Shield_01" } },
   dungeon: { r: { kit: "dungeon_weapons", node: "Wep_Straightsword_01" }, l: { kit: "dungeon_weapons", node: "Wep_Shield_Round_01" } },

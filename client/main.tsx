@@ -16,6 +16,7 @@ import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
 import { updateMusic } from "./music";
 import { loadAssets, type GameAssets } from "./render/models";
+import { loadItemIcons } from "./ui/itemIcons";
 import { createScene } from "./render/scene";
 import { saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
@@ -1066,7 +1067,7 @@ function App() {
   useEffect(() => {
     let disposed = false;
     void (async () => {
-      const loaded = await loadAssets();
+      const [loaded] = await Promise.all([loadAssets(), loadItemIcons()]);
       if (!disposed) setAssets(loaded);
     })();
     return () => {

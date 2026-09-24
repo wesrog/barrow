@@ -10,7 +10,15 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
 - **Typecheck/build:** `bun run build`
 - **Asset viewer:** `http://localhost:5197/viewer.html` on the dev server (second Vite page):
   every character model in a grid with its idle, pack filters, search, a clip picker for all
-  or one figure, speed and pause. Use it to check a retarget or pick a look before wiring it in.
+  or one figure, speed and pause. Select a figure to hand it any weapon or shield from the
+  kits (seated with its rig's grip), dress it in its pack's attachments, fire its attack clips,
+  or tick "arm everyone". A URL can open a scene: `?q=Warrior%20Male%2001&sel=viking_realm/
+  Warrior_Male_01&r=viking_weapons/Wep_Sword_02&l=viking_weapons/Wep_Shield_Set_01&wear=...
+  &clip=...&arm=1`; `window.__viewer` exposes lives, camera and scene for console tuning.
+- **UI icons:** `bun run assets:ui` copies the INTERFACE Fantasy Screens icon silhouettes from
+  `assets-src/synty/fantasy_screens/` into `public/icons/synty/` (gitignored) with a manifest
+  and a contact sheet at `/icons/synty/_gallery.html`. `client/ui/itemIcons.ts` maps item bases
+  to them and falls back to the game-icons SVGs in git when the manifest is absent.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders
@@ -59,8 +67,17 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   zone carver) and hands the scene the cells to leave bare. The primitive campfire and
   dungeon-prop stall remain the fallback. Kit nodes stand at the origin but a few carry a
   translation that centres an offset mesh, so place them inside a wrapper group rather than
-  overwriting their position. The hero's chest armour hangs Viking fur mantles on the chest
-  bone through its rest frame, since attachments are authored in place over the T-pose.
+  overwriting their position. `gear.ts` is the one path for held and worn kit pieces:
+  `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y
+  (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
+  and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
+  attachments on the bone their name implies, in the bone's frame when authored near the
+  origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in
+  place over the T-pose (furs, hoods, long hair, anything above 1.1). Grips were measured on
+  the rigs in the viewer: fingers run along the hand bone's X, the knuckle line along Z, Y is
+  the palm normal, so a quarter turn about X lays a handle along the knuckles with the blade
+  toward the index finger (Synty right hand -Z, left +Z; the UE rig mirrors both). Check any
+  new pack's grip in the viewer from the three-quarter "frame" view, not the game camera.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)

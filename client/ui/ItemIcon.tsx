@@ -1,8 +1,10 @@
 import type { CSSProperties } from "react";
+import { itemIconUrl } from "./itemIcons";
 
 /**
- * Monochrome game-icons.net SVG rendered as a CSS mask so it can be tinted
- * by rarity color. One icon per base id lives in public/icons/items/.
+ * Monochrome silhouette rendered as a CSS mask so it can be tinted by rarity
+ * color: the Fantasy Screens icon when the pack was copied, else the
+ * game-icons.net SVG (one per base id in public/icons/items/).
  */
 export function ItemIcon({
   baseId,
@@ -15,7 +17,7 @@ export function ItemIcon({
   size: number;
   style?: CSSProperties;
 }) {
-  const mask = `url(${import.meta.env.BASE_URL.replace(/\/$/, "")}/icons/items/${baseId}.svg)`;
+  const mask = `url(${itemIconUrl(baseId)})`;
   return (
     <div
       style={{

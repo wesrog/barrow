@@ -6,3 +6,6 @@ dist/
 # Licensed asset sources and their converted output (Synty EULA: not redistributable)
 assets-src/
 public/models/synty/
+
+# Licensed UI icons copied by scripts/ui-icons.ts
+public/icons/synty/

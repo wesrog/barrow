@@ -226,6 +226,18 @@ function restoreBoneNames(group: THREE.Object3D, clips: THREE.AnimationClip[]): 
   });
 }
 
+/**
+ * A clip with only the tracks this character has bones for. Kits share one
+ * rig, but a few models drop bones (the Tormented Soul has no feet), and a
+ * track without a target makes Three warn on every binding.
+ */
+function fitClip(clip: THREE.AnimationClip, group: THREE.Object3D): THREE.AnimationClip {
+  const names = new Set<string>();
+  group.traverse((o) => names.add(o.name));
+  const tracks = clip.tracks.filter((t) => names.has(THREE.PropertyBinding.parseTrackName(t.name).nodeName));
+  return tracks.length === clip.tracks.length ? clip : new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
 /** Clone a rigged character subtree with its own materials, mixer, and actions. */
 function instantiateNode(
   source: THREE.Object3D,
@@ -245,7 +257,7 @@ function instantiateNode(
   const mixer = new THREE.AnimationMixer(group);
   const actions = new Map<string, THREE.AnimationAction>();
   for (const clip of clips) {
-    actions.set(clip.name, mixer.clipAction(clip));
+    actions.set(clip.name, mixer.clipAction(fitClip(clip, group)));
   }
   return {
     group,

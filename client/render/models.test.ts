@@ -51,6 +51,17 @@ describe("instantiateKit", () => {
     expect(inst.actions.has("Walk_F")).toBe(true);
   });
 
+  test("drops clip tracks for bones the character lacks", () => {
+    const kits = fakeKits();
+    const clip = kits.goblin_clips!.animations[0]!;
+    clip.tracks.push(new THREE.QuaternionKeyframeTrack("Toes_L.quaternion", [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    const inst = instantiateKit(kits, "goblin_characters", "Warrior_Male_01", ["goblin_clips"], SYNTY_GOBLIN_RIG)!;
+    const fitted = inst.actions.get("Walk_F")!.getClip();
+    expect(fitted.tracks.length).toBe(clip.tracks.length - 1);
+    expect(fitted.tracks.some((t) => t.name.startsWith("Toes_L"))).toBe(false);
+    expect(fitted.duration).toBe(clip.duration);
+  });
+
   test("leaves the shared kit source untouched and returns null for a missing kit", () => {
     const kits = fakeKits();
     instantiateKit(kits, "goblin_characters", "Warrior_Male_01", ["goblin_clips"], SYNTY_GOBLIN_RIG);

@@ -437,7 +437,7 @@ export const CLIP_KITS = {
   dungeon: ["dungeon_kaykit_clips"],
 } as const satisfies Record<string, readonly KitName[]>;
 type SyntyRigName = keyof typeof CLIP_KITS;
-const RIG_SPECS: Record<SyntyRigName, RigSpec> = { human: SYNTY_HUMAN_RIG, goblin: SYNTY_GOBLIN_RIG, dungeon: SYNTY_DUNGEON_RIG };
+export const RIG_SPECS: Record<SyntyRigName, RigSpec> = { human: SYNTY_HUMAN_RIG, goblin: SYNTY_GOBLIN_RIG, dungeon: SYNTY_DUNGEON_RIG };
 /** Where each rig's held props come from; weapons are authored in the same conventions per pack. */
 export const WEAPON_KITS: Record<SyntyRigName, KitName> = { human: "viking_weapons", goblin: "goblin_weapons", dungeon: "dungeon_weapons" };
 

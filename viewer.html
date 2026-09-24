@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>barrow · models</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; height: 100%; background: #14141a; color: #d8d2c4; font: 13px/1.4 ui-monospace, monospace; overflow: hidden; }
+      #root, .viewer { height: 100%; }
+      .viewer { display: flex; }
+      .panel { width: 300px; flex: none; padding: 14px 16px; box-sizing: border-box; background: #0f0f14; border-right: 1px solid #262632; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+      .panel h1 { margin: 0; font-size: 22px; font-weight: 400; color: #e8dcc0; }
+      .panel h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: #e8dcc0; }
+      .status { color: #8c8578; }
+      .field { display: flex; flex-direction: column; gap: 4px; }
+      .field > span { color: #8c8578; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+      .field input[type="text"], .field input:not([type]), .field select { background: #1a1a22; color: #e8dcc0; border: 1px solid #2e2e3a; border-radius: 4px; padding: 6px 8px; font: inherit; }
+      .check { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+      .check em { color: #8c8578; font-style: normal; }
+      .row { display: flex; gap: 6px; flex-wrap: wrap; }
+      button { background: #1e1e28; color: #e8dcc0; border: 1px solid #333342; border-radius: 4px; padding: 6px 10px; font: inherit; cursor: pointer; }
+      button:hover { background: #26263a; }
+      .selected { border-top: 1px solid #262632; padding-top: 10px; }
+      .meta { color: #a8a294; font-size: 12px; margin-bottom: 8px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+      .chip { padding: 3px 7px; font-size: 11px; }
+      .chip.on { background: #6a5a2c; border-color: #a8903c; }
+      .hint { color: #66604f; font-size: 11px; margin-top: auto; }
+      .stage { position: relative; flex: 1; min-width: 0; }
+      .stage canvas { display: block; }
+      .overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+      .label { position: absolute; transform: translate(-50%, 0); color: #e8dcc0; font-size: 11px; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+      * { user-select: none; -webkit-user-select: none; }
+      input, textarea { user-select: text; -webkit-user-select: text; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/client/viewer/main.tsx"></script>
+  </body>
+</html>

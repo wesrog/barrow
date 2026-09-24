@@ -69,7 +69,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     height: 64,
     biome: "moor",
     gen: { density: 0.66, smooth: 4, blobs: 60, lenMin: 3, lenMax: 10, packs: 55 },
-    spawnTable: ["z", "z", "z", "s", "s", "r", "e"],
+    spawnTable: ["z", "z", "z", "s", "s", "r"],
     safe: { x0: 2, y0: 26, x1: 13, y1: 39 },
     spawn: { x: 7.5, y: 32.5 },
     markers: [
@@ -90,7 +90,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     height: 56,
     biome: "fen",
     gen: { density: 0.64, smooth: 4, blobs: 90, lenMin: 2, lenMax: 7, packs: 60 },
-    spawnTable: ["h", "h", "s", "m", "r", "z", "e"],
+    spawnTable: ["h", "h", "s", "m", "r", "z"],
     spawn: { x: 6.5, y: 29.5 },
     markers: [],
     exits: [
@@ -107,7 +107,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     height: 88,
     biome: "mire",
     gen: { density: 0.62, smooth: 4, blobs: 70, lenMin: 2, lenMax: 8, packs: 60 },
-    spawnTable: ["h", "m", "m", "w", "r", "e"],
+    spawnTable: ["h", "m", "m", "w", "r"],
     spawn: { x: 6.5, y: 45.5 },
     markers: [],
     exits: [

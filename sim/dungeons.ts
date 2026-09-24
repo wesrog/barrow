@@ -62,7 +62,7 @@ export const DUNGEONS: Record<DungeonId, DungeonDef> = {
   barrow: {
     id: "barrow", name: "The Barrow Crypt", area: "overworld",
     entrance: { x: 58.5, y: 56.5 }, floors: 5, levelBase: 1, style: "barrow_halls",
-    spawnTable: ["z", "z", "s", "s", "r", "e"],
+    spawnTable: ["z", "z", "s", "s", "r"],
     boss: { typeId: "barrow_lord" },
   },
   fen_hollow: {
@@ -74,7 +74,7 @@ export const DUNGEONS: Record<DungeonId, DungeonDef> = {
   gallow_vault: {
     id: "gallow_vault", name: "The Gallow Vault", area: "gallowmire",
     entrance: { x: 42.5, y: 70.5 }, floors: 3, levelBase: 6, style: "gallow_ossuary",
-    spawnTable: ["w", "m", "h", "r", "e"],
+    spawnTable: ["w", "m", "h", "r"],
     boss: { typeId: "cairn_wight", modifier: "stoneskin" },
   },
   cragmaw_delve: {

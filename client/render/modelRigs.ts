@@ -324,6 +324,7 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const rig = new AnimRig(inst, SYNTY_HUMAN_RIG, "idle", "run");
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
+  let armed = false;
 
   // Bone rest frames in the character's own space, captured before the first
   // mixer update: pieces authored in place over the bind pose (fur mantles)
@@ -397,6 +398,7 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.attach("l", null);
     }
 
+    armed = eq.weapon !== null;
     if (eq.weapon) {
       const look = SYNTY_WEAPONS[eq.weapon.baseId] ?? SYNTY_WEAPONS.rusted_blade!;
       twoHanded = look.twoHanded;
@@ -413,9 +415,10 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.attach("r", null);
     }
   };
-  // Every basic swing is the one-handed diagonal slice, two-handers included:
-  // the chop read as a windmill on the Viking. Skills pick their own clips.
-  hero.attackClip = () => "attack1h";
+  // Every armed swing is the one-handed diagonal slice, two-handers included:
+  // the chop read as a windmill on the Viking. Bare hands throw a punch.
+  // Skills pick their own clips.
+  hero.attackClip = () => (armed ? "attack1h" : "attackUnarmed");
   return hero;
 }
 

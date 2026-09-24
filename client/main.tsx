@@ -11,7 +11,8 @@ import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import type { Element } from "../sim/elements";
 import { HOTBAR_SIZE, assignHotbar, loadHotbar, resetHotbar, slotForKey, type Hotbar } from "./hotbar";
-import { play, unlock } from "./audio";
+import { play, playStep, preloadSamples, registerSamples, unlock } from "./audio";
+import { SAMPLES } from "./sfx";
 import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
 import { updateMusic } from "./music";
@@ -39,6 +40,9 @@ import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
 import { ZoneIntro, type ZoneIntroMsg } from "./ui/ZoneIntro";
 import { Reveal } from "./ui/Reveal";
+
+// The clip manifest is registered at load; the clips decode once the audio context exists.
+registerSamples(SAMPLES);
 
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -190,6 +194,26 @@ function Game({
     const snapshotPositions = () =>
       new Map([...game.players].map(([id, p]) => [id, { ...p.pos }] as const));
     let prevPositions = snapshotPositions();
+    // The hero's footsteps: one every stride's worth of ground covered.
+    // Teleports (zone changes, respawns) reset the stride rather than firing
+    // a step across the map.
+    let strideFrom: { x: number; y: number; zone: string } | null = null;
+    let strideLeft = 0;
+    const STRIDE = 0.62;
+    const footsteps = (me: { pos: { x: number; y: number }; zoneId: string; dead: boolean }) => {
+      if (!strideFrom || strideFrom.zone !== me.zoneId || Math.hypot(me.pos.x - strideFrom.x, me.pos.y - strideFrom.y) > 3) {
+        strideFrom = { x: me.pos.x, y: me.pos.y, zone: me.zoneId };
+        strideLeft = STRIDE;
+        return;
+      }
+      const moved = Math.hypot(me.pos.x - strideFrom.x, me.pos.y - strideFrom.y);
+      strideFrom = { x: me.pos.x, y: me.pos.y, zone: me.zoneId };
+      strideLeft -= moved;
+      if (strideLeft <= 0 && !me.dead) {
+        playStep();
+        strideLeft = STRIDE;
+      }
+    };
     let mouseDown = false;
     /** Right button held: the mouse slot recasts every tick, like holding a D2 skill. */
     let rightDown = false;
@@ -276,6 +300,7 @@ function Game({
     };
     const onPointerDown = (e: PointerEvent) => {
       unlock(); // first gesture wakes the audio engine
+      preloadSamples(); // the clips decode now that the context exists
       // Only clicks on the scene canvas (the lone canvas mounted directly on
       // the game root) are world clicks — HUD panels, including canvases like
       // the inventory paperdoll, handle their own.
@@ -490,7 +515,7 @@ function Game({
               play("die", e.typeId);
               break;
             case "breakable_broken":
-              play("hit", undefined, weaponEdge(game));
+              play("smash");
               break;
             case "item_dropped":
               play(e.rarity === "normal" ? "drop" : "drop_rare");
@@ -746,6 +771,7 @@ function Game({
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPositions, acc / TICK_MS);
+      footsteps(localPlayer(game));
       // Ambient bed for the ground underfoot, and the combat-aware music
       // layer. Both start with the same user-gesture unlock as the SFX.
       const me2 = localPlayer(game);

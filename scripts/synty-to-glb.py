@@ -15,13 +15,19 @@ their skeleton; a pack's combined character file is split into one rig per
 character. Materials come from the pack's MaterialList text file; a mesh whose
 Unity shader has no plain texture (triplanar snow, ice, water) is skipped.
 
-A clip kit (an ANIMATION pack) is one GLB holding a mesh-less rig and one
-animation per clip, retargeted from Synty's per-clip FBX files onto the rig of
-the character pack they were made for. Any character sharing that rig's bone
-names plays them. The clip skeleton has the same joints but differently
-oriented joint frames (Unity's Humanoid retargeting hides this), so each bone
-gets a fixed frame offset measured between the two rigs' T-poses: the
-character's bind pose and the clip skeleton with only its joint orients.
+A clip kit is one GLB holding a mesh-less rig and one animation per clip,
+retargeted onto the rig of a character pack. Any character sharing that rig's
+bone names plays them. Two sources:
+
+- Synty ANIMATION packs: per-clip FBX on a skeleton with the same joints but
+  differently oriented joint frames (Unity's Humanoid retargeting hides this).
+  Each bone gets a fixed frame offset measured between the two rigs' T-poses:
+  the character's bind pose and the clip skeleton with only its joint orients.
+- KayKit character GLBs (CC0): a different skeleton, mapped bone by bone. The
+  T-poses are both bind poses; each mapped bone's rest direction is aligned
+  first, then the same frame-offset trick applies, and hip motion is scaled by
+  the ratio of the rigs' hip heights. Unmapped bones (fingers, extra spine
+  links) ride rigidly with their parent.
 """
 
 import fnmatch
@@ -65,6 +71,47 @@ EXCLUDE = [
 # tree shader; the rest are trunk. Measured on the Alpine pines: trunk 0.0,
 # leaves 1.0, with green carrying wind sway.
 LEAF_BLUE = 0.5
+
+# KayKit clips reused on Synty rigs (target bone -> KayKit bone). KayKit has
+# one fewer spine link and no fingers; those ride with their parents.
+SYNTY_FROM_KAYKIT = {
+    "Root": "root", "Hips": "hips", "Spine_01": "spine", "Spine_02": "chest", "Head": "head",
+    "Shoulder_L": "upperarm.l", "Elbow_L": "lowerarm.l", "Hand_L": "hand.l",
+    "Shoulder_R": "upperarm.r", "Elbow_R": "lowerarm.r", "Hand_R": "hand.r",
+    "UpperLeg_L": "upperleg.l", "LowerLeg_L": "lowerleg.l", "Ankle_L": "foot.l", "Ball_L": "toes.l",
+    "UpperLeg_R": "upperleg.r", "LowerLeg_R": "lowerleg.r", "Ankle_R": "foot.r", "Ball_R": "toes.r",
+}
+UE_FROM_KAYKIT = {
+    "root": "root", "pelvis": "hips", "spine_01": "spine", "spine_02": "chest", "head": "head",
+    "upperarm_l": "upperarm.l", "lowerarm_l": "lowerarm.l", "hand_l": "hand.l",
+    "upperarm_r": "upperarm.r", "lowerarm_r": "lowerarm.r", "hand_r": "hand.r",
+    "thigh_l": "upperleg.l", "calf_l": "lowerleg.l", "foot_l": "foot.l", "ball_l": "toes.l",
+    "thigh_r": "upperleg.r", "calf_r": "lowerleg.r", "foot_r": "foot.r", "ball_r": "toes.r",
+}
+
+# The KayKit clips worth carrying over: locomotion, every melee and spell
+# swing the game uses, reactions, and a few flourishes.
+KAYKIT_CLIPS = [
+    "Idle", "Idle_B", "Idle_Combat", "Unarmed_Idle", "2H_Melee_Idle",
+    "Walking_A", "Walking_B", "Walking_D_Skeletons", "Running_A", "Running_B",
+    "1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal", "1H_Melee_Attack_Slice_Horizontal", "1H_Melee_Attack_Stab",
+    "2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice", "2H_Melee_Attack_Spin", "2H_Melee_Attack_Stab",
+    "Unarmed_Melee_Attack_Punch_A", "Unarmed_Melee_Attack_Punch_B", "Unarmed_Melee_Attack_Kick",
+    "Spellcast_Shoot", "Spellcast_Raise", "Spellcast_Long", "Spellcasting",
+    "Cheer", "Taunt", "Interact", "PickUp", "Throw", "Block", "Block_Hit",
+    "Dodge_Backward", "Dodge_Forward", "Dodge_Left", "Dodge_Right",
+    "Jump_Full_Short", "Jump_Full_Long", "Jump_Idle", "Jump_Land",
+    "Hit_A", "Hit_B", "Death_A", "Death_B", "Lie_Idle", "Sit_Floor_Idle",
+    "Skeletons_Awaken_Standing", "Spawn_Ground",
+]
+KAYKIT_SOURCES = ["public/models/characters/Skeleton_Warrior.glb", "public/models/characters/Barbarian.glb"]
+
+# KayKit's chibi holds its short arms out at about 27 degrees below horizontal
+# while standing; on a human that reads as a zombie stance. Calm clips get the
+# upper arms turned down further about the body's forward axis; swings, casts
+# and reactions keep their authored arcs.
+ARM_RELAX_DEGREES = 32
+CALM_CLIPS = ["Idle", "Idle_B", "Unarmed_Idle", "Walking_A", "Walking_B", "Walking_D_Skeletons", "Running_A", "Running_B", "Interact", "PickUp"]
 
 # pack -> layout, texture rules, and kits. `root` is a subfolder some zips
 # add above FBX/ and Textures/. `static_scale` undoes Blender's FBX unit
@@ -194,6 +241,26 @@ PACKS = {
             "weapons": {"include": ["FBX/SM_Wep_*.fbx"], "emissive": False},
         },
     },
+    "kaykit_clips": {
+        "kits": {
+            "goblin_rig": {
+                "rig": {"pack": "goblin_war_camp", "file": "FBX/Characters/Characters.fbx"},
+                "source": KAYKIT_SOURCES,
+                "bone_map": SYNTY_FROM_KAYKIT,
+                "translate": ["Root", "Hips"],
+                "relax": {"bones": {"Shoulder_L": 1, "Shoulder_R": -1}, "degrees": ARM_RELAX_DEGREES, "clips": CALM_CLIPS},
+                "clips": KAYKIT_CLIPS,
+            },
+            "dungeon_rig": {
+                "rig": {"pack": "dungeon", "file": "FBX/Characters/Unreal_Characters/SK_Chr_Skeleton_Soldier_01.fbx"},
+                "source": KAYKIT_SOURCES,
+                "bone_map": UE_FROM_KAYKIT,
+                "translate": ["root", "pelvis"],
+                "relax": {"bones": {"upperarm_l": 1, "upperarm_r": -1}, "degrees": ARM_RELAX_DEGREES, "clips": CALM_CLIPS},
+                "clips": KAYKIT_CLIPS,
+            },
+        },
+    },
     "goblin_locomotion": {
         "root": "SourceFiles",
         "kits": {
@@ -218,6 +285,7 @@ PACKS = {
 
 # Bones whose position a clip drives; every other bone keeps its rest offset.
 TRANSLATED_BONES = ("Root", "Hips")
+
 
 LOD_RE = re.compile(r"_LOD[1-9]\b")
 SHADOW_RE = re.compile(r"_Shadow\b", re.IGNORECASE)
@@ -729,33 +797,92 @@ def bones_parents_first(arm: bpy.types.Object) -> list[bpy.types.Bone]:
     return out
 
 
-def retarget_clip(target: bpy.types.Object, offsets: dict[str, Matrix], path: Path, name: str) -> tuple[int, int]:
-    """`offsets` is filled on the first call; every clip in a pack shares one skeleton."""
-    """Key the target rig frame by frame so each bone's world rotation is the
-    clip bone's, corrected by its frame offset. Bones keep the rig's own rest
-    offsets; only the root and hips take the clip's position."""
-    before = set(bpy.data.objects)
-    bpy.ops.import_scene.fbx(filepath=str(path), use_anim=True)
-    src = next(o for o in bpy.data.objects if o not in before and o.type == "ARMATURE")
-    start, end = (round(f) for f in src.animation_data.action.frame_range)
+def first_mapped_descendant(bone: bpy.types.Bone, mapping: dict[str, str | None]) -> bpy.types.Bone | None:
+    """Breadth-first: the nearest descendant that has a source bone, so a rig
+    with extra spine links still measures its torso direction toward the head."""
+    queue = list(bone.children)
+    while queue:
+        c = queue.pop(0)
+        if mapping.get(c.name):
+            return c
+        queue.extend(c.children)
+    return None
+
+
+def frame_offsets_rest(target: bpy.types.Object, src: bpy.types.Object, mapping: dict[str, str | None]) -> dict[str, Matrix]:
+    """Per target bone: rotation taking the source rig's frame to the target's,
+    with both rigs in their bind poses. The source's rest direction along each
+    bone is first turned onto the target's, so a 5 degree difference in how the
+    two T-poses hold their arms does not bake into every clip."""
+    offsets = {}
+    for b in target.data.bones:
+        sb = mapping.get(b.name)
+        if not sb or sb not in src.data.bones:
+            continue
+        s_bone = src.data.bones[sb]
+        rest_s = (src.matrix_world @ s_bone.matrix_local).to_3x3().normalized()
+        rest_t = (target.matrix_world @ b.matrix_local).to_3x3().normalized()
+        child_t = first_mapped_descendant(b, mapping)
+        child_s = child_t and src.data.bones.get(mapping[child_t.name])
+        if child_t and child_s:
+            dir_t = (target.matrix_world @ child_t.head_local - target.matrix_world @ b.head_local).normalized()
+            dir_s = (src.matrix_world @ child_s.head_local - src.matrix_world @ s_bone.head_local).normalized()
+            rest_s = dir_s.rotation_difference(dir_t).to_matrix() @ rest_s
+        offsets[b.name] = rest_s.inverted() @ rest_t
+    return offsets
+
+
+def hip_scale(target: bpy.types.Object, src: bpy.types.Object, mapping: dict[str, str | None], translate: list[str]) -> float:
+    """How much taller the target skeleton stands than the source, measured at the hips."""
+    hips = next((n for n in translate if target.data.bones[n].parent), None)
+    sb = hips and mapping.get(hips)
+    if not hips or not sb:
+        return 1.0
+    t = (target.matrix_world @ target.data.bones[hips].head_local).z
+    s = (src.matrix_world @ src.data.bones[sb].head_local).z
+    return t / s if s > 1e-6 else 1.0
+
+
+def retarget_action(
+    target: bpy.types.Object,
+    src: bpy.types.Object,
+    action: bpy.types.Action,
+    mapping: dict[str, str | None],
+    offsets: dict[str, Matrix],
+    translate: list[str],
+    pos_scale: float,
+    name: str,
+    relax: dict | None = None,
+) -> tuple[int, int]:
+    """Key the target rig frame by frame so each mapped bone's world rotation
+    is the source bone's, corrected by its frame offset. Bones keep the rig's
+    own rest offsets; only the root and hips take the source's position."""
+    anim_src = src.animation_data or src.animation_data_create()
+    anim_src.action = action
+    if hasattr(anim_src, "action_slot") and action.slots:
+        anim_src.action_slot = action.slots[0]
+    start, end = (round(f) for f in action.frame_range)
     scene = bpy.context.scene
     scene.frame_start, scene.frame_end = start, end
 
-    action = bpy.data.actions.new(name)
+    baked = bpy.data.actions.new(name)
     anim = target.animation_data or target.animation_data_create()
-    anim.action = action
-    anim.action_slot = action.slots.new(id_type="OBJECT", name=target.name)
+    anim.action = baked
+    anim.action_slot = baked.slots.new(id_type="OBJECT", name=target.name)
     for pb in target.pose.bones:
         pb.rotation_mode = "QUATERNION"
 
     bones = bones_parents_first(target)
-    mapping = {b.name: source_bone(target, src, b.name) for b in bones}
-    if not offsets:
-        offsets.update(frame_offsets(target, path, mapping))
-    unmatched = [n for n, sb in mapping.items() if sb is None or n not in offsets]
-    if unmatched:
-        print(f"    {name}: rest pose kept for {unmatched}")
+    unmatched = [b.name for b in bones if not mapping.get(b.name) or b.name not in offsets]
+    if unmatched and target.get("reported_unmatched") != ",".join(unmatched):
+        target["reported_unmatched"] = ",".join(unmatched)  # say it once per rig, not per clip
+        print(f"    rest pose kept for {len(unmatched)} bones ({', '.join(unmatched[:6])}{'...' if len(unmatched) > 6 else ''})")
     rest = {b.name: b.matrix_local for b in bones}
+    # Extra world-space turn about the forward (Y) axis for chosen bones in calm clips.
+    biases: dict[str, Matrix] = {}
+    if relax and name in relax["clips"]:
+        for bone_name, sign in relax["bones"].items():
+            biases[bone_name] = Matrix.Rotation(math.radians(sign * relax["degrees"]), 3, "Y")
 
     for f in range(start, end + 1):
         scene.frame_set(f)
@@ -763,14 +890,24 @@ def retarget_clip(target: bpy.types.Object, offsets: dict[str, Matrix], path: Pa
         for b in bones:
             par = posed[b.parent.name] if b.parent else Matrix.Identity(4)
             from_rest = (par @ rest[b.parent.name].inverted() @ rest[b.name]) if b.parent else rest[b.name]
-            sb = mapping[b.name]
-            if sb is None or b.name not in offsets:
+            sb = mapping.get(b.name)
+            if not sb or b.name not in offsets:
                 m = from_rest
             else:
                 spb = src.pose.bones[sb]
-                rot = ((src.matrix_world @ spb.matrix).to_3x3().normalized() @ offsets[b.name]).to_4x4()
-                pos = (src.matrix_world @ spb.matrix.translation) if b.name in TRANSLATED_BONES else from_rest.translation
-                m = Matrix.Translation(pos) @ rot
+                world = (src.matrix_world @ spb.matrix).to_3x3()
+                if abs(world.determinant()) < 1e-9:
+                    m = from_rest  # a bone scaled to nothing (spawn effects) has no orientation
+                else:
+                    rot = world.normalized() @ offsets[b.name]
+                    if b.name in biases:
+                        rot = biases[b.name] @ rot
+                    rot = rot.to_4x4()
+                    if b.name in translate:
+                        pos = (src.matrix_world @ spb.matrix.translation) * pos_scale
+                    else:
+                        pos = from_rest.translation
+                    m = Matrix.Translation(pos) @ rot
             pb = target.pose.bones[b.name]
             pb.matrix_basis = (rest[b.name].inverted() @ rest[b.parent.name] @ par.inverted() @ m) if b.parent else (rest[b.name].inverted() @ m)
             pb.keyframe_insert("location", frame=f)
@@ -779,12 +916,44 @@ def retarget_clip(target: bpy.types.Object, offsets: dict[str, Matrix], path: Pa
 
     track = target.animation_data.nla_tracks.new()
     track.name = name
-    strip = track.strips.new(name, start, action)
-    if hasattr(strip, "action_slot") and action.slots:
-        strip.action_slot = action.slots[0]
+    strip = track.strips.new(name, start, baked)
+    if hasattr(strip, "action_slot") and baked.slots:
+        strip.action_slot = baked.slots[0]
     anim.action = None
-    delete_objects([o for o in bpy.data.objects if o not in before])
+    anim_src.action = None
     return start, end
+
+
+def retarget_clip(target: bpy.types.Object, offsets: dict[str, Matrix], path: Path, name: str) -> tuple[int, int]:
+    """One Synty ANIMATION-pack FBX onto the rig. `offsets` is filled on the
+    first call; every clip in a pack shares one skeleton."""
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.fbx(filepath=str(path), use_anim=True)
+    src = next(o for o in bpy.data.objects if o not in before and o.type == "ARMATURE")
+    mapping = {b.name: source_bone(target, src, b.name) for b in target.data.bones}
+    if not offsets:
+        offsets.update(frame_offsets(target, path, mapping))
+    result = retarget_action(target, src, src.animation_data.action, mapping, offsets, list(TRANSLATED_BONES), 1.0, name)
+    delete_objects([o for o in bpy.data.objects if o not in before])
+    return result
+
+
+def import_gltf_rigs(paths: list[str]) -> list[bpy.types.Object]:
+    """KayKit character files: each brings its armature and every clip as an action."""
+    rigs = []
+    for rel in paths:
+        before = set(bpy.data.objects)
+        actions_before = set(bpy.data.actions)
+        bpy.ops.import_scene.gltf(filepath=str(ROOT / rel))
+        new = [o for o in bpy.data.objects if o not in before]
+        arm = next(o for o in new if o.type == "ARMATURE")
+        arm["clips"] = [a.name for a in bpy.data.actions if a not in actions_before]
+        # Keep it visible: a hidden armature is not evaluated, so its pose
+        # would sit at rest while we sample it.
+        arm.hide_render = True
+        delete_objects([o for o in new if o.type == "MESH"])  # only the skeleton and its actions matter
+        rigs.append(arm)
+    return rigs
 
 
 def build_clip_kit(pack_name: str, kit_name: str) -> None:
@@ -796,15 +965,31 @@ def build_clip_kit(pack_name: str, kit_name: str) -> None:
     print(f"== {pack_name}/{kit_name}: {len(kit['clips'])} clips onto {kit['rig']['pack']} rig ({len(rig.data.bones)} bones)")
 
     done = 0
-    offsets: dict[str, Matrix] = {}
-    for name in kit["clips"]:
-        matches = sorted(pack_dir.rglob(kit["clip_file"].format(name=name)))
-        if not matches:
-            print(f"    {name}: no file named {kit['clip_file'].format(name=name)}")
-            continue
-        start, end = retarget_clip(rig, offsets, matches[0], name)
-        print(f"  {name:28s} frames {start}-{end}")
-        done += 1
+    if "source" in kit:
+        # KayKit GLBs: the first file that has a clip provides it.
+        sources = import_gltf_rigs(kit["source"])
+        mapping = {b.name: kit["bone_map"].get(b.name) for b in rig.data.bones}
+        for name in kit["clips"]:
+            src = next((r for r in sources if name in r["clips"]), None)
+            if src is None:
+                print(f"    {name}: not in {', '.join(kit['source'])}")
+                continue
+            offsets = frame_offsets_rest(rig, src, mapping)
+            scale = hip_scale(rig, src, mapping, kit["translate"])
+            start, end = retarget_action(rig, src, bpy.data.actions[name], mapping, offsets, kit["translate"], scale, name, kit.get("relax"))
+            print(f"  {name:28s} frames {start}-{end}  hips x{scale:.2f}")
+            done += 1
+        delete_objects(sources)
+    else:
+        offsets: dict[str, Matrix] = {}
+        for name in kit["clips"]:
+            matches = sorted(pack_dir.rglob(kit["clip_file"].format(name=name)))
+            if not matches:
+                print(f"    {name}: no file named {kit['clip_file'].format(name=name)}")
+                continue
+            start, end = retarget_clip(rig, offsets, matches[0], name)
+            print(f"  {name:28s} frames {start}-{end}")
+            done += 1
 
     bpy.ops.outliner.orphans_purge(do_local_ids=True, do_linked_ids=True, do_recursive=True)
     out_dir = OUT_ROOT / pack_name

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import { instantiateKit, type Kits } from "./models";
-import { SYNTY_RIG } from "./rigSpec";
+import { SYNTY_GOBLIN_RIG } from "./rigSpec";
 
 /** A kit the way GLTFLoader hands it over: bone names made unique with _N suffixes. */
 function fakeKits(): Kits {
@@ -42,7 +42,7 @@ function fakeKits(): Kits {
 
 describe("instantiateKit", () => {
   test("restores the bone names the clips address and finds the hand socket", () => {
-    const inst = instantiateKit(fakeKits(), "goblin_characters", "Warrior_Male_01", "goblin_clips", SYNTY_RIG)!;
+    const inst = instantiateKit(fakeKits(), "goblin_characters", "Warrior_Male_01", ["goblin_clips"], SYNTY_GOBLIN_RIG)!;
     expect(inst).toBeTruthy();
     expect(inst.group.getObjectByName("Hips")).toBeTruthy();
     expect(inst.group.getObjectByName("Spine_01")).toBeTruthy();
@@ -53,10 +53,11 @@ describe("instantiateKit", () => {
 
   test("leaves the shared kit source untouched and returns null for a missing kit", () => {
     const kits = fakeKits();
-    instantiateKit(kits, "goblin_characters", "Warrior_Male_01", "goblin_clips", SYNTY_RIG);
+    instantiateKit(kits, "goblin_characters", "Warrior_Male_01", ["goblin_clips"], SYNTY_GOBLIN_RIG);
     expect(kits.goblin_characters!.scene.getObjectByName("Hips_15")).toBeTruthy();
-    expect(instantiateKit(kits, "viking_characters", "Peasant_Male_01", "goblin_clips", SYNTY_RIG)).toBeNull();
-    expect(instantiateKit(kits, "goblin_characters", "Nobody", "goblin_clips", SYNTY_RIG)).toBeNull();
+    expect(instantiateKit(kits, "viking_characters", "Peasant_Male_01", ["goblin_clips"], SYNTY_GOBLIN_RIG)).toBeNull();
+    expect(instantiateKit(kits, "goblin_characters", "Nobody", ["goblin_clips"], SYNTY_GOBLIN_RIG)).toBeNull();
+    expect(instantiateKit(kits, "goblin_characters", "Warrior_Male_01", ["goblin_kaykit_clips"], SYNTY_GOBLIN_RIG)).toBeNull();
   });
 });
 
@@ -122,6 +123,8 @@ describe("Synty hero", () => {
   test("dresses a Viking from the kits and undresses cleanly", () => {
     const hero = makeHeroModelRig(fakeHeroAssets(), "warrior");
     expect(hero.family).toBe("synty");
+    // Only the goblin pack's clips exist in this fake, so idle falls back to its standing idle.
+    expect(hero.currentClip()).toBe("Idle_Standing");
     hero.setEquipment({ ...BARE, weapon: gearItem("rusted_blade", "rare"), shield: gearItem("plank_buckler"), helm: gearItem("iron_barbute"), chest: gearItem("grave_plate"), boots: gearItem("worn_boots") });
     expect(hero.group.getObjectByName("Hand_R")!.getObjectByName("Wep_Sword_02")).toBeTruthy();
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeTruthy();
@@ -138,6 +141,15 @@ describe("Synty hero", () => {
 
     hero.setEquipment(BARE);
     expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
+  });
+
+  test("prefers the retargeted KayKit idle when that kit is present", () => {
+    const assets = fakeHeroAssets();
+    const tracks = ["Root", "Hips", "Head"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    assets.kits.goblin_kaykit_clips = { scene: new THREE.Group(), animations: [new THREE.AnimationClip("Idle", 1, tracks)] } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    expect(hero.currentClip()).toBe("Idle");
+    expect(hero.clipNames()).toContain("Run_F");
   });
 
   test("falls back to the KayKit barbarian without the kits", () => {

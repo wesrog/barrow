@@ -54,12 +54,17 @@ const DUNGEON_URLS = {
 export const KIT_URLS = {
   dungeon: "/models/synty/dungeon/dungeon.glb",
   dungeon_props: "/models/synty/dungeon/props.glb",
+  dungeon_characters: "/models/synty/dungeon/characters.glb",
+  dungeon_weapons: "/models/synty/dungeon/weapons.glb",
   goblin_characters: "/models/synty/goblin_war_camp/characters.glb",
   goblin_weapons: "/models/synty/goblin_war_camp/weapons.glb",
   goblin_clips: "/models/synty/goblin_locomotion/clips.glb",
   viking_characters: "/models/synty/viking_realm/characters.glb",
   viking_weapons: "/models/synty/viking_realm/weapons.glb",
   viking_attachments: "/models/synty/viking_realm/attachments.glb",
+  // The KayKit clip suite retargeted onto each Synty rig (scripts/synty-to-glb.py).
+  goblin_kaykit_clips: "/models/synty/kaykit_clips/goblin_rig.glb",
+  dungeon_kaykit_clips: "/models/synty/kaykit_clips/dungeon_rig.glb",
 } as const;
 
 export type CharacterName = keyof typeof CHARACTER_URLS;
@@ -257,18 +262,19 @@ export function instantiate(gltf: GLTF, spec: RigSpec): CharacterInstance {
 }
 
 /**
- * Instantiate a character from a Synty kit node, animated by a clip kit whose
- * tracks address bones by name. Null when either kit is missing.
+ * Instantiate a character from a Synty kit node, animated by clip kits whose
+ * tracks address bones by name. Every clip kit that loaded contributes; null
+ * when the character kit or all of its clip kits are missing.
  */
 export function instantiateKit(
   kits: Kits,
   kit: KitName,
   node: string,
-  clipKit: KitName,
+  clipKits: readonly KitName[],
   spec: RigSpec,
 ): CharacterInstance | null {
   const source = kitNode(kits, kit, node);
-  const clips = kits[clipKit]?.animations;
-  if (!source || !clips) return null;
+  const clips = clipKits.flatMap((k) => kits[k]?.animations ?? []);
+  if (!source || clips.length === 0) return null;
   return instantiateNode(source, clips, spec);
 }

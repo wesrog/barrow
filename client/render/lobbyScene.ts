@@ -2,9 +2,8 @@ import * as THREE from "three";
 import type { Klass } from "../../sim/skills";
 import { createEquipment } from "../../sim/character";
 import type { Item } from "../../sim/items/generate";
-import { makeHeroModelRig } from "./modelRigs";
-import { instantiate, type GameAssets } from "./models";
-import { KAYKIT_RIG } from "./rigSpec";
+import { makeHeroModelRig, makeMonsterModelRig } from "./modelRigs";
+import type { GameAssets } from "./models";
 
 /**
  * The lobby diorama: a small barrow-entrance vignette rendered live behind the
@@ -176,17 +175,10 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
     torches.push({ flame, light, seed: i * 37 });
   }
 
-  // --- A skeleton standing watch beside the doorway ---
-  const sentry = instantiate(assets.characters.skeleton_warrior, KAYKIT_RIG);
+  // --- A wight standing watch beside the doorway: the same rig the crypt uses ---
+  const sentry = makeMonsterModelRig(assets, "cairn_wight");
   sentry.group.position.set(-1.7, 0, -0.6);
   sentry.group.rotation.y = Math.PI * 0.8;
-  sentry.group.scale.setScalar(0.9);
-  const idle = sentry.actions.get(KAYKIT_RIG.clips.idleCombat!) ?? sentry.actions.get(KAYKIT_RIG.clips.idle!);
-  idle?.play();
-  if (sentry.handSlotR) {
-    const axe = assets.weapons.skeleton_axe.clone(true);
-    sentry.handSlotR.add(axe);
-  }
   scene.add(sentry.group);
   // A low warm glow so the sentry reads in the doorway's half-shadow.
   const sentryGlow = new THREE.PointLight(0xffb35c, 2.0, 4, 1.7);
@@ -298,10 +290,10 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets): LobbyS
   const loop = () => {
     if (disposed) return;
     raf = requestAnimationFrame(loop);
-    const dt = clock.getDelta();
+    clock.getDelta();
     const t = clock.elapsedTime;
-    sentry.mixer.update(dt);
     // performance.now(), not clock time: oneShot timers are wall-clock based.
+    sentry.animate(performance.now(), 0, 0);
     warrior.animate(performance.now(), 0, 0);
     witch.animate(performance.now(), 0, 0);
     // The witchlight breathes: the orb bobs and its glow pulses with it.

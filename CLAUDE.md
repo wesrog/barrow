@@ -37,11 +37,16 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   family's `RigSpec` maps them to its own names and weapon grip. `models.ts` loads KayKit plus
   the optional Synty kits and normalizes Synty dungeon pieces to KayKit footprints, so a
   missing kit (fresh clone, CI) falls back to KayKit with no code change. `modelRigs.ts` holds
-  the per-monster look tables for both families and both hero builds: a Viking Realm human
+  the per-monster look tables for both families (undead types on the Dungeon Pack rig, raiders
+  on the goblin rig, villagers on the human spec) and both hero builds: a Viking Realm human
   (warrior male, leader female for the witch) dressed from the Viking weapon, shield, and helmet
   kits when they loaded, else the KayKit barbarian with box overlays. Viking swords and knives
   are authored along Z and get a quarter turn before the grip; shields a half turn. In dev,
-  `window.__barrow` exposes game, driver, input, assets.
+  `window.__barrow` exposes game, driver, input, assets. Rig specs list clip candidates in
+  order (KayKit copy first, goblin pack second) so a machine missing a clip kit still animates.
+  Synty scales derive from KayKit's visible heights (2.15 to 2.6 units before a look's scale;
+  the barbarian is 2.17 bare-headed), not the 3.39 the raw GLB bounding box suggests, which
+  includes Blender's bone-display sphere.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)
@@ -74,9 +79,15 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   land). Synty's clip skeleton has the same joints as the characters but differently
   oriented joint frames (Unity Humanoid hides that), so the converter calibrates a per-bone
   frame offset between the two T-poses (character bind pose vs clip joint orients) and keys
-  world rotations through it; hips carry translation in metres. Verified by rendering the
-  warrior mesh on the retargeted rig. Play clips on any goblin or viking character by bone
-  name. No attack or death clips: those still come from Mixamo, as do all dungeon-rig clips.
+  world rotations through it; hips carry translation in metres.
+- `kaykit_clips` (no source folder): the CC0 KayKit suite (Idle, walks, runs, every 1H/2H/unarmed
+  swing, spellcasts, Cheer, Taunt, dodges, jumps, hits, deaths) retargeted onto `goblin_rig`
+  and `dungeon_rig` through an explicit bone map (`SYNTY_FROM_KAYKIT`, `UE_FROM_KAYKIT`) with
+  rest-direction alignment and hip motion scaled by hip height. KayKit's chibi idle holds the
+  arms out, so calm clips get an extra `ARM_RELAX_DEGREES` turn on the upper arms; swings keep
+  their arcs. Every Synty character now animates from these; goblins keep the goblin idle and
+  gait. Mixamo is no longer required. The KayKit source armature must stay visible during the
+  bake: a hidden armature is not evaluated and samples as rest.
 - GLTFLoader makes node names unique per file, so in a kit with many characters the second
   rig's bones load as `Root_1`, `Hips_1`... `instantiateKit` restores the authored names on
   each clone (only names the clips target), otherwise no clip track binds.

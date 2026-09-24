@@ -15,7 +15,16 @@ import {
   type Kits,
   type WeaponName,
 } from "./models";
-import { KAYKIT_RIG, SYNTY_RIG, type BoneRole, type ClipId, type RigFamily, type RigSpec } from "./rigSpec";
+import {
+  KAYKIT_RIG,
+  SYNTY_DUNGEON_RIG,
+  SYNTY_GOBLIN_RIG,
+  SYNTY_HUMAN_RIG,
+  type BoneRole,
+  type ClipId,
+  type RigFamily,
+  type RigSpec,
+} from "./rigSpec";
 import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 
 /**
@@ -34,6 +43,10 @@ export interface ModelRig extends Rig {
   release(): void;
   /** The named bone for a role, if this rig has it. */
   bone(role: BoneRole): THREE.Object3D | null;
+  /** Name of the clip playing now (the asset viewer and tests read it). */
+  currentClip(): string | null;
+  /** Every clip name this rig can play. */
+  clipNames(): string[];
 }
 
 export interface HeroModelRig extends ModelRig {
@@ -75,10 +88,26 @@ class AnimRig implements ModelRig {
     this.spec = spec;
     this.family = spec.family;
     this.group = inst.group;
-    this.idleName = spec.clips[idle] ?? spec.clips.idle;
+    this.idleName = this.clipName(idle) ?? this.clipName("idle");
     // A family without the requested gait walks normally rather than freezing.
-    this.walkName = spec.clips[walk] ?? spec.clips.walk;
+    this.walkName = this.clipName(walk) ?? this.clipName("walk");
     if (this.idleName) this.play(this.idleName);
+  }
+
+  /** The first name for a semantic clip that this instance actually has. */
+  private clipName(clip: ClipId): string | undefined {
+    const choice = this.spec.clips[clip];
+    if (!choice) return undefined;
+    const names = Array.isArray(choice) ? choice : [choice];
+    return names.find((n) => this.inst.actions.has(n));
+  }
+
+  currentClip(): string | null {
+    return this.current?.getClip().name ?? null;
+  }
+
+  clipNames(): string[] {
+    return [...this.inst.actions.keys()];
   }
 
   private play(name: string, fade = 0.18, loop = true, force = false): THREE.AnimationAction | null {
@@ -100,7 +129,7 @@ class AnimRig implements ModelRig {
   private moveCancels = true;
 
   oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
-    const name = this.spec.clips[clip];
+    const name = this.clipName(clip);
     if (!name) return;
     // Force a restart so back-to-back identical attacks replay from the top.
     const action = this.play(name, 0.08, false, true);
@@ -398,8 +427,19 @@ const SYNTY_HERO_NODES: Record<Klass, string> = {
   witch: "Leader_Female_01",
 };
 
-/** KayKit heroes stand 3.39 units before their 0.72 scale; Synty humans stand 1.8. */
-const SYNTY_HERO_SCALE = (3.39 * 0.72) / 1.8;
+/** The KayKit barbarian stands 2.17 units bare-headed before his 0.72 scale; Synty humans stand 1.8. */
+const SYNTY_HERO_SCALE = (2.17 * 0.72) / 1.8;
+
+/** Clip kits each Synty rig draws on, most wanted first (see rigSpec). */
+export const CLIP_KITS = {
+  human: ["goblin_kaykit_clips", "goblin_clips"],
+  goblin: ["goblin_clips", "goblin_kaykit_clips"],
+  dungeon: ["dungeon_kaykit_clips"],
+} as const satisfies Record<string, readonly KitName[]>;
+type SyntyRigName = keyof typeof CLIP_KITS;
+const RIG_SPECS: Record<SyntyRigName, RigSpec> = { human: SYNTY_HUMAN_RIG, goblin: SYNTY_GOBLIN_RIG, dungeon: SYNTY_DUNGEON_RIG };
+/** Where each rig's held props come from; weapons are authored in the same conventions per pack. */
+export const WEAPON_KITS: Record<SyntyRigName, KitName> = { human: "viking_weapons", goblin: "goblin_weapons", dungeon: "dungeon_weapons" };
 
 /**
  * Weapon base id -> Synty weapon node. `axis` is the direction the weapon was
@@ -474,7 +514,7 @@ function orientWeapon(model: THREE.Object3D, look: SyntyWeaponLook): THREE.Objec
 }
 
 function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
-  const rig = new AnimRig(inst, { ...SYNTY_RIG, walkSpeedRef: 3 }, "idle", "run");
+  const rig = new AnimRig(inst, SYNTY_HUMAN_RIG, "idle", "run");
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
 
@@ -571,7 +611,7 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
  * KayKit barbarian. Both answer the same semantic clips and equipment calls.
  */
 export function makeHeroModelRig(assets: GameAssets, klass: Klass): HeroModelRig {
-  const inst = instantiateKit(assets.kits, "viking_characters", SYNTY_HERO_NODES[klass], "goblin_clips", SYNTY_RIG);
+  const inst = instantiateKit(assets.kits, "viking_characters", SYNTY_HERO_NODES[klass], CLIP_KITS.human, SYNTY_HUMAN_RIG);
   return inst ? makeSyntyHero(inst, assets.kits) : makeKayKitHero(assets);
 }
 
@@ -591,73 +631,74 @@ interface MonsterLook {
 
 /**
  * Monster type -> how each family draws it. KayKit skeletons are the
- * fallback; the Synty goblin camp is the look when its kits are present.
- * Synty scales match the KayKit heights: KayKit characters stand 3.1-3.6
- * units before scaling, Synty humanoids 1.8, the troll 1.82.
+ * fallback; with the Synty kits present the crypt fills with Dungeon Pack
+ * undead and Goblin War Camp raiders. Scales match the KayKit heights: KayKit
+ * characters stand 2.15-2.6 units before their look's scale, Synty humanoids
+ * 1.8, the troll 1.82, the Dungeon Pack skeletons 1.8-1.95 and ghosts 1.8-1.9.
  */
 interface MonsterLooks {
   kaykit: MonsterLook & { model: CharacterName; weapon?: WeaponName };
-  synty?: MonsterLook & { kit: KitName; node: string };
+  synty?: MonsterLook & { rig: SyntyRigName; kit: KitName; node: string };
 }
 
 export const MONSTER_LOOKS: Record<string, MonsterLooks> = {
   shambler: {
     kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 0.62, weapon: "skeleton_blade" },
-    synty: { kit: "goblin_characters", node: "Warrior_Male_01", idle: "idle", walk: "shamble", scale: 1.23, weapon: "Wep_Club_01" },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Slave_01", idle: "idle", walk: "shamble", scale: 0.89, weapon: "Wep_BrokenSword_01" },
   },
   skitter: {
     kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.45, tint: 0x8a5a5a },
-    synty: { kit: "goblin_characters", node: "Prisoner_02", idle: "idle", walk: "run", scale: 0.79, tint: 0x8a5a5a },
+    synty: { rig: "goblin", kit: "goblin_characters", node: "Prisoner_02", idle: "idle", walk: "run", scale: 0.54, tint: 0x8a5a5a },
   },
   gravespit: {
     kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.6, weapon: "skeleton_staff", tint: 0x9a8ab8 },
-    synty: { kit: "goblin_characters", node: "Shaman_01", idle: "idle", walk: "walk", scale: 1.2, weapon: "Wep_Staff_01", tint: 0x9a8ab8 },
+    synty: { rig: "goblin", kit: "goblin_characters", node: "Shaman_01", idle: "idle", walk: "walk", scale: 0.87, weapon: "Wep_Staff_01", tint: 0x9a8ab8 },
   },
   fen_howler: {
     kaykit: { model: "skeleton_rogue", idle: "idle", walk: "run", scale: 0.55, tint: 0x6a8a4a },
-    synty: { kit: "goblin_characters", node: "Ranger_01", idle: "idle", walk: "run", scale: 1.0, tint: 0x6a8a4a },
+    synty: { rig: "goblin", kit: "goblin_characters", node: "Ranger_01", idle: "idle", walk: "run", scale: 0.7, tint: 0x6a8a4a },
   },
   bog_maw: {
     kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.78, weapon: "skeleton_staff", tint: 0x5a7a52 },
-    synty: { kit: "goblin_characters", node: "Cook_01", idle: "idle", walk: "walk", scale: 1.56, weapon: "Wep_Cleaver_01", tint: 0x5a7a52 },
+    synty: { rig: "goblin", kit: "goblin_characters", node: "Cook_01", idle: "idle", walk: "walk", scale: 1.13, weapon: "Wep_Cleaver_01", tint: 0x5a7a52 },
   },
   cairn_wight: {
     kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.9, weapon: "skeleton_axe", tint: 0xd8d2c0 },
-    synty: { kit: "goblin_characters", node: "Knight_01", idle: "idleCombat", walk: "walk", scale: 1.78, weapon: "Wep_Axe_01", tint: 0xd8d2c0 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.18, weapon: "Wep_Straightsword_01", tint: 0xd8d2c0 },
   },
   barrow_lord: {
     kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.05, weapon: "skeleton_axe", tint: 0xc9b880 },
-    synty: { kit: "goblin_characters", node: "King_02", idle: "idleCombat", walk: "walk", scale: 2.08, weapon: "Wep_Axe_02", tint: 0xc9b880 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.38, weapon: "Wep_Ornate_GreatAxe_01", tint: 0xc9b880 },
   },
   cinder_shade: {
     kaykit: { model: "skeleton_minion", idle: "idle", walk: "run", scale: 0.5, tint: 0xc45a30 },
-    synty: { kit: "goblin_characters", node: "Prisoner_01", idle: "idle", walk: "run", scale: 0.88, tint: 0xc45a30 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_01", idle: "idle", walk: "run", scale: 0.57, tint: 0xc45a30 },
   },
   ash_revenant: {
     kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 0.8, weapon: "skeleton_blade", tint: 0x8a4a3a },
-    synty: { kit: "goblin_characters", node: "Archer_Male_01", idle: "idleCombat", walk: "walk", scale: 1.59, weapon: "Wep_Sword_01", tint: 0x8a4a3a },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Soldier_02", idle: "idleCombat", walk: "walk", scale: 1.15, weapon: "Wep_HandAxe_01", tint: 0x8a4a3a },
   },
   ember_hulk: {
     kaykit: { model: "skeleton_warrior", idle: "idle", walk: "shamble", scale: 1.0, tint: 0xd06428 },
-    synty: { kit: "goblin_characters", node: "Troll_01", idle: "idle", walk: "shamble", scale: 1.96, tint: 0xd06428 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Rock_Golem", idle: "idle", walk: "shamble", scale: 1.41, tint: 0xd06428 },
   },
   veil_screamer: {
     kaykit: { model: "skeleton_mage", idle: "idle", walk: "walk", scale: 0.68, weapon: "skeleton_staff", tint: 0x8a6ab8 },
-    synty: { kit: "goblin_characters", node: "Wizard_01", idle: "idle", walk: "walk", scale: 1.36, weapon: "Wep_Staff_02", tint: 0x8a6ab8 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Ghost_02", idle: "idle", walk: "walk", scale: 0.98, tint: 0x8a6ab8 },
   },
   crown_sentinel: {
     kaykit: { model: "skeleton_warrior", idle: "idleCombat", walk: "walk", scale: 1.0, weapon: "skeleton_axe", tint: 0x6a7ab0 },
-    synty: { kit: "goblin_characters", node: "King_01", idle: "idleCombat", walk: "walk", scale: 1.98, weapon: "Wep_Sword_02", tint: 0x6a7ab0 },
+    synty: { rig: "dungeon", kit: "dungeon_characters", node: "Skeleton_Knight", idle: "idleCombat", walk: "walk", scale: 1.32, weapon: "Wep_Ornate_Sword_01", tint: 0x6a7ab0 },
   },
   // The camp vendor: an old knight minding the stall, or a Viking villager.
   __vendor__: {
     kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.72 },
-    synty: { kit: "viking_characters", node: "Peasant_Male_01", idle: "idle", walk: "walk", scale: 1.38 },
+    synty: { rig: "human", kit: "viking_characters", node: "Peasant_Male_01", idle: "idle", walk: "walk", scale: 0.98 },
   },
   // The camp healer: a pale-robed knight keeping a quiet shrine.
   __healer__: {
     kaykit: { model: "knight", idle: "idle", walk: "walk", scale: 0.68, tint: 0xf0e6c8 },
-    synty: { kit: "viking_characters", node: "Peasant_Female_01", idle: "idle", walk: "walk", scale: 1.3, tint: 0xf0e6c8 },
+    synty: { rig: "human", kit: "viking_characters", node: "Peasant_Female_01", idle: "idle", walk: "walk", scale: 0.93, tint: 0xf0e6c8 },
   },
 };
 
@@ -674,11 +715,11 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   if (!looks) return makeProceduralRig(typeId); // tomb_bloat keeps its custom blob
 
   const synty = looks.synty;
-  const inst = synty && instantiateKit(assets.kits, synty.kit, synty.node, "goblin_clips", SYNTY_RIG);
+  const inst = synty && instantiateKit(assets.kits, synty.kit, synty.node, CLIP_KITS[synty.rig], RIG_SPECS[synty.rig]);
   if (synty && inst) {
-    const rig = new AnimRig(inst, SYNTY_RIG, synty.idle, synty.walk);
+    const rig = new AnimRig(inst, RIG_SPECS[synty.rig], synty.idle, synty.walk);
     rig.group.scale.setScalar(synty.scale);
-    const weapon = synty.weapon ? kitNode(assets.kits, "goblin_weapons", synty.weapon) : null;
+    const weapon = synty.weapon ? kitNode(assets.kits, WEAPON_KITS[synty.rig], synty.weapon) : null;
     if (weapon) rig.attach("r", cloneProp(weapon));
     if (synty.tint !== undefined) tintRig(rig.group, synty.tint);
     return rig;

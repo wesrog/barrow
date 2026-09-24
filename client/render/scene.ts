@@ -79,6 +79,8 @@ export interface SceneHandle {
   dispose(): void;
   /** The Three scene itself, for poking at from the dev console. */
   three: THREE.Scene;
+  /** Fired on each of the local hero's footfalls, read off the walk animation. */
+  onFootstep?: () => void;
 }
 
 function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
@@ -1013,9 +1015,12 @@ export function createScene(
     });
   };
 
+  let onFootstep: (() => void) | undefined;
   const makeHero = (id: PlayerId, klass: Klass): HeroEntry => {
     const rig = makeHeroModelRig(assets, klass);
     scene.add(rig.group);
+    // Only your own feet make a sound; the rig reports them off its walk cycle.
+    if (id === localId()) rig.footfall = () => onFootstep?.();
     let plate: HTMLDivElement | null = null;
     if (id !== localId()) {
       // Remote heroes wear their seat colour; the local one keeps its own look.
@@ -1317,6 +1322,12 @@ export function createScene(
 
   return {
     three: scene,
+    get onFootstep() {
+      return onFootstep;
+    },
+    set onFootstep(fn: (() => void) | undefined) {
+      onFootstep = fn;
+    },
     render(state, prevPositions, alpha) {
       const me = localPlayer(state);
       const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);

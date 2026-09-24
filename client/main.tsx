@@ -172,6 +172,7 @@ function Game({
         localPlayer(game).zoneId === "surface",
         dungeonStyleOf(localPlayer(game).zoneId),
       );
+      scene.onFootstep = () => playStep();
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
       // A black veil the zone crossing fades out from, so the world swap under
@@ -194,26 +195,6 @@ function Game({
     const snapshotPositions = () =>
       new Map([...game.players].map(([id, p]) => [id, { ...p.pos }] as const));
     let prevPositions = snapshotPositions();
-    // The hero's footsteps: one every stride's worth of ground covered.
-    // Teleports (zone changes, respawns) reset the stride rather than firing
-    // a step across the map.
-    let strideFrom: { x: number; y: number; zone: string } | null = null;
-    let strideLeft = 0;
-    const STRIDE = 0.62;
-    const footsteps = (me: { pos: { x: number; y: number }; zoneId: string; dead: boolean }) => {
-      if (!strideFrom || strideFrom.zone !== me.zoneId || Math.hypot(me.pos.x - strideFrom.x, me.pos.y - strideFrom.y) > 3) {
-        strideFrom = { x: me.pos.x, y: me.pos.y, zone: me.zoneId };
-        strideLeft = STRIDE;
-        return;
-      }
-      const moved = Math.hypot(me.pos.x - strideFrom.x, me.pos.y - strideFrom.y);
-      strideFrom = { x: me.pos.x, y: me.pos.y, zone: me.zoneId };
-      strideLeft -= moved;
-      if (strideLeft <= 0 && !me.dead) {
-        playStep();
-        strideLeft = STRIDE;
-      }
-    };
     let mouseDown = false;
     /** Right button held: the mouse slot recasts every tick, like holding a D2 skill. */
     let rightDown = false;
@@ -764,6 +745,7 @@ function Game({
           localPlayer(game).zoneId === "surface",
           dungeonStyleOf(localPlayer(game).zoneId),
         );
+        scene.onFootstep = () => playStep();
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
         mount.appendChild(fadeEl); // stay above the fresh canvas
@@ -771,7 +753,6 @@ function Game({
       }
       if (lastPointer) scene.updateHover(game, lastPointer.x, lastPointer.y);
       scene.render(game, prevPositions, acc / TICK_MS);
-      footsteps(localPlayer(game));
       // Ambient bed for the ground underfoot, and the combat-aware music
       // layer. Both start with the same user-gesture unlock as the SFX.
       const me2 = localPlayer(game);

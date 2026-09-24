@@ -43,8 +43,9 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   licence beside them; `client/sfx.test.ts` checks every named file exists). Swings that miss
   carry a drawn-blade ring (sharp) or cloth (blunt), landed hits a knife slice or a heavy punch
   over a soft body, taking a hit a punch into a body under the grunt, breakables splintering
-  wood (`smash`), and the hero's footsteps the carpet set, one per 0.62 cells walked from
-  `main.tsx`. The music (`client/music.ts`) and ambience beds stay synthesized.
+  wood (`smash`), and the hero's footsteps the carpet set, fired by the rig on each footfall of
+  the walk clip (a shin's world height turning from falling to rising, `AnimRig.trackFootfalls`),
+  so they follow the animation at any speed; the scene hands them out as `onFootstep`. The music (`client/music.ts`) and ambience beds stay synthesized.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

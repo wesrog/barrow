@@ -44,6 +44,8 @@ export interface ModelRig extends Rig {
   currentClip(): string | null;
   /** Every clip name this rig can play. */
   clipNames(): string[];
+  /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
+  footfall?: () => void;
 }
 
 export interface HeroModelRig extends ModelRig {
@@ -79,6 +81,10 @@ class AnimRig implements ModelRig {
   private oneShotUntil = 0;
   private idleName: string | undefined;
   private walkName: string | undefined;
+  footfall?: () => void;
+  /** Footfall detection: each shin's last world height and direction of travel. */
+  private feet: { bone: THREE.Object3D; y: number; dy: number }[] | null = null;
+  private static readonly footTmp = new THREE.Vector3();
 
   constructor(inst: CharacterInstance, spec: RigSpec, idle: ClipId, walk: ClipId) {
     this.inst = inst;
@@ -162,6 +168,35 @@ class AnimRig implements ModelRig {
       }
     }
     this.inst.mixer.update(dt);
+    if (this.footfall) this.trackFootfalls(speed);
+  }
+
+  /**
+   * A footfall is the bottom of a shin's arc: its world height stops falling
+   * and starts rising. Read straight off the posed bones after the mixer
+   * update, so any walk clip at any time scale keeps the sound on the feet.
+   * Only while the walk plays; standing still, nothing fires.
+   */
+  private trackFootfalls(speed: number): void {
+    const walking = this.current !== null && this.current.getClip().name === this.walkName && speed > 0.4;
+    if (!walking) {
+      this.feet = null;
+      return;
+    }
+    if (!this.feet) {
+      const bones = [this.bone("lowerLegL"), this.bone("lowerLegR")].filter((b): b is THREE.Object3D => b !== null);
+      this.feet = bones.map((bone) => ({ bone, y: Number.NaN, dy: 0 }));
+    }
+    this.group.updateWorldMatrix(true, true);
+    for (const foot of this.feet) {
+      const y = foot.bone.getWorldPosition(AnimRig.footTmp).y;
+      if (!Number.isNaN(foot.y)) {
+        const dy = y - foot.y;
+        if (foot.dy < 0 && dy >= 0) this.footfall?.();
+        if (dy !== 0) foot.dy = dy;
+      }
+      foot.y = y;
+    }
   }
 
   private attached: { r: THREE.Object3D | null; l: THREE.Object3D | null } = { r: null, l: null };

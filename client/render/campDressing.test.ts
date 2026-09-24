@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import * as THREE from "three";
-import { CAMP_DRESSING, dressCamp } from "./campDressing";
+import { CAMP_DRESSING, HUT_WALLS, dressCamp, dressHuts } from "./campDressing";
 import { KIT_URLS, type Kits } from "./models";
 
 function fakeKits(): Kits {
@@ -42,6 +42,43 @@ describe("dressCamp", () => {
   });
 });
 
+describe("dressHuts", () => {
+  const structures = () => {
+    const scene = new THREE.Group();
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post]) {
+      const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+      node.name = name;
+      scene.add(node);
+    }
+    return { viking_structures: { scene, animations: [] } as unknown as Kits["viking_structures"] };
+  };
+
+  test("walls every solid ring cell, posts the corners, leaves the doorway open", () => {
+    const placed: { name: string; x: number; z: number; ry: number; offset?: readonly number[] }[] = [];
+    // The doorway sits south of home, as the carver leaves it when the gate lies that way.
+    const door = { x: 42, y: 24 };
+    const walled = dressHuts(structures(), [{ x: 42.5, y: 22.5 }], (x, y) => x === door.x && y === door.y, (node, x, z, ry, _s, offset) =>
+      placed.push({ name: node.name, x, z, ry, offset }),
+    );
+    expect(walled.size).toBe(15);
+    expect(walled.has("42,24")).toBe(false);
+    expect(placed.filter((p) => p.name === HUT_WALLS.post).length).toBe(4);
+    const walls = placed.filter((p) => p.name === HUT_WALLS.wall);
+    expect(walls.length).toBe(11);
+    const north = walls.find((p) => p.z === 20.5 && p.x === 42.5)!;
+    expect(north.ry).toBe(0);
+    expect(north.offset).toEqual(HUT_WALLS.wallOffset);
+    const east = walls.find((p) => p.x === 44.5 && p.z === 22.5)!;
+    expect(east.ry).toBeCloseTo(Math.PI / 2);
+  });
+
+  test("raises nothing without the structures kit", () => {
+    let calls = 0;
+    expect(dressHuts({}, [{ x: 1.5, y: 1.5 }], () => false, () => calls++).size).toBe(0);
+    expect(calls).toBe(0);
+  });
+});
+
 // Only meaningful where the converted kit exists.
 const propsPath = `public${KIT_URLS.viking_props}`;
 describe.if(existsSync(propsPath))("camp dressing matches the props kit", () => {
@@ -50,5 +87,16 @@ describe.if(existsSync(propsPath))("camp dressing matches the props kit", () => 
     const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString("utf8")) as { nodes: { name: string }[] };
     const names = new Set(json.nodes.map((n) => n.name));
     for (const row of CAMP_DRESSING) expect(names.has(row.node)).toBe(true);
+  });
+});
+
+const structuresPath = `public${KIT_URLS.viking_structures}`;
+describe.if(existsSync(structuresPath))("hut walls match the structures kit", () => {
+  test("wall and post name real kit nodes", () => {
+    const buf = readFileSync(structuresPath);
+    const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString("utf8")) as { nodes: { name: string }[] };
+    const names = new Set(json.nodes.map((n) => n.name));
+    expect(names.has(HUT_WALLS.wall)).toBe(true);
+    expect(names.has(HUT_WALLS.post)).toBe(true);
   });
 });

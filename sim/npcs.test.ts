@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createGame, stepSolo } from "./tick";
 import { getZone } from "./state";
-import { NPCS, isNpcId, type NpcId, type Npc } from "./npcs";
+import { HUT_RADIUS, NPCS, hutRing, isNpcId, type NpcId, type Npc } from "./npcs";
 import { isWalkable } from "./map";
 import { areaRect, inRect } from "./surface";
 import { player, soloGame } from "./test-helpers";
@@ -21,6 +21,14 @@ describe("npcs", () => {
       expect(isWalkable(surface.map, Math.floor(npc.pos.x), Math.floor(npc.pos.y))).toBe(true);
       expect(inRect(areaRect(def.area), npc.pos)).toBe(true);
     }
+  });
+
+  test("a hut ring is the 16 cells at Chebyshev distance HUT_RADIUS from home", () => {
+    const ring = hutRing({ x: 42.5, y: 22.5 });
+    expect(HUT_RADIUS).toBe(2);
+    expect(ring.length).toBe(16);
+    for (const c of ring) expect(Math.max(Math.abs(c.x - 42), Math.abs(c.y - 22))).toBe(HUT_RADIUS);
+    expect(new Set(ring.map((c) => `${c.x},${c.y}`)).size).toBe(16);
   });
 
   test("npc ids validate", () => {

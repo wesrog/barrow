@@ -246,6 +246,15 @@ PACKS = {
                 "emissive": False,
             },
             "props": {"include": ["FBX/SM_Prop_*.fbx"], "emissive": True},
+            # Small building parts the game raises on the map itself (hut walls,
+            # fences, pillars, doors), kept apart from the full village kit.
+            "structures": {
+                "include": [
+                    "FBX/SM_Bld_Wall_Logs_*.fbx", "FBX/SM_Bld_Pillar_*.fbx", "FBX/SM_Bld_Fence_*.fbx",
+                    "FBX/SM_Bld_Door_*.fbx", "FBX/SM_Bld_Step_01.fbx", "FBX/SM_Bld_Roof_Cap_*.fbx",
+                ],
+                "emissive": False,
+            },
             # 80 shield designs share one texture; the *_Optimised_* copies are excluded.
             "weapons": {"include": ["FBX/SM_Wep_*.fbx"], "emissive": False},
         },

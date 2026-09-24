@@ -54,9 +54,13 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   tufts) in 16-cell chunks for culling, tinted per biome by `foliageTint`/`stoneTint` in
   `biomes.ts`; without the kit the scene keeps its primitive cones and icosahedra.
   `campDressing.ts` is the row table of Viking props around the camp markers (fire pit, awning
-  stall, sickbed, banner, rune stone); the primitive campfire and dungeon-prop stall remain the
-  fallback. Kit nodes stand at the origin but a few carry a translation that centres an offset
-  mesh, so place them inside a wrapper group rather than overwriting their position.
+  stall, sickbed, banner, rune stone) and inside huts, plus `dressHuts`, which raises log walls
+  and corner posts on a hut dweller's wall ring (`hutRing` in `sim/npcs.ts`, shared with the
+  zone carver) and hands the scene the cells to leave bare. The primitive campfire and
+  dungeon-prop stall remain the fallback. Kit nodes stand at the origin but a few carry a
+  translation that centres an offset mesh, so place them inside a wrapper group rather than
+  overwriting their position. The hero's chest armour hangs Viking fur mantles on the chest
+  bone through its rest frame, since attachments are authored in place over the T-pose.
 - `client/ui/` — React HUD (globes, belt, inventory grid, character/skill panels)
 
 ## Licensed assets (Synty)
@@ -84,9 +88,11 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 - `viking_realm`: zip has a `SourceFiles/` level (the pack `root`). Ten humans plus 14 skinned
   attachments on the same 50-bone rig as the goblins, split per character like them. Its
   material list names textures on the slot line; 80 shield designs share one texture. Its
-  environment splits into `village` (buildings, docks, boats, cliffs) and a lean `nature` kit
+  environment splits into `village` (buildings, docks, boats, cliffs), a lean `nature` kit
   (pines, bushes, stones, roof tufts, no pine groups) that the game loads for the outdoor
-  scatter; the single-material pines run 1.1k to 1.8k triangles, fit for thousands of instances.
+  scatter, and `structures` (log walls, pillars, fences, doors, steps, roof caps) for pieces
+  the game raises on the map itself; the single-material pines run 1.1k to 1.8k triangles,
+  fit for thousands of instances. Log walls have an end pivot 1.25 units from centre.
 - `goblin_locomotion` is a clip kit: `clips.glb` is a mesh-less goblin rig with one animation
   per clip (Idle_Standing, Walk_F, Run_F, Sprint_F, shuffles, turns, transitions, jump and
   land). Synty's clip skeleton has the same joints as the characters but differently

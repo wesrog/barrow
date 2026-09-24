@@ -1,5 +1,6 @@
 import type * as THREE from "three";
-import type { MapMarker } from "../../sim/map";
+import type { MapMarker, Vec } from "../../sim/map";
+import { HUT_RADIUS, hutRing } from "../../sim/npcs";
 import { kitNode, type KitName, type Kits } from "./models";
 
 /**
@@ -24,6 +25,8 @@ export interface DressingRow {
 
 const PROPS: KitName = "viking_props";
 const Q = Math.PI / 4;
+/** Marker character the scene synthesizes at each hut home. */
+export const HUT_MARKER = "hut";
 
 export const CAMP_DRESSING: readonly DressingRow[] = [
   // The fire: a ringed stone pit with logs laid in it, seats on two sides.
@@ -50,10 +53,40 @@ export const CAMP_DRESSING: readonly DressingRow[] = [
   // Waypoints: a rune stone turned toward the pad, a cairn opposite.
   { marker: "W", kit: PROPS, node: "Prop_RuneStone_01", dx: -1.0, dz: -1.0, ry: -Q, scale: 0.45 },
   { marker: "W", kit: PROPS, node: "Prop_Cairn_02", dx: 1.1, dz: -0.9, ry: 0, scale: 0.4 },
+  // Hut interiors (the scene passes each hut home as a "hut" marker): a cot and
+  // a cooking fire along the back row, a pelt where the dweller stands.
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Bed_02", dx: -1.0, dz: -1.0, ry: 0, scale: 0.4 },
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Bed_02_Insert_01", dx: -1.0, dz: -1.0, ry: 0, scale: 0.4 },
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Fire_Pit_05", dx: 1.0, dz: -1.0, ry: 0, scale: 0.6 },
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Fire_Pit_05_Insert_01", dx: 1.0, dz: -1.0, ry: 0, scale: 0.6 },
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Cauldron_03", dx: 1.0, dz: -1.0, ry: 0, scale: 0.55 },
+  { marker: HUT_MARKER, kit: PROPS, node: "Prop_Pelt_04", dx: 0.2, dz: 0.3, ry: 0.4, scale: 0.6 },
 ];
 
-/** Where a placed prop goes: world x/z, yaw, uniform scale. */
-export type PlaceProp = (node: THREE.Object3D, x: number, z: number, ry: number, scale: number) => void;
+/**
+ * A hut's wall ring in Viking log walls: one wall per edge cell, a post per
+ * corner, nothing on the doorway. At 0.4 the 2.5-unit wall spans one cell and
+ * its log ends overlap the neighbours; its end pivot sits 1.25 units from the
+ * wall's centre, hence the inner offset.
+ */
+export const HUT_WALLS = {
+  kit: "viking_structures" as KitName,
+  wall: "Bld_Wall_Logs_01",
+  post: "Bld_Pillar_01",
+  scale: 0.4,
+  wallOffset: [-1.25, 0, 0] as const,
+};
+
+/** Where a placed prop goes: world x/z, yaw, uniform scale, and an optional
+ * offset of the piece inside its wrapper, in the piece's own units. */
+export type PlaceProp = (
+  node: THREE.Object3D,
+  x: number,
+  z: number,
+  ry: number,
+  scale: number,
+  offset?: readonly [number, number, number],
+) => void;
 
 /**
  * Place every row whose kit loaded around every matching marker. Returns the
@@ -72,4 +105,38 @@ export function dressCamp(kits: Kits, markers: readonly MapMarker[], place: Plac
     }
   }
   return dressed;
+}
+
+/**
+ * Raise log walls on every hut ring cell the map keeps solid (the doorway is
+ * open and gets none). Returns the cells given a wall, so the scene leaves
+ * its ridge and scatter off them; empty when the structures kit is absent.
+ */
+export function dressHuts(
+  kits: Kits,
+  homes: readonly Vec[],
+  isWalkable: (x: number, y: number) => boolean,
+  place: PlaceProp,
+): Set<string> {
+  const walled = new Set<string>();
+  const wall = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.wall);
+  const post = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.post);
+  if (!wall || !post) return walled;
+  for (const home of homes) {
+    const hx = Math.floor(home.x);
+    const hy = Math.floor(home.y);
+    for (const { x, y } of hutRing(home)) {
+      if (isWalkable(x, y)) continue;
+      const corner = Math.abs(x - hx) === HUT_RADIUS && Math.abs(y - hy) === HUT_RADIUS;
+      if (corner) {
+        place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+      } else {
+        // Walls on the north and south rows run along x; the flanks along z.
+        const ry = Math.abs(y - hy) === HUT_RADIUS ? 0 : Math.PI / 2;
+        place(wall, x + 0.5, y + 0.5, ry, HUT_WALLS.scale, HUT_WALLS.wallOffset);
+      }
+      walled.add(`${x},${y}`);
+    }
+  }
+  return walled;
 }

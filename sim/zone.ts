@@ -1,7 +1,7 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { DUNGEONS } from "./dungeons";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
-import { NPCS, NPC_IDS } from "./npcs";
+import { HUT_RADIUS, NPCS, NPC_IDS, hutRing } from "./npcs";
 import type { Rng } from "./rng";
 
 /** No monster pack lands within this many cells of an NPC's home — a cleared
@@ -221,15 +221,10 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
     if (n.dwelling !== "hut") continue;
     const nx = Math.floor(n.pos.x);
     const ny = Math.floor(n.pos.y);
-    const doorY = ny + (gate.y >= ny ? 2 : -2);
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
-        const x = nx + dx;
-        const y = ny + dy;
-        if (x < 0 || x >= w || y < 0 || y >= h) continue;
-        cells[idx(x, y)] = x === nx && y === doorY ? 1 : 0;
-      }
+    const doorY = ny + (gate.y >= ny ? HUT_RADIUS : -HUT_RADIUS);
+    for (const { x, y } of hutRing(n.pos)) {
+      if (x < 0 || x >= w || y < 0 || y >= h) continue;
+      cells[idx(x, y)] = x === nx && y === doorY ? 1 : 0;
     }
   }
 

@@ -24,7 +24,7 @@ import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
 import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
-import { dressCamp } from "./campDressing";
+import { dressCamp, dressHuts, HUT_MARKER } from "./campDressing";
 import { bakeScatter, ScatterBatch } from "./scatter";
 import type { DungeonStyleId } from "../../sim/dungeons";
 import { Effects } from "./fx";
@@ -253,6 +253,40 @@ export function createScene(
     });
   };
 
+  /** Kit props go inside a wrapper group, so a node's own authored offset
+   * (Prop_Chest_01 is centred by one) survives placement; `offset` shifts the
+   * piece within it, for end-pivoted walls. */
+  const placeProp = (
+    node: THREE.Object3D,
+    x: number,
+    z: number,
+    ry: number,
+    scale: number,
+    offset?: readonly [number, number, number],
+  ) => {
+    const wrap = new THREE.Group();
+    const clone = node.clone(true);
+    if (offset) clone.position.add(new THREE.Vector3(...offset));
+    wrap.add(clone);
+    wrap.position.set(x, 0, z);
+    wrap.rotation.y = ry;
+    wrap.scale.setScalar(scale);
+    wrap.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+    env.add(wrap);
+  };
+  // Hut dwellers' wall rings become log walls (Viking structures kit); the
+  // cells they cover get no ridge or scatter below. Homes, not current
+  // positions: the dweller strolls, the hut does not.
+  const hutHomes = outdoor
+    ? npcs.filter((n) => NPCS[n.npcId].dwelling === "hut").map((n) => n.home)
+    : [];
+  const walled = dressHuts(assets.kits, hutHomes, (x, y) => isWalkable(map, x, y), placeProp);
+
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
   // Stair cells (down and up) get a real stairwell instead of a floor tile.
@@ -425,7 +459,7 @@ export function createScene(
           const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
           const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
           if (!isWalkable(map, x, y)) {
-            if (stairCells.has(`${x},${y}`)) continue;
+            if (stairCells.has(`${x},${y}`) || walled.has(`${x},${y}`)) continue;
             // Full-tile raised base under every blocked cell: contiguous
             // blockers merge into one continuous ridge, so barriers read as
             // terrain mass instead of scattered props on open ground.
@@ -612,24 +646,14 @@ export function createScene(
     scene.add(glow);
   }
 
-  // --- Camp dressing: Viking Realm props around the fixed markers when that
-  // kit loaded; the primitive stand-ins below cover whichever markers it left ---
-  const placeProp = (node: THREE.Object3D, x: number, z: number, ry: number, scale: number) => {
-    // Wrapped so a node's own authored offset (Prop_Chest_01 is centred by one) survives placement.
-    const wrap = new THREE.Group();
-    wrap.add(node.clone(true));
-    wrap.position.set(x, 0, z);
-    wrap.rotation.y = ry;
-    wrap.scale.setScalar(scale);
-    wrap.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-      }
-    });
-    env.add(wrap);
-  };
-  const dressed = dressCamp(assets.kits, map.markers, placeProp);
+  // --- Camp dressing: Viking Realm props around the fixed markers (and inside
+  // huts) when that kit loaded; the primitive stand-ins below cover whichever
+  // markers it left ---
+  const dressed = dressCamp(
+    assets.kits,
+    [...map.markers, ...hutHomes.map((h) => ({ ch: HUT_MARKER, x: h.x, y: h.y }))],
+    placeProp,
+  );
 
   // --- Market stall (town): crates and a barrel beside the V marker ---
   for (const marker of map.markers) {

@@ -7,7 +7,7 @@ import {
   findNode,
   instantiate,
   instantiateKit,
-  kitNode,
+  kitMeshes, kitNode,
   type CharacterInstance,
   type CharacterName,
   type GameAssets,
@@ -482,6 +482,20 @@ const SYNTY_HELM_DEFAULT = ["Attach_Helmet_01"];
 // Helmets pivot where the head bone sits; a hair's breadth up seats the rim on the brow.
 const SYNTY_HELM_OFFSET: [number, number, number] = [0, 0.02, 0];
 
+/**
+ * Chest base id -> Viking fur mantle over the shoulders. Unlike helmets, furs
+ * are authored in place over the T-posed character rather than in a bone's
+ * frame, so makeSyntyHero re-expresses them in the chest bone's rest frame.
+ * The rag tunic wears none; anything unlisted keeps the box pauldrons.
+ */
+const SYNTY_MANTLES: Record<string, string | null> = {
+  rag_tunic: null,
+  studded_jerkin: "Attach_Fur_01",
+  grave_plate: "Attach_Fur_03",
+  lamellar_coat: "Attach_Fur_02",
+  bogsteel_plate: "Attach_Fur_04",
+};
+
 /** Shield base id -> Viking shield node (round shields share one pivot at the centre back). */
 const SYNTY_SHIELDS: Record<string, string> = {
   plank_buckler: "Wep_Shield_Set_02",
@@ -518,6 +532,16 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
 
+  // The chest bone's rest frame in the character's own space, captured before
+  // the first mixer update. Props authored in place over the bind pose (fur
+  // mantles) are re-expressed through it, so equipping one mid-animation
+  // lands it where it was authored, not where the bone happens to be.
+  rig.group.updateMatrixWorld(true);
+  const chestBone = rig.bone("chest");
+  const chestRestInverse = chestBone
+    ? rig.group.matrixWorld.clone().invert().multiply(chestBone.matrixWorld).invert()
+    : null;
+
   const gear: THREE.Object3D[] = [];
   const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
     const bone = rig.bone(role);
@@ -531,6 +555,17 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     mesh.position.set(...offset);
     mesh.castShadow = true;
     return mesh;
+  };
+  /** Hang a character-space attachment's meshes on the chest bone; false when unavailable. */
+  const addMantle = (name: string, item: Item): boolean => {
+    const parts = kitMeshes(kits, "viking_attachments", name);
+    if (!chestRestInverse || !parts || parts.length === 0) return false;
+    for (const { mesh, matrix } of parts) {
+      const clone = cloneProp(mesh);
+      chestRestInverse.clone().multiply(matrix).decompose(clone.position, clone.quaternion, clone.scale);
+      addGear("chest", clone, item);
+    }
+    return true;
   };
 
   const hero = rig as unknown as HeroModelRig;
@@ -551,9 +586,13 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     if (eq.chest) {
       const look = chestLook(eq.chest.baseId);
       const mat = flatMat(look.color, look.metal ? 0.45 : 0.75);
-      const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
-      addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
-      addGear("upperArmR", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
+      const mantle = SYNTY_MANTLES[eq.chest.baseId];
+      const furred = mantle ? addMantle(mantle, eq.chest) : false;
+      if (!furred && mantle !== null) {
+        const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
+        addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
+        addGear("upperArmR", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
+      }
       addGear("chest", box(SYNTY_OVERLAYS.plate.size, SYNTY_OVERLAYS.plate.offset, mat), eq.chest);
     }
 

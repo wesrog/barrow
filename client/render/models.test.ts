@@ -86,6 +86,9 @@ function fakeHeroAssets(): GameAssets {
     bones[name]!.name = `${name}_3`;
   }
   bones.Root!.add(bones.Hips!);
+  // A rest pose with height, so the chest frame is not the identity.
+  bones.Hips!.position.y = 0.9;
+  bones.Spine_02!.position.y = 0.3;
   bones.Hips!.add(bones.Spine_02!, bones.LowerLeg_L!, bones.LowerLeg_R!);
   bones.Spine_02!.add(bones.Head!, bones.Shoulder_L!, bones.Shoulder_R!);
   bones.Shoulder_L!.add(bones.Hand_L!);
@@ -109,6 +112,16 @@ function fakeHeroAssets(): GameAssets {
   weapons.add(named("Wep_Sword_02"), named("Wep_Shield_Set_02"), named("Wep_Hammer_01"));
   const attachments = new THREE.Group();
   attachments.add(named("Attach_Helmet_01"));
+  // A fur mantle the way the kit ships it: the mesh authored in place over the
+  // T-posed shoulders, beside a copy of the rig.
+  const fur = new THREE.Object3D();
+  fur.name = "Attach_Fur_03";
+  const furMesh = named("SM_Chr_Attach_Fur_03");
+  furMesh.position.y = 1.4;
+  const furRoot = new THREE.Bone();
+  furRoot.name = "Root";
+  fur.add(furMesh, furRoot);
+  attachments.add(fur);
   const gltf = (scene: THREE.Object3D, animations: THREE.AnimationClip[] = []) =>
     ({ scene, animations }) as unknown as GameAssets["kits"]["viking_characters"];
   return {
@@ -140,8 +153,15 @@ describe("Synty hero", () => {
     expect(hero.group.getObjectByName("Hand_R")!.getObjectByName("Wep_Sword_02")).toBeTruthy();
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeTruthy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeTruthy();
-    // Pauldrons, plate, and greaves are plain boxes: one on each of five bones.
-    expect(hero.group.getObjectByName("Spine_02")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
+    // The grave plate wears a fur mantle from the attachments kit, hung on the
+    // chest bone in its rest frame (chest rests at 1.2, the fur at 1.4), and
+    // no box pauldrons; the plate box stays.
+    const chest = hero.group.getObjectByName("Spine_02")!;
+    const mantle = chest.getObjectByName("SM_Chr_Attach_Fur_03") as THREE.Mesh;
+    expect(mantle).toBeTruthy();
+    expect(mantle.position.y).toBeCloseTo(0.2);
+    expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(2);
+    expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
     expect(hero.attackClip()).toBe("attack1h");
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
@@ -152,6 +172,27 @@ describe("Synty hero", () => {
 
     hero.setEquipment(BARE);
     expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
+  });
+
+  test("hangs a mantle in the rest frame even while the chest bone is posed", () => {
+    const hero = makeHeroModelRig(fakeHeroAssets(), "warrior");
+    const chest = hero.group.getObjectByName("Spine_02")!;
+    chest.rotation.z = Math.PI / 2;
+    chest.position.y = 0.6;
+    hero.group.updateMatrixWorld(true);
+    hero.setEquipment({ ...BARE, chest: gearItem("grave_plate") });
+    const mantle = chest.getObjectByName("SM_Chr_Attach_Fur_03")!;
+    expect(mantle.position.y).toBeCloseTo(0.2);
+    expect(mantle.quaternion.w).toBeCloseTo(1);
+  });
+
+  test("keeps box pauldrons for chests without a mantle in the kit", () => {
+    const hero = makeHeroModelRig(fakeHeroAssets(), "warrior");
+    hero.setEquipment({ ...BARE, chest: gearItem("lamellar_coat") });
+    expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
+    hero.setEquipment({ ...BARE, chest: gearItem("rag_tunic") });
+    expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
+    expect(hero.group.getObjectByName("Spine_02")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
   });
 
   test("prefers the retargeted KayKit idle when that kit is present", () => {

@@ -132,6 +132,26 @@ export function kitNode(kits: Kits, kit: KitName, node: string): THREE.Object3D 
   return kits[kit]?.scene.getObjectByName(node) ?? null;
 }
 
+/**
+ * The meshes under a kit node with each one's transform relative to the kit
+ * scene. Kit pieces stand at the origin, but a node may carry a translation
+ * that centres an offset authored into the mesh, and rigged attachments hold
+ * their mesh beside a copy of the skeleton, so callers take the meshes with
+ * their matrices rather than the node. Null when the kit or node is missing.
+ */
+export function kitMeshes(kits: Kits, kit: KitName, node: string): { mesh: THREE.Mesh; matrix: THREE.Matrix4 }[] | null {
+  const src = kitNode(kits, kit, node);
+  if (!src) return null;
+  const root = kits[kit]!.scene;
+  root.updateMatrixWorld(true);
+  const rootInverse = root.matrixWorld.clone().invert();
+  const out: { mesh: THREE.Mesh; matrix: THREE.Matrix4 }[] = [];
+  src.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) out.push({ mesh: obj, matrix: rootInverse.clone().multiply(obj.matrixWorld) });
+  });
+  return out;
+}
+
 /** Assemble a dungeon piece from its Synty parts; null if any part is missing. */
 function buildPiece(kits: Kits, parts: PiecePart[]): THREE.Group | null {
   const group = new THREE.Group();

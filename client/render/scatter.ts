@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { kitNode, type KitName, type Kits } from "./models";
+import { kitMeshes, type KitName, type Kits } from "./models";
 
 /**
  * Outdoor scatter from the Viking Realm nature kit: pines, standing stones,
@@ -77,25 +77,16 @@ export interface ScatterTints {
 
 /**
  * Flatten a kit node into instanceable geometry: every mesh under it with its
- * transform relative to the kit scene baked in, then the nominal scale. Kit
- * pieces stand at the origin, but a few carry a node translation that cancels
- * an offset authored into the mesh itself (Env_Rock_04 in the Alpine kit sits
- * 20 units out in mesh space), so the node's own matrix is part of the bake.
- * Null when the kit or the node is missing.
+ * transform relative to the kit scene baked in, then the nominal scale. Null
+ * when the kit or the node is missing.
  */
 export function bakePiece(kits: Kits, def: ScatterPieceDef): BakedPart[] | null {
-  const node = kitNode(kits, def.kit, def.node);
-  if (!node) return null;
-  const root = kits[def.kit]!.scene;
-  root.updateMatrixWorld(true);
-  const rootInverse = root.matrixWorld.clone().invert();
   const parts: BakedPart[] = [];
-  node.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh) || !(obj.material instanceof THREE.MeshStandardMaterial)) return;
-    const local = rootInverse.clone().multiply(obj.matrixWorld);
-    const geometry = obj.geometry.clone().applyMatrix4(local).scale(def.scale, def.scale, def.scale);
-    parts.push({ geometry, material: obj.material });
-  });
+  for (const { mesh, matrix } of kitMeshes(kits, def.kit, def.node) ?? []) {
+    if (!(mesh.material instanceof THREE.MeshStandardMaterial)) continue;
+    const geometry = mesh.geometry.clone().applyMatrix4(matrix).scale(def.scale, def.scale, def.scale);
+    parts.push({ geometry, material: mesh.material });
+  }
   return parts.length > 0 ? parts : null;
 }
 

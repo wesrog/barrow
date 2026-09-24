@@ -977,8 +977,9 @@ export function createScene(
   };
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
-  // --- Hover tooltip: name + what it is, following the cursor ---
-  // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
+  // --- Hover plate: name + what it is, pinned to the screen's bottom right
+  // (above the belt, below the toasts) so it never covers the fight ---
+  // Static area indicators (stairs, pads, gates) share the plate via cursor proximity.
   const AREA_INFO: Record<string, { name: string; role: string }> = {
     ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
     "<": { name: "Stairs Up", role: "Climbs back toward daylight" },
@@ -989,7 +990,7 @@ export function createScene(
     .map((m) => ({ pos: { x: m.x, y: m.y }, ...AREA_INFO[m.ch]! }));
   const tooltip = document.createElement("div");
   tooltip.style.cssText =
-    "position:absolute;display:none;transform:translate(-50%,-130%);background:rgba(8,8,10,.82);padding:3px 8px;white-space:nowrap;text-align:center;text-shadow:0 1px 2px #000;border:1px solid rgba(200,190,160,.25);";
+    "position:absolute;display:none;right:16px;bottom:16px;background:rgba(8,8,10,.82);padding:4px 10px;white-space:nowrap;text-align:right;text-shadow:0 1px 2px #000;border:1px solid rgba(200,190,160,.25);";
   const tooltipName = document.createElement("div");
   tooltipName.style.cssText = "color:#e8dfc8;font-size:12px;";
   const tooltipRole = document.createElement("div");
@@ -1783,8 +1784,6 @@ export function createScene(
         tooltipName.textContent = tip.name;
         tooltipRole.textContent = tip.role;
         stylePlate(tip.accent ?? null);
-        tooltip.style.left = `${px}px`;
-        tooltip.style.top = `${py}px`;
         tooltip.style.display = "block";
       } else {
         tooltip.style.display = "none";

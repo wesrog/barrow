@@ -30,6 +30,11 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   `client/ui/ItemSlot.tsx` owns the inventory cell (`CELL`, 56px) and the borderless slate slot
   every grid and the equipped list build from. Items have two footprints (1x1 for potions,
   rings, amulets and quest items, 2x2 for gear), so icons show at exactly two sizes.
+- **Ground textures:** `bun run assets:ground` copies the Alpine pack's tiling grass, dark
+  grass, mud, dirt and rock textures into `public/textures/ground/` (gitignored). Each biome
+  palette names one (`groundTexture`) and the colour it is multiplied by (`groundTint`);
+  `client/render/ground.ts` tiles it every six cells, and a missing file leaves that biome on
+  its flat colour.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders
@@ -58,8 +63,14 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   brushes one; `secretSystem` reveals the whole run, bumps `map.revision`, emits `secret_found`)
   with a `$` chest marker mid-run. Spare rooms get one set-piece marker each from `SET_PIECES`
   (K throne, G gaol, L library, P ritual circle, which also spawns three extra monsters); halls
-  carry an `R` marker. Lowercase markers are monster spawns. Players start on the crypt's first
-  floor (`START_ZONE`); `PlayerJoin.start` overrides it (tests use `"surface"`).
+  carry an `R` marker. Lowercase markers are monster spawns. Players start in the camp
+  (`START_ZONE` is `"surface"`); `PlayerJoin.start` overrides it. The wilds get landmarks
+  (`sim/landmarks.ts`): one per character in an area's `landmarks` string, placed after every
+  other feature so earlier rolls hold. Each landmark row gives the cells it walls (`solid`),
+  the square it clears around itself, the pack that lairs there and where its `$` chest sits;
+  the placer keeps them off the spawn, safe ground, NPC clearings, exit mouths and fixed
+  features, and refuses any spot whose walls would cut floor off. The camp's smithy, mead
+  table and training yard are fixed markers (`A`, `M`, `T`) in the overworld's area row.
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
@@ -77,10 +88,15 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   open ground (pines, half-buried standing stones, berry bushes, roof-grass tufts as ground
   tufts) in 16-cell chunks for culling, tinted per biome by `foliageTint`/`stoneTint` in
   `biomes.ts`; without the kit the scene keeps its primitive cones and icosahedra.
-  `campDressing.ts` is the row table of Viking props around the camp markers (fire pit, awning
-  stall, sickbed, banner, rune stone) and inside huts, plus `dressHuts`, which raises log walls
+  `campDressing.ts` is the row table of Viking props around the camp markers (fire pit with
+  its spit and the chieftain's seat, awning stall, sickbed, banner, rune stone, the smithy,
+  mead table and training yard) and inside huts, plus `dressHuts`, which raises log walls
   and corner posts on a hut dweller's wall ring (`hutRing` in `sim/npcs.ts`, shared with the
-  zone carver) and hands the scene the cells to leave bare. The primitive campfire and
+  zone carver), and `dressPalisade`, which walls each safe rect's ring the same way with
+  torches on the gate posts, flags on the corners, and a sign and lit beacon outside the
+  gate; both hand the scene the cells to leave bare. `wildDressing.ts` holds the landmark
+  rows (stone circle, ruin, raider camp, cold camp, shrine) on the same markers the sim
+  places, and the scene also bares each landmark's `solid` cells. The primitive campfire and
   dungeon-prop stall remain the fallback. `dressMarkers` is the general form: any row table on
   any markers, with `wall` rows set against the nearest wall the scene's `wallToward` finds.
   Only a room's -x and -z walls show the camera their faces (the near walls' blocks hide

@@ -11,3 +11,6 @@ public/models/synty/
 
 # Licensed UI icons copied by scripts/ui-icons.ts
 public/icons/packs/
+
+# Licensed ground textures copied by scripts/ground-textures.ts
+public/textures/ground/

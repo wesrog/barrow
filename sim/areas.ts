@@ -53,11 +53,13 @@ export interface AreaDef {
   safe?: { x0: number; y0: number; x1: number; y1: number };
   /** Player arrival point, on safe ground. */
   spawn: Vec;
-  /** Fixed feature markers (vendor, healer, pads, stairs). */
+  /** Fixed feature markers (vendor, healer, pads, stairs, camp furniture). */
   markers: MapMarker[];
   exits: AreaExit[];
   /** Cap on the distance-band difficulty bonus within the region. */
   bandCap: number;
+  /** Landmarks to raise in the wilds, one character each (sim/landmarks.ts). */
+  landmarks?: string;
 }
 
 export const AREAS: Record<AreaId, AreaDef> = {
@@ -78,9 +80,15 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { ch: "F", x: 7.5, y: 30.5 },
       { ch: "S", x: 10.5, y: 30.5 },
       { ch: "W", x: 10.5, y: 35.5 },
+      // Camp furniture, dressed by the renderer: the smith's corner, the mead
+      // table, the training yard.
+      { ch: "A", x: 10.5, y: 27.5 },
+      { ch: "M", x: 6.5, y: 27.5 },
+      { ch: "T", x: 7.5, y: 37.5 },
     ],
     exits: [{ edge: "E", at: 32, to: "redfen" }],
     bandCap: 2,
+    landmarks: "OUCNX",
   },
   redfen: {
     id: "redfen",
@@ -98,6 +106,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { edge: "E", at: 29, to: "gallowmire" },
     ],
     bandCap: 2,
+    landmarks: "UUCNX",
   },
   gallowmire: {
     id: "gallowmire",
@@ -115,6 +124,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { edge: "E", at: 45, to: "cragmaw" },
     ],
     bandCap: 2,
+    landmarks: "OUCCX",
   },
   cragmaw: {
     id: "cragmaw",
@@ -132,6 +142,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { edge: "E", at: 33, to: "ashfell" },
     ],
     bandCap: 2,
+    landmarks: "UUNX",
   },
   ashfell: {
     id: "ashfell",
@@ -149,6 +160,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
       { edge: "E", at: 33, to: "hollowcrown" },
     ],
     bandCap: 2,
+    landmarks: "UCCNX",
   },
   hollowcrown: {
     id: "hollowcrown",
@@ -163,6 +175,7 @@ export const AREAS: Record<AreaId, AreaDef> = {
     markers: [],
     exits: [{ edge: "W", at: 33, to: "ashfell" }],
     bandCap: 2,
+    landmarks: "OUUX",
   },
 };
 

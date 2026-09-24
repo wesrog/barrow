@@ -1,6 +1,7 @@
 import type { BiomeId } from "../../sim/areas";
 import type { DungeonStyleId } from "../../sim/dungeons";
 import type { DressingFamily } from "./cryptDressing";
+import type { GroundTexture } from "./models";
 
 /** Everything the outdoor scene tints per region: sky, fog, ground, flora. */
 export interface BiomePalette {
@@ -10,6 +11,10 @@ export interface BiomePalette {
   ambient: number;
   ambientIntensity: number;
   ground: number;
+  /** The Alpine pack's tiling texture under this biome and the colour it is multiplied by;
+   * the textures are daylit mid-tones, so the tint carries the night and the biome's hue. */
+  groundTexture: GroundTexture;
+  groundTint: number;
   rock: number;
   pine: number;
   trunk: number;
@@ -33,6 +38,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x70806e,
     ambientIntensity: 0.65,
     ground: 0x1f2a1b,
+    groundTexture: "grass",
+    groundTint: 0x4a6440,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,
@@ -48,6 +55,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x8a7258,
     ambientIntensity: 0.6,
     ground: 0x2b2014,
+    groundTexture: "grass_dark",
+    groundTint: 0x674c30,
     rock: 0x4a3e34,
     pine: 0x321c11,
     trunk: 0x241a10,
@@ -63,6 +72,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x6e7f78,
     ambientIntensity: 0.6,
     ground: 0x212a26,
+    groundTexture: "mud",
+    groundTint: 0x4f645b,
     rock: 0x39423e,
     pine: 0x16201c,
     trunk: 0x22201c,
@@ -78,6 +89,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x9a6a52,
     ambientIntensity: 0.62,
     ground: 0x2a201c,
+    groundTexture: "dirt",
+    groundTint: 0x644c43,
     rock: 0x4a3c34,
     pine: 0x2c1a12,
     trunk: 0x261a14,
@@ -93,6 +106,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x7a6e94,
     ambientIntensity: 0.58,
     ground: 0x201c2a,
+    groundTexture: "grass_dark",
+    groundTint: 0x4c4364,
     rock: 0x3c3648,
     pine: 0x181424,
     trunk: 0x221c28,
@@ -108,6 +123,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x83796a,
     ambientIntensity: 0.7,
     ground: 0x2a2622,
+    groundTexture: "rock",
+    groundTint: 0x645b51,
     rock: 0x4e463a,
     pine: 0x201c14,
     trunk: 0x282018,

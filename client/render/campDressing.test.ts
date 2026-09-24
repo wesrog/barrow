@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import * as THREE from "three";
-import { CAMP_DRESSING, HUT_WALLS, againstWall, dressCamp, dressHuts, dressMarkers, type DressingRow } from "./campDressing";
+import { CAMP_DRESSING, HUT_WALLS, PALISADE, againstWall, dressCamp, dressHuts, dressMarkers, dressPalisade, type DressingRow } from "./campDressing";
 import { KIT_URLS, type Kits } from "./models";
 
 function fakeKits(): Kits {
@@ -115,6 +115,64 @@ describe("dressHuts", () => {
   });
 });
 
+describe("dressPalisade", () => {
+  const kits = (): Kits => {
+    const structures = new THREE.Group();
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post]) {
+      const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+      node.name = name;
+      structures.add(node);
+    }
+    const props = new THREE.Group();
+    for (const name of [PALISADE.torch, PALISADE.flag, PALISADE.sign, PALISADE.beacon]) {
+      const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+      node.name = name;
+      props.add(node);
+    }
+    return {
+      viking_structures: { scene: structures, animations: [] } as unknown as Kits["viking_structures"],
+      viking_props: { scene: props, animations: [] } as unknown as Kits["viking_props"],
+    };
+  };
+
+  test("walls the ring, posts and flags the corners, torches the gate, and lights a beacon outside", () => {
+    // A 4x3 camp with its gate (three open ring cells) in the east wall.
+    const camp = { x0: 2, y0: 2, x1: 6, y1: 5 };
+    const gate = new Set(["6,2", "6,3", "6,4"]);
+    const placed: { name: string; x: number; z: number; ry: number; opts?: { y?: number; flame?: unknown } }[] = [];
+    const walled = dressPalisade(kits(), [camp], (x, y) => gate.has(`${x},${y}`), (node, x, z, ry, _s, opts) =>
+      placed.push({ name: node.name, x, z, ry, opts }),
+    );
+    // Ring: 6 x 5 cells minus the three gate cells.
+    expect(walled.size).toBe(6 * 2 + 3 * 2 - 3);
+    expect(walled.has("6,3")).toBe(false);
+    expect(placed.filter((p) => p.name === HUT_WALLS.post).length).toBe(4);
+    expect(placed.filter((p) => p.name === PALISADE.flag).length).toBe(4);
+    const walls = placed.filter((p) => p.name === HUT_WALLS.wall);
+    expect(walls.length).toBe(walled.size - 4);
+    expect(walls.find((p) => p.x === 3.5 && p.z === 1.5)!.ry).toBe(0);
+    expect(walls.find((p) => p.x === 1.5 && p.z === 3.5)!.ry).toBeCloseTo(Math.PI / 2);
+    // Torches on the two corner posts that flank the gate, lit.
+    const torches = placed.filter((p) => p.name === PALISADE.torch);
+    expect(torches.length).toBe(2);
+    for (const t of torches) {
+      expect(t.x).toBeGreaterThan(6.5);
+      expect(t.opts?.flame).toBeDefined();
+    }
+    // The beacon and sign stand outside the gate, east of the wall.
+    for (const name of [PALISADE.beacon, PALISADE.sign]) {
+      const piece = placed.find((p) => p.name === name)!;
+      expect(piece.x).toBeGreaterThan(7);
+    }
+  });
+
+  test("raises nothing without the structures kit", () => {
+    let calls = 0;
+    expect(dressPalisade({}, [{ x0: 2, y0: 2, x1: 6, y1: 5 }], () => false, () => calls++).size).toBe(0);
+    expect(calls).toBe(0);
+  });
+});
+
 // Only meaningful where the converted kit exists.
 const propsPath = `public${KIT_URLS.viking_props}`;
 describe.if(existsSync(propsPath))("camp dressing matches the props kit", () => {
@@ -123,6 +181,7 @@ describe.if(existsSync(propsPath))("camp dressing matches the props kit", () => 
     const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString("utf8")) as { nodes: { name: string }[] };
     const names = new Set(json.nodes.map((n) => n.name));
     for (const row of CAMP_DRESSING) expect(names.has(row.node)).toBe(true);
+    for (const node of [PALISADE.torch, PALISADE.flag, PALISADE.sign, PALISADE.beacon]) expect(names.has(node)).toBe(true);
   });
 });
 

@@ -5,6 +5,7 @@ import type { Item } from "../../sim/items/generate";
 import { BIOME_PALETTES } from "./biomes";
 import { makeHeroModelRig, type HeroModelRig } from "./modelRigs";
 import { kitNode, type GameAssets, type KitName } from "./models";
+import { groundGeometry, groundMaterial } from "./ground";
 
 /**
  * The lobby diorama: a night camp on the moor rendered live behind the start
@@ -128,10 +129,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   scene.add(moon.target);
 
   // --- Ground: the moor's turf with a scatter of tufts and pebbles ---
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(60, 60),
-    new THREE.MeshStandardMaterial({ color: pal.ground, roughness: 1, flatShading: true }),
-  );
+  const ground = new THREE.Mesh(groundGeometry(60, 60), groundMaterial(assets.ground[pal.groundTexture], pal));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);

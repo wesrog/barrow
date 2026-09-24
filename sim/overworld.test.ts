@@ -4,6 +4,8 @@ import { ensureSurface, stepSolo } from "./tick";
 import { getZone, zoneFloor } from "./state";
 import { createRng } from "./rng";
 import { overworldZone } from "./zone";
+import { AREAS } from "./areas";
+import { LANDMARK_CHARS } from "./landmarks";
 import { areaRect, inRect, locationTitle, regionTitle, worldAreaSpawn } from "./surface";
 import { inCamp } from "./map";
 import type { ZoneMap } from "./map";
@@ -59,8 +61,14 @@ describe("overworld map", () => {
   });
 
   test("no teleport gates remain — walking out is the only way", () => {
+    // Every feature marker is a known camp fixture, the crypt mouth, a
+    // landmark or its chest; the old gate pads are gone.
     const map = overworldZone(createRng(9));
-    expect(map.markers.some((m) => m.ch === "C" || m.ch === "O")).toBe(false);
+    const known = new Set(["V", "H", "F", "S", "W", ">", "A", "M", "T", "$", ...LANDMARK_CHARS]);
+    for (const m of map.markers) {
+      if (AREAS.overworld.spawnTable.includes(m.ch)) continue;
+      expect(known.has(m.ch)).toBe(true);
+    }
   });
 
   test("carries a barrow mouth outside camp and a wilderness worth of monsters", () => {

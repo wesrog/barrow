@@ -147,16 +147,16 @@ describe("determinism", () => {
 });
 
 describe("start zone", () => {
-  test("a joining player stands on the Barrow Crypt's first floor, camp kept as checkpoint", () => {
-    expect(START_ZONE).toBe("dungeon:barrow:1");
+  test("a joining player stands in the camp on the moors, its checkpoint", () => {
+    expect(START_ZONE).toBe("surface");
     const state = createGame(7);
     const p = joinPlayer(state, { id: 3 });
-    expect(p.zoneId).toBe(START_ZONE);
+    expect(p.zoneId).toBe("surface");
     expect(p.checkpoint).toBe("overworld");
-    expect(p.pos).toEqual(state.zones.get(START_ZONE)!.map.spawn);
-    expect(state.events.some((e) => e.type === "traveled" && e.playerId === 3)).toBe(true);
-    // A join may still ask for the camp, as the tests do.
-    const camper = joinPlayer(state, { id: 4, start: "surface" });
-    expect(camper.zoneId).toBe("surface");
+    expect(p.pos).toEqual(state.zones.get("surface")!.map.spawn);
+    // A join may still ask for a crypt floor outright.
+    const delver = joinPlayer(state, { id: 4, start: "dungeon:barrow:1" });
+    expect(delver.zoneId).toBe("dungeon:barrow:1");
+    expect(state.events.some((e) => e.type === "traveled" && e.playerId === 4)).toBe(true);
   });
 });

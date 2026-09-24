@@ -35,6 +35,17 @@ export const KIT_URLS = {
 export type KitName = keyof typeof KIT_URLS;
 export type Kits = Partial<Record<KitName, GLTF>>;
 
+/** Tiling ground textures copied by scripts/ground-textures.ts (the Alpine pack's). */
+export const GROUND_TEXTURE_URLS = {
+  grass: "/textures/ground/grass.png",
+  grass_dark: "/textures/ground/grass_dark.png",
+  mud: "/textures/ground/mud.png",
+  dirt: "/textures/ground/dirt.png",
+  rock: "/textures/ground/rock.png",
+} as const;
+export type GroundTexture = keyof typeof GROUND_TEXTURE_URLS;
+export type GroundTextures = Partial<Record<GroundTexture, THREE.Texture>>;
+
 /**
  * One part of a dungeon piece. `scale` and `offset` normalize the Synty node
  * to the footprints the scene was laid out on (floor tiles 2x2 centred, walls
@@ -85,6 +96,8 @@ export interface GameAssets {
   /** Dungeon pieces at the scene's footprints, assembled from the kits. */
   dungeon: Record<DungeonName, THREE.Group>;
   kits: Kits;
+  /** Outdoor ground textures; a missing one leaves that biome on its flat colour. */
+  ground: GroundTextures;
 }
 
 /** A named piece of a kit, or null when that kit did not load. */
@@ -146,14 +159,40 @@ export async function loadAssets(): Promise<GameAssets> {
     loader.loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url);
 
   const kitEntries = Object.entries(KIT_URLS) as [KitName, string][];
-  const kitGltfs = await Promise.all(
-    kitEntries.map(([name, url]) =>
-      load(url).catch((err: unknown) => {
-        console.warn(`Synty kit ${name} not loaded (${url}).`, err);
-        return null;
-      }),
+  const groundEntries = Object.entries(GROUND_TEXTURE_URLS) as [GroundTexture, string][];
+  const textureLoader = new THREE.TextureLoader();
+  const [kitGltfs, groundTextures] = await Promise.all([
+    Promise.all(
+      kitEntries.map(([name, url]) =>
+        load(url).catch((err: unknown) => {
+          console.warn(`Synty kit ${name} not loaded (${url}).`, err);
+          return null;
+        }),
+      ),
     ),
-  );
+    Promise.all(
+      groundEntries.map(([name, url]) =>
+        textureLoader
+          .loadAsync(import.meta.env.BASE_URL.replace(/\/$/, "") + url)
+          .then((tex) => {
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = 4;
+            return tex;
+          })
+          .catch(() => {
+            console.warn(`Ground texture ${name} not loaded (${url}); run bun run assets:ground.`);
+            return null;
+          }),
+      ),
+    ),
+  ]);
+  const ground: GroundTextures = {};
+  groundEntries.forEach(([name], i) => {
+    const tex = groundTextures[i];
+    if (tex) ground[name] = tex;
+  });
   const kits: Kits = {};
   kitEntries.forEach(([name], i) => {
     const gltf = kitGltfs[i];
@@ -169,7 +208,7 @@ export async function loadAssets(): Promise<GameAssets> {
     }
     dungeon[name] = piece;
   }
-  return { dungeon, kits };
+  return { dungeon, kits, ground };
 }
 
 export interface CharacterInstance {

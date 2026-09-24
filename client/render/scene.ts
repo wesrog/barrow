@@ -24,9 +24,12 @@ import { AREAS } from "../../sim/areas";
 import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
 import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
-import { againstWall, dressCamp, dressHuts, dressMarkers, HUT_MARKER, type PlaceOpts, type PlaceProp, type WallHit, type WallToward } from "./campDressing";
+import { againstWall, dressCamp, dressHuts, dressMarkers, dressPalisade, HUT_MARKER, type PlaceOpts, type PlaceProp, type WallHit, type WallToward } from "./campDressing";
 import { CRYPT_SET_PIECES, DUNGEON_DRESSING, type DressingFamily } from "./cryptDressing";
+import { WILD_SET_PIECES } from "./wildDressing";
+import { LANDMARKS } from "../../sim/landmarks";
 import { bakeScatter, ScatterBatch } from "./scatter";
+import { groundGeometry, groundMaterial } from "./ground";
 import type { DungeonStyleId } from "../../sim/dungeons";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
@@ -80,6 +83,7 @@ export interface SceneHandle {
 function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
+
 
 export function createScene(
   mount: HTMLElement,
@@ -351,13 +355,26 @@ export function createScene(
     }
     torches.push({ flame, light, seed: (torches.length * 29) % 100, base: opts?.light?.intensity ?? 2.6 });
   };
-  // Hut dwellers' wall rings become log walls (Viking structures kit); the
-  // cells they cover get no ridge or scatter below. Homes, not current
+  // Hut dwellers' wall rings become log walls (Viking structures kit), the
+  // camp's ring its palisade, and each landmark's footprint its structure;
+  // the cells they cover get no ridge or scatter below. Homes, not current
   // positions: the dweller strolls, the hut does not.
   const hutHomes = outdoor
     ? npcs.filter((n) => NPCS[n.npcId].dwelling === "hut").map((n) => n.home)
     : [];
-  const walled = dressHuts(assets.kits, hutHomes, (x, y) => isWalkable(map, x, y), placeProp);
+  const walkableAt = (x: number, y: number) => isWalkable(map, x, y);
+  const walled = new Set<string>([
+    ...dressHuts(assets.kits, hutHomes, walkableAt, placeProp),
+    ...(outdoor ? dressPalisade(assets.kits, map.camps, walkableAt, placeProp) : []),
+  ]);
+  if (outdoor) {
+    for (const marker of map.markers) {
+      const landmark = LANDMARKS[marker.ch];
+      if (!landmark) continue;
+      for (const [dx, dy] of landmark.solid) walled.add(`${Math.floor(marker.x) + dx},${Math.floor(marker.y) + dy}`);
+    }
+    dressMarkers(assets.kits, map.markers, WILD_SET_PIECES, placeProp);
+  }
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
@@ -502,7 +519,7 @@ export function createScene(
       const batch = baked ? new ScatterBatch(baked, { foliage: pal.foliageTint, stone: pal.stoneTint }) : null;
       const rw = rect.x1 - rect.x0;
       const rh = rect.y1 - rect.y0;
-      const ground = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh), flatMat(pal.ground, 1));
+      const ground = new THREE.Mesh(groundGeometry(rw, rh), groundMaterial(assets.ground[pal.groundTexture], pal));
       ground.rotation.x = -Math.PI / 2;
       ground.position.set(rect.x0 + rw / 2, 0, rect.y0 + rh / 2);
       ground.receiveShadow = true;

@@ -1,6 +1,7 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { DUNGEONS } from "./dungeons";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
+import { placeLandmarks } from "./landmarks";
 import { HUT_RADIUS, NPCS, NPC_IDS, hutRing } from "./npcs";
 import type { Rng } from "./rng";
 
@@ -304,6 +305,23 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
       y: y + 0.5,
     });
     placed++;
+  }
+
+  // Landmarks last, so their rolls come after everything the layout already
+  // had. Each keeps clear of the spawn, safe ground, NPC clearings, the exit
+  // mouths and every fixed feature, and walls its footprint only where the
+  // region stays connected.
+  if (def.landmarks) {
+    const mouths = def.exits.map((e) => exitMouth(def, e));
+    const keepClear = (x: number, y: number): boolean =>
+      Math.hypot(x + 0.5 - def.spawn.x, y + 0.5 - def.spawn.y) < 12 ||
+      (safe !== undefined && x >= safe.x0 - 6 && x < safe.x1 + 6 && y >= safe.y0 - 6 && y < safe.y1 + 6) ||
+      npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING + 4) ||
+      mouths.some((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y) < 8) ||
+      fixed.some((m) => Math.hypot(x + 0.5 - m.x, y + 0.5 - m.y) < 8);
+    markers.push(
+      ...placeLandmarks(rng, def.landmarks, { cells, width: w, height: h, reachable, taken, keepClear, spawnTable: def.spawnTable }, def.spawn),
+    );
   }
 
   return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: safe ? [{ ...safe }] : [] };

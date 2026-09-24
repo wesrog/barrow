@@ -57,28 +57,47 @@ export const SYNTY_ITEM_ICONS: Record<string, string> = {
 
 const BASE = ((import.meta.env.BASE_URL as string | undefined) ?? "/").replace(/\/$/, "");
 
-let available = new Set<string>();
+/** Inventory icon name -> path under /icons/synty/, from the copied pack's manifest. */
+let available = new Map<string, string>();
 
-/** Read the copied icons' manifest once at startup; none means the SVGs. */
+/** The manifest scripts/ui-icons.ts writes; only the inventory set matters here. */
+interface IconManifest {
+  version: number;
+  pieces: { set: string; name: string; files: Record<string, string> }[];
+}
+
+/** Read the copied art's manifest once at startup; none means the SVGs. */
 export async function loadItemIcons(): Promise<void> {
   try {
     const res = await fetch(`${BASE}/icons/synty/manifest.json`);
     if (!res.ok) return;
-    const manifest = (await res.json()) as Record<string, string[]>;
-    available = new Set(manifest.inventory ?? []);
+    const manifest = (await res.json()) as IconManifest;
+    if (manifest.version !== 2) return;
+    available = inventoryIcons(manifest);
   } catch {
     // Offline or absent: the SVGs carry on.
   }
 }
 
+/** The clean silhouettes of the inventory set, by name. */
+export function inventoryIcons(manifest: IconManifest): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const p of manifest.pieces) {
+    const file = p.set === "inventory" ? p.files.Clean : undefined;
+    if (file) out.set(p.name, file);
+  }
+  return out;
+}
+
 /** Test seam: pretend these pack icons were copied. */
-export function setAvailableItemIcons(names: Iterable<string>): void {
-  available = new Set(names);
+export function setAvailableItemIcons(icons: Map<string, string>): void {
+  available = icons;
 }
 
 /** The mask image for a base's icon: the pack silhouette when present, else the SVG. */
 export function itemIconUrl(baseId: string): string {
   const synty = SYNTY_ITEM_ICONS[baseId];
-  if (synty && available.has(synty)) return `${BASE}/icons/synty/inventory/${synty}.png`;
+  const file = synty && available.get(synty);
+  if (file) return `${BASE}/icons/synty/${file}`;
   return `${BASE}/icons/items/${baseId}.svg`;
 }

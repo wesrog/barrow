@@ -4,6 +4,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { gripInto, heldModel, wearPiece, wornPlacement } from "../render/gear";
 import { cloneProp, findNode, loadAssets, type GameAssets, type WeaponName } from "../render/models";
 import { display, mono } from "../ui/fonts";
+import { loadArtManifest, pieceFile, prettyName, setCounts, TINTS, VARIANTS, type ArtManifest, type Variant } from "./art";
+import { ArtGallery } from "./ArtGallery";
 import {
   ACTION_IDS,
   buildCatalog,
@@ -38,6 +40,9 @@ const IDLE = "(idle)";
  * scripted screenshots.
  */
 const params = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+type Tab = "models" | "art";
 
 interface Live {
   entry: CatalogEntry;
@@ -127,6 +132,20 @@ export function Viewer() {
     const wear = params.get("wear");
     return sel && wear ? new Map([[sel, new Set(wear.split(","))]]) : new Map();
   });
+
+  // --- The 2D art tab: the pack's icons and sprites from the copied manifest ---
+  const [tab, setTab] = useState<Tab>(params.get("tab") === "art" ? "art" : "models");
+  const tabRef = useRef<Tab>(tab);
+  tabRef.current = tab;
+  const [art, setArt] = useState<ArtManifest | null>(null);
+  const [artQuery, setArtQuery] = useState(params.get("artq") ?? "");
+  const [artSets, setArtSets] = useState<Set<string>>(new Set());
+  const [tint, setTint] = useState(TINTS[1]!.css);
+  const [variant, setVariant] = useState<Variant>("Clean");
+  const [artSize, setArtSize] = useState(56);
+  const [artSelected, setArtSelected] = useState<string | null>(null);
+  const artPiece = useMemo(() => art?.pieces.find((p) => `${p.set}/${p.name}` === artSelected) ?? null, [art, artSelected]);
+  const artCounts = useMemo(() => (art ? setCounts(art.pieces) : new Map<string, number>()), [art]);
 
   const visible = useMemo(() => filterEntries(entries, query, packs), [entries, query, packs]);
   const selected = entries.find((e) => e.id === selectedId) ?? null;
@@ -227,6 +246,7 @@ export function Viewer() {
     const loop = (now: number) => {
       if (disposed) return;
       raf = requestAnimationFrame(loop);
+      if (tabRef.current !== "models") return; // the art tab covers the stage; save the GPU
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       for (const live of livesRef.current.values()) {
@@ -252,6 +272,11 @@ export function Viewer() {
     raf = requestAnimationFrame(loop);
 
     let mounted = true;
+    loadArtManifest(BASE).then((manifest) => {
+      if (!mounted) return;
+      setArt(manifest);
+      if (manifest) setArtSets(new Set(manifest.sets.map((s) => s.id)));
+    });
     loadAssets()
       .then((assets) => {
         if (!mounted) return;
@@ -432,6 +457,16 @@ export function Viewer() {
     <div className="viewer">
       <aside className="panel">
         <h1 style={{ fontFamily: display }}>Barrow models</h1>
+        <div className="tabs">
+          <button className={tab === "models" ? "tab on" : "tab"} onClick={() => setTab("models")}>
+            models
+          </button>
+          <button className={tab === "art" ? "tab on" : "tab"} onClick={() => setTab("art")}>
+            2D art
+          </button>
+        </div>
+        {tab === "models" && (
+        <>
         <div className="status">{status}</div>
         <label className="field">
           <span>search</span>
@@ -571,9 +606,119 @@ export function Viewer() {
           </div>
         )}
         <div className="hint">drag to orbit · wheel to zoom · click a figure to select</div>
+        </>
+        )}
+        {tab === "art" && (
+          <>
+            <div className="status">{art ? `${art.pieces.length} pieces in ${art.sets.length} sets` : "no 2D art copied"}</div>
+            <label className="field">
+              <span>search</span>
+              <input value={artQuery} onChange={(e) => setArtQuery(e.target.value)} placeholder="name…" />
+            </label>
+            {art && (
+              <div className="field">
+                <span>sets</span>
+                {art.sets.map((s) => (
+                  <label key={s.id} className="check">
+                    <input
+                      type="checkbox"
+                      checked={artSets.has(s.id)}
+                      onChange={() =>
+                        setArtSets((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(s.id)) next.delete(s.id);
+                          else next.add(s.id);
+                          return next;
+                        })
+                      }
+                    />
+                    {s.label} <em>{artCounts.get(s.id) ?? 0}</em>
+                  </label>
+                ))}
+                <div className="row">
+                  <button onClick={() => setArtSets(new Set(art.sets.map((s) => s.id)))}>all</button>
+                  <button onClick={() => setArtSets(new Set())}>none</button>
+                  <button onClick={() => setArtSets(new Set(art.sets.filter((s) => !s.id.startsWith("input")).map((s) => s.id)))}>
+                    no input glyphs
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="field">
+              <span>icon tint</span>
+              <div className="swatches">
+                {TINTS.map((t) => (
+                  <button
+                    key={t.name}
+                    className={t.css === tint ? "swatch on" : "swatch"}
+                    style={{ background: t.css }}
+                    title={t.name}
+                    onClick={() => setTint(t.css)}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="field">
+              <span>icon variant</span>
+              <div className="row">
+                {VARIANTS.map((v) => (
+                  <button key={v} className={v === variant ? "chip on" : "chip"} onClick={() => setVariant(v)}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="field">
+              <span>size {artSize}px</span>
+              <input type="range" min={24} max={160} step={4} value={artSize} onChange={(e) => setArtSize(Number(e.target.value))} />
+            </label>
+            {artPiece && (
+              <div className="selected">
+                <h2>{prettyName(artPiece.name)}</h2>
+                <div className="meta" style={{ fontFamily: mono }}>
+                  {art?.sets.find((s) => s.id === artPiece.set)?.label} · {artPiece.w}×{artPiece.h}
+                </div>
+                <div className="variants">
+                  {Object.entries(artPiece.files).map(([v, file]) => (
+                    <figure key={v}>
+                      {art?.sets.find((s) => s.id === artPiece.set)?.kind === "icon" ? (
+                        <div
+                          className="mask"
+                          style={{ backgroundColor: tint, WebkitMaskImage: `url(${BASE}/icons/synty/${file})`, maskImage: `url(${BASE}/icons/synty/${file})` }}
+                        />
+                      ) : (
+                        <img src={`${BASE}/icons/synty/${file}`} alt="" />
+                      )}
+                      <figcaption>{v || "sprite"}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+                <div className="path" style={{ marginTop: 8 }}>
+                  {Object.values(artPiece.files).map((f) => (
+                    <div key={f}>{`public/icons/synty/${f}`}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="hint">icons are white silhouettes the HUD masks and tints · sprites draw as they are</div>
+          </>
+        )}
       </aside>
       <div className="stage" ref={mountRef}>
         <div className="overlay" ref={overlayRef} />
+        {tab === "art" && (
+          <ArtGallery
+            manifest={art}
+            base={BASE}
+            query={artQuery}
+            sets={artSets}
+            tint={tint}
+            variant={variant}
+            size={artSize}
+            selectedKey={artSelected}
+            onSelect={setArtSelected}
+          />
+        )}
       </div>
     </div>
   );

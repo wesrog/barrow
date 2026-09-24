@@ -33,6 +33,26 @@
       .chip { padding: 3px 7px; font-size: 11px; }
       .chip.on { background: #6a5a2c; border-color: #a8903c; }
       .hint { color: #66604f; font-size: 11px; margin-top: auto; }
+      .tabs { display: flex; gap: 6px; }
+      .tab { flex: 1; padding: 6px 8px; background: #16161e; }
+      .tab.on { background: #6a5a2c; border-color: #a8903c; }
+      .art { position: absolute; inset: 0; overflow-y: auto; background: #14141a; padding: 14px; box-sizing: border-box; }
+      .art-grid { display: flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+      .tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px; background: #1a1a22; border: 1px solid #262632; border-radius: 4px; cursor: pointer; }
+      .tile:hover { border-color: #3a3a4a; background: #1e1e28; }
+      .tile.on { border-color: #a8903c; box-shadow: 0 0 0 1px #a8903c; }
+      .tile span { font-size: 10px; color: #a8a294; text-align: center; overflow-wrap: anywhere; line-height: 1.2; }
+      .mask { -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; flex: none; }
+      .tile img { object-fit: contain; flex: none; }
+      .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+      .swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+      .swatch.on { border-color: #e8dcc0; }
+      .variants { display: flex; gap: 10px; align-items: flex-end; }
+      .variants .mask, .variants img { width: 48px; height: 48px; }
+      .variants figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: #8c8578; }
+      .path { font-size: 10px; color: #8c8578; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+      .art-empty { color: #8c8578; padding: 40px; max-width: 520px; line-height: 1.6; }
+      .art-empty code { color: #d9b85c; }
       .stage { position: relative; flex: 1; min-width: 0; }
       .stage canvas { display: block; }
       .overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }

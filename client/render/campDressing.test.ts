@@ -81,7 +81,7 @@ describe("dressMarkers", () => {
 describe("dressHuts", () => {
   const structures = () => {
     const scene = new THREE.Group();
-    for (const name of [HUT_WALLS.wall, HUT_WALLS.post]) {
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post, HUT_WALLS.half]) {
       const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
       node.name = name;
       scene.add(node);
@@ -99,6 +99,11 @@ describe("dressHuts", () => {
     expect(walled.size).toBe(15);
     expect(walled.has("42,24")).toBe(false);
     expect(placed.filter((p) => p.name === HUT_WALLS.post).length).toBe(4);
+    // Two half walls per corner, each running from the post toward the ring's next edge.
+    const halves = placed.filter((p) => p.name === HUT_WALLS.half);
+    expect(halves.length).toBe(8);
+    const nw = halves.filter((p) => p.x === 40.5 && p.z === 20.5).map((p) => p.ry).sort();
+    expect(nw).toEqual([-Math.PI / 2, 0]); // east along +x, south along +z
     const walls = placed.filter((p) => p.name === HUT_WALLS.wall);
     expect(walls.length).toBe(11);
     const north = walls.find((p) => p.z === 20.5 && p.x === 42.5)!;
@@ -118,7 +123,7 @@ describe("dressHuts", () => {
 describe("dressBuildings", () => {
   const kits = (): Kits => {
     const scene = new THREE.Group();
-    for (const name of [HUT_WALLS.wall, HUT_WALLS.post, DOOR_WALL]) {
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post, HUT_WALLS.half, DOOR_WALL]) {
       const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
       node.name = name;
       scene.add(node);
@@ -132,6 +137,9 @@ describe("dressBuildings", () => {
     const walled = dressBuildings(kits(), [hall], (node, x, z, ry) => placed.push({ name: node.name, x, z, ry }));
     expect(walled.size).toBe(7 * 2 + 3 * 2);
     expect(placed.filter((p) => p.name === HUT_WALLS.post).length).toBe(4);
+    expect(placed.filter((p) => p.name === HUT_WALLS.half).length).toBe(8);
+    const se = placed.filter((p) => p.name === HUT_WALLS.half && p.x === 19.5 && p.z === 29.5).map((p) => p.ry).sort();
+    expect(se).toEqual([Math.PI / 2, Math.PI]); // north along -z, west along -x
     expect(placed.filter((p) => p.name === HUT_WALLS.wall).length).toBe(20 - 4 - 1);
     const door = placed.find((p) => p.name === DOOR_WALL)!;
     expect(door.x).toBe(16.5);
@@ -150,7 +158,7 @@ describe("dressBuildings", () => {
 describe("dressPalisade", () => {
   const kits = (): Kits => {
     const structures = new THREE.Group();
-    for (const name of [HUT_WALLS.wall, HUT_WALLS.post]) {
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post, HUT_WALLS.half]) {
       const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
       node.name = name;
       structures.add(node);
@@ -240,6 +248,7 @@ describe.if(existsSync(structuresPath))("hut walls match the structures kit", ()
     const names = new Set(json.nodes.map((n) => n.name));
     expect(names.has(HUT_WALLS.wall)).toBe(true);
     expect(names.has(HUT_WALLS.post)).toBe(true);
+    expect(names.has(HUT_WALLS.half)).toBe(true);
     expect(names.has(DOOR_WALL)).toBe(true);
   });
 });

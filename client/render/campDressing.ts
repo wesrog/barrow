@@ -203,9 +203,33 @@ export const HUT_WALLS = {
   kit: "viking_structures" as KitName,
   wall: "Bld_Wall_Logs_01",
   post: "Bld_Pillar_01",
+  /** The 1.4-unit half wall, end-pivoted like the full one: two of them fill a corner cell from its post out to the neighbouring walls. */
+  half: "Bld_Wall_Logs_Half_01",
   scale: 0.4,
   wallOffset: [-1.25, 0, 0] as const,
 };
+
+/**
+ * A corner: the post at the cell's centre and a half wall from it along each
+ * of the two edges that continue from here (`dx`, `dz` are +1 or -1), so the
+ * full walls on the neighbouring cells meet log to log instead of leaving
+ * the post standing in a gap. Rotation about Y turns the piece's +x length
+ * onto +z with -PI/2.
+ */
+function placeCorner(
+  post: THREE.Object3D,
+  half: THREE.Object3D | null,
+  x: number,
+  y: number,
+  dx: number,
+  dz: number,
+  place: PlaceProp,
+): void {
+  place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+  if (!half) return;
+  place(half, x + 0.5, y + 0.5, dx > 0 ? 0 : Math.PI, HUT_WALLS.scale);
+  place(half, x + 0.5, y + 0.5, dz > 0 ? -Math.PI / 2 : Math.PI / 2, HUT_WALLS.scale);
+}
 
 /** Where a placed prop goes: world x/z, yaw, uniform scale, and what rides with it. */
 export type PlaceProp = (node: THREE.Object3D, x: number, z: number, ry: number, scale: number, opts?: PlaceOpts) => void;
@@ -264,12 +288,13 @@ export function dressBuildings(kits: Kits, buildings: readonly BuildingDef[], pl
   const walled = new Set<string>();
   const wall = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.wall);
   const post = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.post);
+  const half = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.half);
   const door = kitNode(kits, HUT_WALLS.kit, DOOR_WALL) ?? wall;
   if (!wall || !post || !door) return walled;
   for (const b of buildings) {
     for (const { x, y } of buildingRing(b)) {
       if (isBuildingCorner(b, x, y)) {
-        place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+        placeCorner(post, half, x, y, x === b.x0 ? 1 : -1, y === b.y0 ? 1 : -1, place);
       } else {
         const isDoor = x === b.door[0] && y === b.door[1];
         const ry = y === b.y0 || y === b.y1 ? 0 : Math.PI / 2;
@@ -311,6 +336,7 @@ export function dressPalisade(
   const walled = new Set<string>();
   const wall = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.wall);
   const post = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.post);
+  const half = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.half);
   if (!wall || !post) return walled;
   const torch = kitNode(kits, PROPS, PALISADE.torch);
   const flag = kitNode(kits, PROPS, PALISADE.flag);
@@ -329,7 +355,7 @@ export function dressPalisade(
       if (isWalkable(x, y)) continue;
       const corner = (x === camp.x0 - 1 || x === camp.x1) && (y === camp.y0 - 1 || y === camp.y1);
       if (corner) {
-        place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+        placeCorner(post, half, x, y, x === camp.x0 - 1 ? 1 : -1, y === camp.y0 - 1 ? 1 : -1, place);
         if (flag) place(flag, x + 0.5, y + 0.5, Q, PALISADE.flagScale, { y: 1.0 });
       } else {
         const ry = y === camp.y0 - 1 || y === camp.y1 ? 0 : Math.PI / 2;
@@ -378,6 +404,7 @@ export function dressHuts(
   const walled = new Set<string>();
   const wall = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.wall);
   const post = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.post);
+  const half = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.half);
   if (!wall || !post) return walled;
   for (const home of homes) {
     const hx = Math.floor(home.x);
@@ -386,7 +413,7 @@ export function dressHuts(
       if (isWalkable(x, y)) continue;
       const corner = Math.abs(x - hx) === HUT_RADIUS && Math.abs(y - hy) === HUT_RADIUS;
       if (corner) {
-        place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+        placeCorner(post, half, x, y, x < hx ? 1 : -1, y < hy ? 1 : -1, place);
       } else {
         // Walls on the north and south rows run along x; the flanks along z.
         const ry = Math.abs(y - hy) === HUT_RADIUS ? 0 : Math.PI / 2;

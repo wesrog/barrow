@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { MapMarker, Vec } from "../../sim/map";
+import { buildingRing, isBuildingCorner, type BuildingDef } from "../../sim/buildings";
 import { HUT_RADIUS, hutRing } from "../../sim/npcs";
 import { kitNode, type KitName, type Kits } from "./models";
 
@@ -86,6 +87,7 @@ export const HUT_MARKER = "hut";
 
 const FORGE_FIRE = { color: 0xff7a30, height: 0.62, size: 0.06 };
 const TABLE_CANDLE = { color: 0xffb35c, height: 0.52, size: 0.025 };
+const SHRINE_CANDLE = { color: 0xffb35c, height: 0.2, size: 0.03 };
 
 export const CAMP_DRESSING: readonly DressingRow[] = [
   // The fire: a ringed stone pit with logs laid in it, a boar on the spit
@@ -125,6 +127,43 @@ export const CAMP_DRESSING: readonly DressingRow[] = [
   { marker: "T", kit: PROPS, node: "Prop_Target_01", dx: 2.0, dz: -0.2, ry: 0.2, scale: 0.5 },
   { marker: "T", kit: PROPS, node: "Prop_Wood_Stump_01", dx: -2.2, dz: 0.3, ry: 0.7, scale: 0.6 },
   { marker: "T", kit: PROPS, node: "Prop_Rack_01", dx: 0.3, dz: -0.9, ry: 0, scale: 0.6 },
+  // The town shrine: a carved idol, candles, offerings, an engraved stone in the turf.
+  { marker: "Y", kit: PROPS, node: "Prop_Statue_01", dx: 0, dz: -0.6, ry: 0, scale: 0.5 },
+  { marker: "Y", kit: PROPS, node: "Prop_Candle_02", dx: -0.5, dz: 0.2, ry: 0.3, scale: 0.6, flame: SHRINE_CANDLE, light: { color: 0xffb35c, intensity: 1.4, height: 0.8 } },
+  { marker: "Y", kit: PROPS, node: "Prop_Candle_02", dx: 0.5, dz: 0.2, ry: -0.3, scale: 0.6, flame: SHRINE_CANDLE },
+  { marker: "Y", kit: PROPS, node: "Prop_Bowl_02", dx: 0, dz: 0.3, ry: 0, scale: 0.6 },
+  { marker: "Y", kit: "viking_nature", node: "Env_Stone_Engraved_01", dx: -0.9, dz: -0.4, ry: 0.8, scale: 0.8 },
+  // The jarl's hall: two tables end to end with benches, a candelabra between,
+  // the seat at the far end, torches and a shelf on the back wall.
+  { marker: "J", kit: PROPS, node: "Prop_Table_01", dx: -0.7, dz: 0, ry: 2 * Q, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Table_01", dx: 0.7, dz: 0, ry: 2 * Q, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Bench_01", dx: -0.7, dz: -0.6, ry: 0, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Bench_01", dx: 0.7, dz: -0.6, ry: 0, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Bench_01", dx: -0.7, dz: 0.6, ry: 0, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Bench_01", dx: 0.7, dz: 0.6, ry: 0, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Candelabra_01", dx: 0, dz: 0, ry: 0, scale: 0.4, y: 0.36, flame: { color: 0xffb35c, height: 0.9, size: 0.035 }, light: { color: 0xffb35c, intensity: 2.2, height: 1.0 } },
+  { marker: "J", kit: PROPS, node: "Prop_Plate_01", dx: -1.0, dz: 0.15, ry: 0, scale: 0.45, y: 0.36 },
+  { marker: "J", kit: PROPS, node: "Prop_Meat_Cooked_02", dx: -1.0, dz: 0.15, ry: 0.4, scale: 0.45, y: 0.38 },
+  { marker: "J", kit: PROPS, node: "Prop_Drinking_Horn_01", dx: 1.1, dz: -0.15, ry: 1.2, scale: 0.45, y: 0.36 },
+  { marker: "J", kit: PROPS, node: "Prop_Cup_02", dx: 0.5, dz: 0.2, ry: 0, scale: 0.45, y: 0.36 },
+  { marker: "J", kit: PROPS, node: "Prop_Throne_01", dx: 2.2, dz: 0, ry: -2 * Q, scale: 0.5 },
+  { marker: "J", kit: PROPS, node: "Prop_Pelt_03", dx: 1.3, dz: 0, ry: 2 * Q, scale: 0.45 },
+  { marker: "J", kit: PROPS, node: "Prop_Chest_03", dx: -2.2, dz: -0.9, ry: 0.2, scale: 0.5 },
+  { marker: "J", kit: PROPS, node: "Prop_Barrel_01", dx: -2.2, dz: 0.8, ry: 0, scale: 0.5 },
+  { marker: "J", kit: PROPS, node: "Prop_Torch_01", dx: 0, dz: 0, ry: 0, scale: 0.6, wall: true, flat: true, along: -1.6, y: 0.85, flame: { color: 0xff9030, height: 1.27, size: 0.05 }, light: { color: 0xff9a45, intensity: 2.0, height: 1.35 } },
+  { marker: "J", kit: PROPS, node: "Prop_Torch_01", dx: 0, dz: 0, ry: 0, scale: 0.6, wall: true, flat: true, along: 1.6, y: 0.85, flame: { color: 0xff9030, height: 1.27, size: 0.05 } },
+  { marker: "J", kit: PROPS, node: "Prop_Shelf_01", dx: 0, dz: 0, ry: 0, scale: 0.45, wall: true, inset: 0.16, y: 0.5 },
+  // The storehouse: barrels, sacks, baskets and a chest, a shelf and a lantern on the wall.
+  { marker: "D", kit: PROPS, node: "Prop_Barrel_01", dx: 0.8, dz: -0.8, ry: 0, scale: 0.5 },
+  { marker: "D", kit: PROPS, node: "Prop_Barrel_01", dx: 0.9, dz: 0.2, ry: 0.5, scale: 0.5 },
+  { marker: "D", kit: PROPS, node: "Prop_Mead_Barrel_01", dx: -0.9, dz: -0.5, ry: 0.3, scale: 0.55 },
+  { marker: "D", kit: PROPS, node: "Prop_Sack_Pile_01", dx: -0.1, dz: -0.9, ry: 0.2, scale: 0.5 },
+  { marker: "D", kit: PROPS, node: "Prop_Basket_02", dx: 0.2, dz: 0.9, ry: 0, scale: 0.6 },
+  { marker: "D", kit: PROPS, node: "Prop_Chest_02", dx: -0.8, dz: 0.9, ry: 0.3, scale: 0.55 },
+  { marker: "D", kit: PROPS, node: "Prop_Meat_Pile_01", dx: 0.1, dz: 0.1, ry: 0, scale: 0.6 },
+  { marker: "D", kit: PROPS, node: "Prop_Pot_02", dx: -0.9, dz: 0.2, ry: 0, scale: 0.6 },
+  { marker: "D", kit: PROPS, node: "Prop_Shelf_01", dx: 0, dz: 0, ry: 0, scale: 0.45, wall: true, inset: 0.16, y: 0.5 },
+  { marker: "D", kit: PROPS, node: "Prop_Lantern_01", dx: 0, dz: 0, ry: 0, scale: 0.5, wall: true, flat: true, along: -0.9, y: 0.9, flame: { color: 0xffc46a, height: 1.05, size: 0.03 }, light: { color: 0xffc46a, intensity: 1.6, height: 1.1 } },
   // The trader: an awning behind the stall (corner pivot, 1.4 cells square at
   // this scale) with wares set out in front of it.
   { marker: "V", kit: PROPS, node: "Prop_Awning_01", dx: -1.55, dz: -1.55, ry: 0, scale: 0.55 },
@@ -205,9 +244,41 @@ export function dressMarkers(
   return dressed;
 }
 
-/** The camp's rows, on the town's markers and the hut homes. */
-export function dressCamp(kits: Kits, markers: readonly MapMarker[], place: PlaceProp): Set<string> {
-  return dressMarkers(kits, markers, CAMP_DRESSING, place);
+/** The camp's rows, on the town's markers and the hut homes; `wallToward` lets the
+ * building interiors hang torches and shelves on their back walls. */
+export function dressCamp(kits: Kits, markers: readonly MapMarker[], place: PlaceProp, wallToward?: WallToward): Set<string> {
+  return dressMarkers(kits, markers, CAMP_DRESSING, place, wallToward);
+}
+
+/** The door wall: a log wall with a doorway cut through its middle, stood on the open door cell. */
+export const DOOR_WALL = "Bld_Wall_Logs_Door_01";
+
+/**
+ * Raise a building's walls: a log wall on every ring cell, a post on each
+ * corner, and the door wall on the open door cell so the way in reads as a
+ * doorway. `buildings` come in world cells. Returns the cells given a wall
+ * (the door too, since its wall piece covers it); empty when the structures
+ * kit is absent.
+ */
+export function dressBuildings(kits: Kits, buildings: readonly BuildingDef[], place: PlaceProp): Set<string> {
+  const walled = new Set<string>();
+  const wall = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.wall);
+  const post = kitNode(kits, HUT_WALLS.kit, HUT_WALLS.post);
+  const door = kitNode(kits, HUT_WALLS.kit, DOOR_WALL) ?? wall;
+  if (!wall || !post || !door) return walled;
+  for (const b of buildings) {
+    for (const { x, y } of buildingRing(b)) {
+      if (isBuildingCorner(b, x, y)) {
+        place(post, x + 0.5, y + 0.5, 0, HUT_WALLS.scale);
+      } else {
+        const isDoor = x === b.door[0] && y === b.door[1];
+        const ry = y === b.y0 || y === b.y1 ? 0 : Math.PI / 2;
+        place(isDoor ? door : wall, x + 0.5, y + 0.5, ry, HUT_WALLS.scale, { offset: HUT_WALLS.wallOffset });
+      }
+      walled.add(`${x},${y}`);
+    }
+  }
+  return walled;
 }
 
 /** What the camp's palisade is built from: the hut walls at the same scale,

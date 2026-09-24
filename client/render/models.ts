@@ -42,6 +42,10 @@ export const GROUND_TEXTURE_URLS = {
   mud: "/textures/ground/mud.png",
   dirt: "/textures/ground/dirt.png",
   rock: "/textures/ground/rock.png",
+  grass_pine: "/textures/ground/grass_pine.png",
+  needles: "/textures/ground/needles.png",
+  dirt_pine: "/textures/ground/dirt_pine.png",
+  rock_moss: "/textures/ground/rock_moss.png",
 } as const;
 export type GroundTexture = keyof typeof GROUND_TEXTURE_URLS;
 export type GroundTextures = Partial<Record<GroundTexture, THREE.Texture>>;

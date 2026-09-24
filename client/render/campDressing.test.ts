@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import * as THREE from "three";
-import { CAMP_DRESSING, HUT_WALLS, PALISADE, againstWall, dressCamp, dressHuts, dressMarkers, dressPalisade, type DressingRow } from "./campDressing";
+import { CAMP_DRESSING, DOOR_WALL, HUT_WALLS, PALISADE, againstWall, dressBuildings, dressCamp, dressHuts, dressMarkers, dressPalisade, type DressingRow } from "./campDressing";
 import { KIT_URLS, type Kits } from "./models";
 
 function fakeKits(): Kits {
@@ -115,6 +115,38 @@ describe("dressHuts", () => {
   });
 });
 
+describe("dressBuildings", () => {
+  const kits = (): Kits => {
+    const scene = new THREE.Group();
+    for (const name of [HUT_WALLS.wall, HUT_WALLS.post, DOOR_WALL]) {
+      const node = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+      node.name = name;
+      scene.add(node);
+    }
+    return { viking_structures: { scene, animations: [] } as unknown as Kits["viking_structures"] };
+  };
+
+  test("posts on the corners, walls along the edges, the door wall on the door cell", () => {
+    const hall = { ch: "J", x0: 13, y0: 25, x1: 19, y1: 29, door: [16, 29] as const };
+    const placed: { name: string; x: number; z: number; ry: number }[] = [];
+    const walled = dressBuildings(kits(), [hall], (node, x, z, ry) => placed.push({ name: node.name, x, z, ry }));
+    expect(walled.size).toBe(7 * 2 + 3 * 2);
+    expect(placed.filter((p) => p.name === HUT_WALLS.post).length).toBe(4);
+    expect(placed.filter((p) => p.name === HUT_WALLS.wall).length).toBe(20 - 4 - 1);
+    const door = placed.find((p) => p.name === DOOR_WALL)!;
+    expect(door.x).toBe(16.5);
+    expect(door.z).toBe(29.5);
+    expect(door.ry).toBe(0);
+    expect(placed.find((p) => p.x === 13.5 && p.z === 27.5)!.ry).toBeCloseTo(Math.PI / 2);
+  });
+
+  test("raises nothing without the structures kit", () => {
+    let calls = 0;
+    expect(dressBuildings({}, [{ ch: "J", x0: 0, y0: 0, x1: 4, y1: 4, door: [2, 4] }], () => calls++).size).toBe(0);
+    expect(calls).toBe(0);
+  });
+});
+
 describe("dressPalisade", () => {
   const kits = (): Kits => {
     const structures = new THREE.Group();
@@ -180,8 +212,23 @@ describe.if(existsSync(propsPath))("camp dressing matches the props kit", () => 
     const buf = readFileSync(propsPath);
     const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString("utf8")) as { nodes: { name: string }[] };
     const names = new Set(json.nodes.map((n) => n.name));
-    for (const row of CAMP_DRESSING) expect(names.has(row.node)).toBe(true);
+    for (const row of CAMP_DRESSING) {
+      if (row.kit !== "viking_props") continue;
+      expect(names.has(row.node)).toBe(true);
+    }
     for (const node of [PALISADE.torch, PALISADE.flag, PALISADE.sign, PALISADE.beacon]) expect(names.has(node)).toBe(true);
+  });
+
+  test("rows from other kits name real nodes too", () => {
+    for (const kit of new Set(CAMP_DRESSING.map((r) => r.kit))) {
+      if (kit === "viking_props") continue;
+      const path = `public${KIT_URLS[kit]}`;
+      if (!existsSync(path)) continue;
+      const buf = readFileSync(path);
+      const json = JSON.parse(buf.subarray(20, 20 + buf.readUInt32LE(12)).toString("utf8")) as { nodes: { name: string }[] };
+      const names = new Set(json.nodes.map((n) => n.name));
+      for (const row of CAMP_DRESSING.filter((r) => r.kit === kit)) expect(names.has(row.node)).toBe(true);
+    }
   });
 });
 
@@ -193,5 +240,6 @@ describe.if(existsSync(structuresPath))("hut walls match the structures kit", ()
     const names = new Set(json.nodes.map((n) => n.name));
     expect(names.has(HUT_WALLS.wall)).toBe(true);
     expect(names.has(HUT_WALLS.post)).toBe(true);
+    expect(names.has(DOOR_WALL)).toBe(true);
   });
 });

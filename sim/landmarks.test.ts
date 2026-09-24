@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { AREAS } from "./areas";
 import { LANDMARKS, floodFloor, isLandmarkMarker, placeLandmarks } from "./landmarks";
-import { MARKER_TYPES, NPC_CLEARING, areaZone } from "./zone";
+import { LANDMARK_MARGIN, MARKER_TYPES, NPC_CLEARING, areaZone } from "./zone";
 import { NPCS, NPC_IDS } from "./npcs";
 import { createRng } from "./rng";
 import { ensureSurface } from "./tick";
@@ -65,8 +65,9 @@ describe("landmark placement", () => {
           for (const m of placed) {
             expect(Math.hypot(m.x - def.spawn.x, m.y - def.spawn.y)).toBeGreaterThanOrEqual(12);
             if (def.safe) {
-              const inSafe = m.x >= def.safe.x0 - 2 && m.x < def.safe.x1 + 2 && m.y >= def.safe.y0 - 2 && m.y < def.safe.y1 + 2;
-              expect(inSafe).toBe(false);
+              const nearSafe =
+                m.x >= def.safe.x0 - LANDMARK_MARGIN && m.x < def.safe.x1 + LANDMARK_MARGIN && m.y >= def.safe.y0 - LANDMARK_MARGIN && m.y < def.safe.y1 + LANDMARK_MARGIN;
+              expect(nearSafe).toBe(false);
             }
             for (const n of homes) expect(Math.hypot(m.x - n.pos.x, m.y - n.pos.y)).toBeGreaterThanOrEqual(NPC_CLEARING + 4);
             for (const o of placed) {

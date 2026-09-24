@@ -58,7 +58,7 @@ describe("bakeScatter", () => {
   test("bakes every variant of every kind, or nothing at all without the kit", () => {
     const baked = bakeScatter(fakeKits())!;
     expect(baked.pine.length).toBe(SCATTER_PIECES.pine.length);
-    expect(baked.tuft.length).toBe(SCATTER_PIECES.tuft.length);
+    expect(baked.bush.length).toBe(SCATTER_PIECES.bush.length);
     expect(bakeScatter({})).toBeNull();
   });
 });
@@ -71,20 +71,18 @@ describe("ScatterBatch", () => {
     batch.add("pine", 0, m.makeTranslation(3.5, 0, 3.5), 3, 3);
     batch.add("pine", 0, m.makeTranslation(20.5, 0, 0.5), 20, 0);
     batch.add("rock", 1, m.makeTranslation(1.5, 0, 1.5), 1, 1);
-    batch.add("tuft", 7, m.makeTranslation(1.5, 0, 1.5), 1, 1);
     const parent = new THREE.Group();
     const meshes = batch.build(parent);
-    expect(meshes.length).toBe(4);
+    expect(meshes.length).toBe(3);
     const counts = meshes.map((mesh) => mesh.count).sort();
-    expect(counts).toEqual([1, 1, 1, 2]);
+    expect(counts).toEqual([1, 1, 2]);
     const pine = meshes.find((mesh) => mesh.count === 2)!;
     expect(pine.castShadow).toBe(true);
     expect((pine.material as THREE.MeshStandardMaterial).color.getHex()).toBe(0x80ff80);
     expect(pine.boundingSphere!.radius).toBeGreaterThan(1);
     const rock = meshes.find((mesh) => (mesh.material as THREE.MeshStandardMaterial).color.getHex() === 0x808080)!;
     expect(rock.count).toBe(1);
-    const tuft = meshes.find((mesh) => !mesh.castShadow)!;
-    expect(tuft.count).toBe(1);
+    expect(rock.castShadow).toBe(true);
   });
 
   test("shares one tinted material across chunks of the same piece", () => {

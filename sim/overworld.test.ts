@@ -64,7 +64,7 @@ describe("overworld map", () => {
     // Every feature marker is a known camp fixture, the crypt mouth, a
     // landmark or its chest; the old gate pads are gone.
     const map = overworldZone(createRng(9));
-    const known = new Set(["V", "H", "F", "S", "W", ">", "A", "M", "T", "$", ...LANDMARK_CHARS]);
+    const known = new Set(["V", "H", "F", "S", "W", ">", "A", "M", "T", "Y", "J", "D", "$", ...LANDMARK_CHARS]);
     for (const m of map.markers) {
       if (AREAS.overworld.spawnTable.includes(m.ch)) continue;
       expect(known.has(m.ch)).toBe(true);

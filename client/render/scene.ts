@@ -21,10 +21,11 @@ import { potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
-import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
+import { AREA_ORDER, areaAt, areaRect, locationTitle, surfaceLayout } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
 import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
-import { againstWall, dressCamp, dressHuts, dressMarkers, dressPalisade, HUT_MARKER, type PlaceOpts, type PlaceProp, type WallHit, type WallToward } from "./campDressing";
+import { againstWall, dressBuildings, dressCamp, dressHuts, dressMarkers, dressPalisade, HUT_MARKER, type PlaceOpts, type PlaceProp, type WallHit, type WallToward } from "./campDressing";
+import type { BuildingDef } from "../../sim/buildings";
 import { CRYPT_SET_PIECES, DUNGEON_DRESSING, type DressingFamily } from "./cryptDressing";
 import { WILD_SET_PIECES } from "./wildDressing";
 import { LANDMARKS } from "../../sim/landmarks";
@@ -162,6 +163,43 @@ export function createScene(
   const heroLight = new THREE.PointLight(0xffb35c, 6, 9, 1.6);
   heroLight.position.set(0, 1.05, 0);
   scene.add(heroLight);
+
+  // --- Lamps: every torch, candle, brazier, pad and glow in the level is a
+  // point light, and a level now carries dozens, but every point light in
+  // the scene costs every lit pixel every frame. So lamps never join the
+  // scene: they register here, and a fixed pool of lights takes on the
+  // nearest few each frame, fading each over its last cells of reach so
+  // nothing pops. The shader compiles once, for the pool's count. ---
+  const LAMP_POOL = 8;
+  const LAMP_REACH = 15; // cells; past this a lamp is off screen at VIEW_HEIGHT 12
+  const lamps: THREE.PointLight[] = [];
+  const registerLamp = (light: THREE.PointLight): void => {
+    lamps.push(light);
+  };
+  const lampPool = Array.from({ length: LAMP_POOL }, () => {
+    const light = new THREE.PointLight(0xffffff, 0, 1, 2);
+    scene.add(light);
+    return light;
+  });
+  const updateLamps = (px: number, py: number): void => {
+    const near = lamps
+      .map((l) => ({ l, d: Math.hypot(l.position.x - px, l.position.z - py) }))
+      .filter((x) => x.d < LAMP_REACH)
+      .sort((a, b) => a.d - b.d);
+    for (let i = 0; i < LAMP_POOL; i++) {
+      const light = lampPool[i]!;
+      const src = near[i];
+      if (!src) {
+        light.intensity = 0;
+        continue;
+      }
+      light.position.copy(src.l.position);
+      light.color.copy(src.l.color);
+      light.distance = src.l.distance;
+      light.decay = src.l.decay;
+      light.intensity = src.l.intensity * Math.min(1, (LAMP_REACH - src.d) / 4);
+    }
+  };
 
   // --- Atmosphere: the surface is one scene, so sky, fog and ambient follow
   // the hero across region borders instead of snapping at a zone change ---
@@ -351,7 +389,7 @@ export function createScene(
     if (opts?.light) {
       light = new THREE.PointLight(opts.light.color, opts.light.intensity, 6, 1.8);
       light.position.set(x, opts.light.height, z);
-      scene.add(light);
+      registerLamp(light);
     }
     torches.push({ flame, light, seed: (torches.length * 29) % 100, base: opts?.light?.intensity ?? 2.6 });
   };
@@ -363,9 +401,24 @@ export function createScene(
     ? npcs.filter((n) => NPCS[n.npcId].dwelling === "hut").map((n) => n.home)
     : [];
   const walkableAt = (x: number, y: number) => isWalkable(map, x, y);
+  // Buildings are area rows in area cells; the surface is one map, so shift them.
+  const worldBuildings: BuildingDef[] = outdoor
+    ? AREA_ORDER.flatMap((id) => {
+        const o = surfaceLayout().offsets[id];
+        return (AREAS[id].buildings ?? []).map((b) => ({
+          ...b,
+          x0: b.x0 + o.x,
+          x1: b.x1 + o.x,
+          y0: b.y0 + o.y,
+          y1: b.y1 + o.y,
+          door: [b.door[0] + o.x, b.door[1] + o.y] as const,
+        }));
+      })
+    : [];
   const walled = new Set<string>([
     ...dressHuts(assets.kits, hutHomes, walkableAt, placeProp),
     ...(outdoor ? dressPalisade(assets.kits, map.camps, walkableAt, placeProp) : []),
+    ...dressBuildings(assets.kits, worldBuildings, placeProp),
   ]);
   if (outdoor) {
     for (const marker of map.markers) {
@@ -490,10 +543,10 @@ export function createScene(
     }
     dressMarkers(assets.kits, map.markers, CRYPT_SET_PIECES, placeProp, wallToward);
   } else {
-    // --- Open ground: every region lays its own biome-tinted plane over its
-    // slice of the world, then instanced pines, standing stones, bushes and
-    // tufts from the Viking nature kit tinted for the biome, or primitive
-    // crags and cones when that kit is absent. Cell hashes stay keyed on world
+    // --- Open ground: every region lays its own textured plane over its
+    // slice of the world (the grass is in the texture; no tuft meshes), then
+    // instanced pines, standing stones and bushes from the Viking nature kit
+    // tinted for the biome, or primitive crags and cones when that kit is absent. Cell hashes stay keyed on world
     // coordinates, so the scatter is the same wherever a region sits. ---
     const baked = bakeScatter(assets.kits);
     const m = new THREE.Matrix4();
@@ -529,7 +582,6 @@ export function createScene(
       const rockMats: THREE.Matrix4[] = [];
       const pineMats: THREE.Matrix4[] = [];
       const trunkMats: THREE.Matrix4[] = [];
-      const tuftMats: THREE.Matrix4[] = [];
       for (let y = rect.y0; y < rect.y1; y++) {
         for (let x = rect.x0; x < rect.x1; x++) {
           const h = hash(x, y);
@@ -579,16 +631,6 @@ export function createScene(
               m.compose(pos.set(jx, bh + 0.22, jz), quat, scl.set(1, 1, 1));
               trunkMats.push(m.clone());
             }
-          } else if (h % 11 === 0) {
-            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
-            const s = 0.7 + ((h >> 7) % 60) / 100;
-            if (batch) {
-              m.compose(pos.set(jx, 0, jz), quat, scl.set(s, s, s));
-              batch.add("tuft", h >>> 10, m, x, y);
-            } else {
-              m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
-              tuftMats.push(m.clone());
-            }
           }
         }
       }
@@ -600,7 +642,6 @@ export function createScene(
         addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
         addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
         addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
-        addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
       }
     }
   }
@@ -642,7 +683,7 @@ export function createScene(
     // …and a cold glow breathes up out of it.
     const glow = new THREE.PointLight(0x6fb0d9, 2.4, 4.5, 1.7);
     glow.position.set(marker.x, 0.55, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
     stairGlows.push(glow);
   }
 
@@ -698,7 +739,7 @@ export function createScene(
     scene.add(beam);
     const glow = new THREE.PointLight(0xf5c877, 3.4, 5.5, 1.7);
     glow.position.set(marker.x, 1.4, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
     stairGlows.push(glow);
   }
 
@@ -720,7 +761,7 @@ export function createScene(
     padRings.push(ring);
     const glow = new THREE.PointLight(color, 2.5, 5, 1.8);
     glow.position.set(marker.x, 0.8, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
   }
 
   // --- Camp dressing: Viking Realm props around the fixed markers (and inside
@@ -730,6 +771,7 @@ export function createScene(
     assets.kits,
     [...map.markers, ...hutHomes.map((h) => ({ ch: HUT_MARKER, x: h.x, y: h.y }))],
     placeProp,
+    wallToward,
   );
 
   // --- Market stall (town): crates and a barrel beside the V marker ---
@@ -755,14 +797,14 @@ export function createScene(
     });
     const glow = new THREE.PointLight(0xc9a84c, 1.2, 3.5, 1.8);
     glow.position.set(marker.x, 0.9, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
   }
   // --- Candlelit shrine (town): a quiet glow beside the H marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "H") continue;
     const shrineGlow = new THREE.PointLight(0xf5dfa0, 1.8, 4, 1.8);
     shrineGlow.position.set(marker.x, 1.1, marker.y);
-    scene.add(shrineGlow);
+    registerLamp(shrineGlow);
   }
   for (const fn of placePieceLater) fn();
 
@@ -890,12 +932,10 @@ export function createScene(
     const flame = makeFlame(0xff9030, 0.09);
     flame.position.set(spot.x, 1.15, spot.fy + 0.08);
     scene.add(flame);
-    const light =
-      i < 8 ? new THREE.PointLight(0xff9a45, 3.2, 6.5, 1.8) : null;
-    if (light) {
-      light.position.set(spot.x, 1.2, spot.fy + 0.25);
-      scene.add(light);
-    }
+    // Every torch carries a lamp now that the pool, not the scene, pays for them.
+    const light = new THREE.PointLight(0xff9a45, 3.2, 6.5, 1.8);
+    light.position.set(spot.x, 1.2, spot.fy + 0.25);
+    registerLamp(light);
     torches.push({ flame, light, seed: (i * 37) % 100, base: 2.6 });
   }
 
@@ -933,7 +973,7 @@ export function createScene(
     scene.add(fire);
     const light = new THREE.PointLight(0xff9a45, 5, 8, 1.7);
     light.position.set(marker.x, 1.1, marker.y);
-    scene.add(light);
+    registerLamp(light);
     // Riding the torch flicker keeps the fire breathing with everything else.
     torches.push({ flame, light, seed: 43, base: 2.6 });
   }
@@ -1637,6 +1677,7 @@ export function createScene(
         torch.flame.scale.setScalar(0.85 + flicker * 0.25);
         if (torch.light) torch.light.intensity = torch.base * flicker + 0.8;
       }
+      updateLamps(px, py);
 
       const shakeOff = fx.update();
       camera.position.set(px + camOffset.x + shakeOff.x, camOffset.y, py + camOffset.z + shakeOff.z);

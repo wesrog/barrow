@@ -128,7 +128,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   scene.add(moon);
   scene.add(moon.target);
 
-  // --- Ground: the moor's turf with a scatter of tufts and pebbles ---
+  // --- Ground: the moor's turf with a few stones in it ---
   const ground = new THREE.Mesh(groundGeometry(60, 60), groundMaterial(assets.ground[pal.groundTexture], pal));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -155,17 +155,13 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
     return wrap;
   };
   for (const row of CAMP) prop(row.kit, row.node, row.x, row.z, row.ry, row.scale);
+  // A few stones in the turf; the ground texture carries the grass itself.
   const hash = (i: number) => ((i + 1) * 2654435761) >>> 0;
-  for (let i = 0; i < 44; i++) {
+  for (let i = 0; i < 10; i++) {
     const h = hash(i);
     const a = ((h % 360) / 360) * Math.PI * 2;
-    const r = 2.6 + ((h >> 9) % 70) / 10;
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    if (Math.hypot(x, z) < 1.4) continue;
-    const kind = (h >> 4) % 5;
-    const tuft = kind === 0 ? "Env_Stone_04" : kind < 3 ? "Bld_House_Roof_Grass_Tufts_01" : "Bld_House_Roof_Grass_Tuft_02";
-    prop(NATURE, tuft, x, z, ((h >> 12) % 628) / 100, kind === 0 ? 0.2 : 0.5);
+    const r = 3.2 + ((h >> 9) % 60) / 10;
+    prop(NATURE, "Env_Stone_04", Math.cos(a) * r, Math.sin(a) * r, ((h >> 12) % 628) / 100, 0.2);
   }
 
   // --- The fire: a breathing flame over the kit's pit, its light on everything ---
@@ -184,8 +180,6 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   scene.add(ember);
   const fireLight = new THREE.PointLight(0xff9a45, 9, 14, 1.6);
   fireLight.position.set(0, 1.2, 0);
-  fireLight.castShadow = true;
-  fireLight.shadow.mapSize.set(512, 512);
   scene.add(fireLight);
   const torchLight = new THREE.PointLight(0xff9a45, 2.4, 6, 1.8);
   torchLight.position.set(-3.0, 1.3, 3.2);
@@ -236,23 +230,9 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   const witch = makeHeroModelRig(assets, "witch");
   {
     const eq = createEquipment();
-    // A wand, so the witchlight orb in her other hand isn't sharing a staff's two hands.
     eq.weapon = showpiece("bone_wand", "Bone Wand");
     witch.setEquipment(eq);
   }
-  // The off-hand orb: a witchlight hovering over the open left palm.
-  const orbSlot = witch.bone("handL");
-  const orb = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.22, 1),
-    new THREE.MeshStandardMaterial({
-      color: 0xb08af8,
-      emissive: 0x7a3ae0,
-      emissiveIntensity: 2.4,
-      flatShading: true,
-    }),
-  );
-  orb.position.y = 0.25;
-  orbSlot?.add(orb);
   const witchFigure = makeFigure("witch", witch);
 
   // --- Pointer: the figures are buttons ---
@@ -311,9 +291,6 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
     const t = clock.elapsedTime;
     // performance.now(), not clock time: oneShot timers are wall-clock based.
     for (const f of figures) f.rig.animate(performance.now(), 0, 0);
-    // The witchlight breathes: the orb bobs and its glow pulses with it.
-    orb.position.y = 0.25 + Math.sin(t * 1.8) * 0.06;
-    orb.rotation.y = t * 0.7;
     const flicker = 0.8 + 0.25 * Math.sin(t * 11) + 0.12 * Math.sin(t * 24.3);
     flame.scale.set(0.85 + flicker * 0.25, 0.7 + flicker * 0.5, 0.85 + flicker * 0.25);
     ember.position.y = 0.9 + Math.sin(t * 5.1) * 0.08;

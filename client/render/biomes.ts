@@ -11,17 +11,19 @@ export interface BiomePalette {
   ambient: number;
   ambientIntensity: number;
   ground: number;
-  /** The Alpine pack's tiling texture under this biome and the colour it is multiplied by;
-   * the textures are daylit mid-tones, so the tint carries the night and the biome's hue. */
+  /** The Alpine pack's tiling texture under this biome and the colour it is multiplied by.
+   * The tint is solved so the textured ground averages the flat `ground` colour (a little
+   * brighter, since detail reads darker than a fill): tint = ground / texture mean, in linear
+   * light, clamped per channel. The painted grounds carry almost no blue, so a cool biome
+   * takes a faceted stone texture instead. */
   groundTexture: GroundTexture;
   groundTint: number;
   rock: number;
   pine: number;
   trunk: number;
-  tuft: number;
   /**
    * Multiplied into the Viking nature kit's textures when it stands in for the
-   * primitives: foliage covers pines, bushes and tufts; stone the standing
+   * primitives: foliage covers pines and bushes; stone the standing
    * stones. The albedo is a daylit palette, so these run well under white to
    * keep the night.
    */
@@ -38,12 +40,11 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x70806e,
     ambientIntensity: 0.65,
     ground: 0x1f2a1b,
-    groundTexture: "grass",
-    groundTint: 0x4a6440,
+    groundTexture: "grass_pine",
+    groundTint: 0x7bdeff,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,
-    tuft: 0x2a381f,
     foliageTint: 0x9cb49a,
     stoneTint: 0x868a94,
   },
@@ -55,12 +56,11 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x8a7258,
     ambientIntensity: 0.6,
     ground: 0x2b2014,
-    groundTexture: "grass_dark",
-    groundTint: 0x674c30,
+    groundTexture: "needles",
+    groundTint: 0xb6ddff,
     rock: 0x4a3e34,
     pine: 0x321c11,
     trunk: 0x241a10,
-    tuft: 0x44301a,
     foliageTint: 0xb8906a,
     stoneTint: 0x92806c,
   },
@@ -72,12 +72,11 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x6e7f78,
     ambientIntensity: 0.6,
     ground: 0x212a26,
-    groundTexture: "mud",
-    groundTint: 0x4f645b,
+    groundTexture: "dirt_pine",
+    groundTint: 0x71d5ff,
     rock: 0x39423e,
     pine: 0x16201c,
     trunk: 0x22201c,
-    tuft: 0x2c3a2c,
     foliageTint: 0x8ea69c,
     stoneTint: 0x7c8884,
   },
@@ -90,11 +89,10 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambientIntensity: 0.62,
     ground: 0x2a201c,
     groundTexture: "dirt",
-    groundTint: 0x644c43,
+    groundTint: 0x695e63,
     rock: 0x4a3c34,
     pine: 0x2c1a12,
     trunk: 0x261a14,
-    tuft: 0x4a2c1a,
     foliageTint: 0x9c7462,
     stoneTint: 0x887870,
   },
@@ -106,12 +104,11 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x7a6e94,
     ambientIntensity: 0.58,
     ground: 0x201c2a,
-    groundTexture: "grass_dark",
-    groundTint: 0x4c4364,
+    groundTexture: "rock",
+    groundTint: 0x46477f,
     rock: 0x3c3648,
     pine: 0x181424,
     trunk: 0x221c28,
-    tuft: 0x322a44,
     foliageTint: 0x8c82ac,
     stoneTint: 0x7e7692,
   },
@@ -123,12 +120,11 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x83796a,
     ambientIntensity: 0.7,
     ground: 0x2a2622,
-    groundTexture: "rock",
-    groundTint: 0x645b51,
+    groundTexture: "rock_moss",
+    groundTint: 0x7a9cff,
     rock: 0x4e463a,
     pine: 0x201c14,
     trunk: 0x282018,
-    tuft: 0x3a3120,
     foliageTint: 0xa89e80,
     stoneTint: 0x948a78,
   },

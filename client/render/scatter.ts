@@ -3,13 +3,13 @@ import { kitMeshes, type KitName, type Kits } from "./models";
 
 /**
  * Outdoor scatter from the Viking Realm nature kit: pines, standing stones,
- * berry bushes and grass tufts as instanced meshes, batched per 16-cell chunk
+ * berry bushes as instanced meshes, batched per 16-cell chunk
  * so frustum culling drops everything off screen. This file is data plus a
  * matrix collector; the scene decides where each instance stands. When the
  * kit is absent the scene keeps its primitive cones and icosahedra.
  */
 
-export type ScatterKind = "pine" | "rock" | "bush" | "tuft";
+export type ScatterKind = "pine" | "rock" | "bush";
 
 export interface ScatterPieceDef {
   kit: KitName;
@@ -21,7 +21,7 @@ export interface ScatterPieceDef {
 /**
  * Nominal sizes before the per-cell jitter: pines 2.2 to 2.5 tall and under a
  * cell wide, stones about a cell wide and half buried (they are authored
- * centred on y=0), bushes under a cell, tufts a hand high. The pines are the
+ * centred on y=0), bushes under a cell. The pines are the
  * pack's single-material ones at 1.1k to 1.8k triangles; Pine_02 (3k) and the
  * pre-grouped clumps stay out of the instanced set.
  */
@@ -42,19 +42,13 @@ export const SCATTER_PIECES: Record<ScatterKind, ScatterPieceDef[]> = {
     { kit: "viking_nature", node: "Env_Bush_Berries_02", scale: 0.4 },
     { kit: "viking_nature", node: "Env_Bush_Berries_04", scale: 0.4 },
   ],
-  tuft: [
-    { kit: "viking_nature", node: "Bld_House_Roof_Grass_Tuft_01", scale: 0.35 },
-    { kit: "viking_nature", node: "Bld_House_Roof_Grass_Tuft_02", scale: 0.35 },
-    { kit: "viking_nature", node: "Bld_House_Roof_Grass_Tuft_03", scale: 0.4 },
-  ],
 };
 
-/** Which kinds throw shadows; tufts are too small to be worth the depth pass. */
+/** Which kinds throw shadows. */
 export const SCATTER_SHADOWS: Record<ScatterKind, boolean> = {
   pine: true,
   rock: true,
   bush: true,
-  tuft: false,
 };
 
 /** Cells per instancing chunk on each axis. */
@@ -69,7 +63,7 @@ export interface BakedPart {
 export type BakedPieces = Record<ScatterKind, BakedPart[][]>;
 
 export interface ScatterTints {
-  /** Multiplied into pine, bush and tuft materials. */
+  /** Multiplied into pine and bush materials. */
   foliage: number;
   /** Multiplied into stone materials. */
   stone: number;

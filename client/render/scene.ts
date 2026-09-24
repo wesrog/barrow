@@ -41,7 +41,7 @@ import {
   type HeroModelRig,
   type ModelRig,
 } from "./modelRigs";
-import { kitNode, type GameAssets } from "./models";
+import { cloneProp, kitNode, type GameAssets } from "./models";
 import { playerCss, playerTint } from "./tints";
 import { groundVerdict, type UpgradeVerdict } from "../ui/itemCompare";
 
@@ -1059,7 +1059,7 @@ export function createScene(
   };
   const groundItemVisuals = new Map<
     number,
-    { mesh: THREE.Mesh; label: HTMLDivElement; glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }
+    { mesh: THREE.Object3D; label: HTMLDivElement; glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }
   >();
   // Loot answers "is this better than what I'm wearing?" before it's touched:
   // a glyph before the name, judged against the local hero's current gear.
@@ -1068,6 +1068,22 @@ export function createScene(
     worse: { text: "▼ ", css: "#d6675c" },
     mixed: { text: "◆ ", css: "#d9b85c" },
     same: { text: "= ", css: "#8c8578" },
+  };
+  /** A dropped potion: the Dungeon Pack's little bottle, its glass tinted and
+   * lit for what it restores, at a hand-sized scale. Null without the kit. */
+  const potionModel = (tint: { color: number; emissive: number }): THREE.Object3D | null => {
+    const src = kitNode(assets.kits, "dungeon_props", "Item_Potion_01");
+    if (!src) return null;
+    const model = cloneProp(src);
+    model.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.set(tint.color).multiplyScalar(1.4);
+        obj.material.emissive.set(tint.emissive);
+        obj.material.emissiveIntensity = 0.45;
+      }
+    });
+    model.scale.setScalar(0.9);
+    return model;
   };
   const wearVerdict = (v: { glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }, verdict: UpgradeVerdict | null) => {
     if (verdict === v.verdict) return;
@@ -1499,20 +1515,21 @@ export function createScene(
             health: { color: 0xc93a3a, emissive: 0xa02828 },
             mana: { color: 0x3a55c9, emissive: 0x2838a0 },
           } as const;
-          const mesh = new THREE.Mesh(
-            potion
-              ? new THREE.IcosahedronGeometry(0.11, 0)
-              : new THREE.OctahedronGeometry(0.14, 0),
-            new THREE.MeshStandardMaterial({
-              color: potion ? POTION_TINT[potion].color : colors.hex,
-              emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
-              emissiveIntensity: potion ? 0.8 : 0.55,
-              roughness: 0.4,
-              flatShading: true,
-            }),
-          );
-          mesh.position.set(gi.pos.x, 0.16, gi.pos.y);
-          scene.add(mesh);
+          const mesh = potion ? potionModel(POTION_TINT[potion]) : null;
+          const fallback =
+            mesh ??
+            new THREE.Mesh(
+              potion ? new THREE.IcosahedronGeometry(0.11, 0) : new THREE.OctahedronGeometry(0.14, 0),
+              new THREE.MeshStandardMaterial({
+                color: potion ? POTION_TINT[potion].color : colors.hex,
+                emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
+                emissiveIntensity: potion ? 0.8 : 0.55,
+                roughness: 0.4,
+                flatShading: true,
+              }),
+            );
+          fallback.position.set(gi.pos.x, mesh ? 0.02 : 0.16, gi.pos.y);
+          scene.add(fallback);
           const label = document.createElement("div");
           const glyph = document.createElement("span");
           glyph.style.cssText = "font-weight:700;";
@@ -1524,7 +1541,7 @@ export function createScene(
             onItemClick?.(id);
           });
           overlay.appendChild(label);
-          v = { mesh, label, glyph, verdict: null };
+          v = { mesh: fallback, label, glyph, verdict: null };
           groundItemVisuals.set(gi.id, v);
         }
         // Gear changes only on a tick, so the verdict only needs re-judging then.

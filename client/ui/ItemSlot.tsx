@@ -16,7 +16,7 @@ import { ItemIcon } from "./ItemIcon";
 export const CELL = 56;
 
 // Potion icons tint by what they restore, not rarity.
-const POTION_CSS: Record<"health" | "mana", string> = {
+export const POTION_CSS: Record<"health" | "mana", string> = {
   health: "#d05c5c",
   mana: "#6b8fe8",
 };

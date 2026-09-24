@@ -163,7 +163,8 @@ describe("Synty hero", () => {
     expect(hero.attackClip()).toBe("attack1h");
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
-    expect(hero.attackClip()).toBe("attack2h");
+    // Every basic swing is the one-handed diagonal slice, two-handers included.
+    expect(hero.attackClip()).toBe("attack1h");
     // A two-hander hides the shield even though the slot still holds one.
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();

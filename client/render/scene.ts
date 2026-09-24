@@ -40,7 +40,7 @@ import type { GameAssets } from "./models";
 import { playerCss, playerTint } from "./tints";
 import { groundVerdict, type UpgradeVerdict } from "../ui/itemCompare";
 
-const VIEW_HEIGHT = 16; // world units visible vertically
+const VIEW_HEIGHT = 12; // world units visible vertically: close enough to read faces and gear
 
 export type PickResult =
   | { kind: "monster"; id: number }

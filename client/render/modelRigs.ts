@@ -205,11 +205,6 @@ const CHEST_LOOKS: Record<string, { color: number; metal: boolean; big: boolean 
   grave_plate: { color: 0x8a94a4, metal: true, big: true },
 };
 
-const BOOT_LOOKS: Record<string, number> = {
-  worn_boots: 0x5a4530,
-  chain_greaves: 0x7a8086,
-};
-
 function chestLook(baseId: string) {
   return CHEST_LOOKS[baseId] ?? CHEST_LOOKS.rag_tunic!;
 }
@@ -311,14 +306,13 @@ const SYNTY_SHIELDS: Record<string, string> = {
 const SYNTY_SHIELD_DEFAULT = "Wep_Shield_Set_01";
 
 /**
- * Box overlays for chest and boots in the Synty rig's bone frames, where X
+ * Box overlays for the chest in the Synty rig's bone frames, where X
  * runs along the bone, Y points backward, and Z sideways (measured on the
  * rig). Sizes are in the model's 1.8-unit-tall space.
  */
 const SYNTY_OVERLAYS = {
   pauldron: { size: [0.16, 0.16, 0.16] as const, big: [0.2, 0.2, 0.2] as const, offset: [0.03, 0, 0] as const },
   plate: { size: [0.3, 0.18, 0.36] as const, offset: [0.05, -0.04, 0] as const },
-  greave: { size: [0.26, 0.13, 0.13] as const, offset: [0.2, 0, 0] as const },
 };
 
 function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
@@ -382,11 +376,8 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       addGear("chest", box(SYNTY_OVERLAYS.plate.size, SYNTY_OVERLAYS.plate.offset, mat), eq.chest);
     }
 
-    if (eq.boots) {
-      const mat = flatMat(BOOT_LOOKS[eq.boots.baseId] ?? 0x5a4530, 0.7);
-      addGear("lowerLegL", box(SYNTY_OVERLAYS.greave.size, SYNTY_OVERLAYS.greave.offset, mat), eq.boots);
-      addGear("lowerLegR", box(SYNTY_OVERLAYS.greave.size, SYNTY_OVERLAYS.greave.offset, mat), eq.boots);
-    }
+    // Boots draw nothing on the model for now: the box greaves hung off the
+    // shins, and no pack has boot attachments. The paperdoll's icon carries them.
 
     const offhand = visibleOffhand(eq);
     if (offhand && isOrb(offhand)) {
@@ -415,7 +406,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.attach("r", null);
     }
   };
-  hero.attackClip = () => (twoHanded ? "attack2h" : "attack1h");
+  // Every basic swing is the one-handed diagonal slice, two-handers included:
+  // the chop read as a windmill on the Viking. Skills pick their own clips.
+  hero.attackClip = () => "attack1h";
   return hero;
 }
 

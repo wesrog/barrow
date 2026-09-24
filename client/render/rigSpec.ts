@@ -73,7 +73,7 @@ const KAYKIT_CLIPS = {
   walk: "Walking_A",
   shamble: "Walking_D_Skeletons",
   run: "Running_A",
-  attack1h: "1H_Melee_Attack_Slice_Diagonal",
+  attack1h: "1H_Melee_Attack_Slice_Horizontal",
   attackChop1h: "1H_Melee_Attack_Chop",
   slash: "1H_Melee_Attack_Slice_Horizontal",
   attack2h: "2H_Melee_Attack_Chop",

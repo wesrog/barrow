@@ -289,7 +289,7 @@ interface SyntyWeaponLook {
   kit: KitName;
   node: string;
   twoHanded: boolean;
-  /** The basic swing: blades chop, everything else cuts the diagonal slice. */
+  /** The basic swing: the flat one-handed slice unless a row asks for the chop. */
   swing?: "chop" | "slice";
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
@@ -298,10 +298,10 @@ interface SyntyWeaponLook {
 }
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
-  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false, swing: "chop" },
-  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false, swing: "chop" },
+  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false },
+  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false },
   hatchet: { kit: "viking_weapons", node: "Wep_Axe_01", twoHanded: false },
-  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false, swing: "chop" },
+  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false },
   war_maul: { kit: "viking_weapons", node: "Wep_Hammer_01", twoHanded: true },
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
@@ -454,10 +454,10 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.attach("r", null);
     }
   };
-  // Blades take the one-handed chop; axes, hammers and staves cut the
-  // one-handed diagonal slice, two-handers included (the two-handed chop read
-  // as a windmill on the Viking); bare hands throw a punch. Skills pick their
-  // own clips.
+  // Every armed swing is the flat one-handed slice, two-handers included
+  // (the two-handed chop read as a windmill on the Viking), unless a weapon's
+  // row asks for the chop; bare hands throw a punch. Skills pick their own
+  // clips.
   hero.attackClip = () => (!armed ? "attackUnarmed" : swing === "chop" ? "attackChop1h" : "attack1h");
   return hero;
 }

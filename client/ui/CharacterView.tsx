@@ -49,13 +49,15 @@ export function CharacterView({
     scene.add(hero.group);
     heroRef.current = hero;
 
-    // Frame whichever rig this is from its bind-pose height: the chibi
-    // barbarian and the Viking differ in build, and the Viking's idle leans.
+    // Frame the whole figure from its bind-pose bounds, helmet to boots with a
+    // little air: at a 30 degree field of view the visible half-height at
+    // distance d is 0.27 d, so about two heights back fits the figure with air above and below.
     const bounds = new THREE.Box3().setFromObject(hero.group);
     const tall = bounds.max.y - bounds.min.y || 2.4;
+    const middle = (bounds.max.y + bounds.min.y) / 2 || tall / 2;
     const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 20);
-    camera.position.set(0, tall * 0.55, tall * 1.45);
-    camera.lookAt(0, tall * 0.45, 0);
+    camera.position.set(0, middle + tall * 0.05, tall * 2.05);
+    camera.lookAt(0, middle, 0);
 
     let raf = 0;
     const frame = (now: number) => {

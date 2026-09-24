@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { captureRestInverses, isShieldNode } from "../render/gear";
 import { CLIP_KITS, RIG_SPECS } from "../render/modelRigs";
 import { instantiate, instantiateKit, type CharacterInstance, type GameAssets, type KitName } from "../render/models";
 import { KAYKIT_RIG, type ClipId, type RigSpec } from "../render/rigSpec";
@@ -29,6 +30,8 @@ export interface CatalogEntry {
   /** Scale that puts the model at its in-game height, so packs compare fairly. */
   scale: number;
   boneCount: number;
+  /** Inverse rest frames of the bones, for pieces authored in place over the T-pose. */
+  rest: Map<THREE.Object3D, THREE.Matrix4>;
 }
 
 /** Character kits: which nodes are playable characters and how they animate. */
@@ -67,6 +70,7 @@ export function buildCatalog(assets: GameAssets): CatalogEntry[] {
       clips: [...inst.actions.keys()].sort(),
       scale: 0.72,
       boneCount: countBones(inst.group),
+      rest: captureRestInverses(inst.group),
     });
   }
   for (const { kit, pack, rig, scale } of CHARACTER_KITS) {
@@ -86,6 +90,7 @@ export function buildCatalog(assets: GameAssets): CatalogEntry[] {
         clips: [...inst.actions.keys()].sort(),
         scale,
         boneCount: countBones(inst.group),
+        rest: captureRestInverses(inst.group),
       });
     }
   }
@@ -117,3 +122,90 @@ export function gridLayout(count: number, spacing = 2.4, rowSpacing = 3.0): { x:
   const cols = Math.max(1, Math.ceil(Math.sqrt(count * 1.7)));
   return Array.from({ length: count }, (_, i) => ({ x: (i % cols) * spacing, z: Math.floor(i / cols) * rowSpacing }));
 }
+
+// ---------------------------------------------------------------------------
+// Gear a figure can hold or wear
+
+/** A kit piece by kit and node; "kaykit" names one of the KayKit weapon files. */
+export interface GearRef {
+  kit: KitName | "kaykit";
+  node: string;
+}
+
+export interface GearOption extends GearRef {
+  id: string;
+  label: string;
+  kind: "weapon" | "shield" | "worn";
+}
+
+export function gearId(ref: GearRef): string {
+  return `${ref.kit}/${ref.node}`;
+}
+
+const KIT_SHORT: Partial<Record<KitName, string>> = {
+  viking_weapons: "viking",
+  goblin_weapons: "goblin",
+  dungeon_weapons: "dungeon",
+};
+
+/** Weapon kits a Synty rig may draw from, its own pack first; grips are per rig, so any pack's piece fits. */
+const HELD_KITS: Record<string, KitName[]> = {
+  human: ["viking_weapons", "goblin_weapons", "dungeon_weapons"],
+  goblin: ["goblin_weapons", "viking_weapons", "dungeon_weapons"],
+  dungeon: ["dungeon_weapons", "viking_weapons", "goblin_weapons"],
+};
+
+/** Attachment kits per rig; the Dungeon Pack ships none. */
+const WORN_KITS: Record<string, KitName> = { human: "viking_attachments", goblin: "goblin_attachments" };
+
+/** Everything an entry could hold: KayKit weapons for KayKit rigs, the Synty weapon kits for the rest. */
+export function heldOptions(assets: GameAssets, entry: CatalogEntry): GearOption[] {
+  if (entry.pack === "kaykit") {
+    return Object.keys(assets.weapons).map((name) => ({
+      id: gearId({ kit: "kaykit", node: name }),
+      label: prettify(name),
+      kit: "kaykit",
+      node: name,
+      kind: "weapon",
+    }));
+  }
+  const out: GearOption[] = [];
+  for (const kit of HELD_KITS[entry.rig] ?? []) {
+    const scene = assets.kits[kit]?.scene;
+    if (!scene) continue;
+    for (const node of scene.children) {
+      if (!node.name.startsWith("Wep_")) continue;
+      out.push({
+        id: gearId({ kit, node: node.name }),
+        label: `${prettify(node.name.slice(4))} · ${KIT_SHORT[kit]}`,
+        kit,
+        node: node.name,
+        kind: isShieldNode(node.name) ? "shield" : "weapon",
+      });
+    }
+  }
+  return out;
+}
+
+/** Everything an entry could wear from its pack's attachments. */
+export function wornOptions(assets: GameAssets, entry: CatalogEntry): GearOption[] {
+  const kit = WORN_KITS[entry.rig];
+  const scene = kit && assets.kits[kit]?.scene;
+  if (!kit || !scene) return [];
+  return scene.children
+    .filter((n) => n.name.startsWith("Attach_"))
+    .map((n) => ({ id: gearId({ kit, node: n.name }), label: prettify(n.name.slice(7)), kit, node: n.name, kind: "worn" as const }));
+}
+
+/** What "arm everyone" hands each rig. */
+export const DEFAULT_ARMS: Record<string, { r?: GearRef; l?: GearRef }> = {
+  kaykit: { r: { kit: "kaykit", node: "sword_1handed" } },
+  human: { r: { kit: "viking_weapons", node: "Wep_Sword_02" }, l: { kit: "viking_weapons", node: "Wep_Shield_Set_01" } },
+  goblin: { r: { kit: "goblin_weapons", node: "Wep_Sword_01" }, l: { kit: "goblin_weapons", node: "Wep_Shield_01" } },
+  dungeon: { r: { kit: "dungeon_weapons", node: "Wep_Straightsword_01" }, l: { kit: "dungeon_weapons", node: "Wep_Shield_Round_01" } },
+};
+
+/** Semantic clips worth a button once a figure holds something. */
+export const ACTION_IDS: ClipId[] = [
+  "attack1h", "slash", "attackChop", "attackSlice", "attackSpin", "attack2h", "attackUnarmed", "cast", "castRaise", "taunt", "death",
+];

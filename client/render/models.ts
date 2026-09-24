@@ -58,6 +58,7 @@ export const KIT_URLS = {
   dungeon_weapons: "/models/synty/dungeon/weapons.glb",
   goblin_characters: "/models/synty/goblin_war_camp/characters.glb",
   goblin_weapons: "/models/synty/goblin_war_camp/weapons.glb",
+  goblin_attachments: "/models/synty/goblin_war_camp/attachments.glb",
   goblin_clips: "/models/synty/goblin_locomotion/clips.glb",
   viking_characters: "/models/synty/viking_realm/characters.glb",
   viking_weapons: "/models/synty/viking_realm/weapons.glb",
@@ -131,6 +132,19 @@ export interface GameAssets {
 /** A named piece of a kit, or null when that kit did not load. */
 export function kitNode(kits: Kits, kit: KitName, node: string): THREE.Object3D | null {
   return kits[kit]?.scene.getObjectByName(node) ?? null;
+}
+
+/** Object3D.clone shares materials; give each held or worn prop its own so
+ * per-instance hit flashes, tints, and rarity glow don't leak. */
+export function cloneProp(model: THREE.Object3D): THREE.Object3D {
+  const clone = model.clone(true);
+  clone.traverse((obj) => {
+    if (obj instanceof THREE.Mesh) {
+      obj.castShadow = true;
+      if (obj.material instanceof THREE.Material) obj.material = obj.material.clone();
+    }
+  });
+  return clone;
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   findNode,
   instantiate,
   instantiateKit,
-  kitMeshes, kitNode,
+  cloneProp, kitMeshes, kitNode,
   type CharacterInstance,
   type CharacterName,
   type GameAssets,
@@ -15,6 +15,7 @@ import {
   type Kits,
   type WeaponName,
 } from "./models";
+import { captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement } from "./gear";
 import {
   KAYKIT_RIG,
   SYNTY_DUNGEON_RIG,
@@ -177,10 +178,7 @@ class AnimRig implements ModelRig {
     this.attached[slot]?.removeFromParent();
     this.attached[slot] = obj;
     if (!obj) return;
-    const grip = this.spec.grip[slot];
-    obj.rotation.set(...grip.rotation);
-    obj.position.set(...grip.position);
-    socket.add(obj);
+    gripInto(socket, this.spec.grip[slot], obj);
   }
 }
 
@@ -199,19 +197,6 @@ function makeOrbModel(): THREE.Group {
 
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
-}
-
-/** Object3D.clone shares materials; give each held prop its own so
- * per-instance hit flashes, tints, and rarity glow don't leak. */
-function cloneProp(model: THREE.Object3D): THREE.Object3D {
-  const clone = model.clone(true);
-  clone.traverse((obj) => {
-    if (obj instanceof THREE.Mesh) {
-      obj.castShadow = true;
-      if (obj.material instanceof THREE.Material) obj.material = obj.material.clone();
-    }
-  });
-  return clone;
 }
 
 /** Shared by both hero families: rarity glow on held weapons is stronger than on armor. */
@@ -442,33 +427,32 @@ export const RIG_SPECS: Record<SyntyRigName, RigSpec> = { human: SYNTY_HUMAN_RIG
 export const WEAPON_KITS: Record<SyntyRigName, KitName> = { human: "viking_weapons", goblin: "goblin_weapons", dungeon: "dungeon_weapons" };
 
 /**
- * Weapon base id -> Synty weapon node. `axis` is the direction the weapon was
- * authored along: most run along +Y (handle up), but Viking swords and knives
- * lie along +Z and get turned onto Y before the grip applies.
+ * Weapon base id -> Synty weapon node. gear.ts measures each piece's authored
+ * axis (Viking swords lie along +Z, most else along +Y) and turns it upright
+ * before the grip applies, so the table only says which piece and how big.
  */
 interface SyntyWeaponLook {
   kit: KitName;
   node: string;
   twoHanded: boolean;
-  axis: "y" | "z";
   scale?: number;
 }
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
-  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false, axis: "z" },
-  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false, axis: "z" },
-  hatchet: { kit: "viking_weapons", node: "Wep_Axe_01", twoHanded: false, axis: "y" },
-  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false, axis: "z" },
-  war_maul: { kit: "viking_weapons", node: "Wep_Hammer_01", twoHanded: true, axis: "y" },
-  grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true, axis: "y" },
-  dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true, axis: "y" },
-  moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true, axis: "y" },
-  gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
-  ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
-  wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true, axis: "y" },
-  bone_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
-  willow_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
-  hexwood_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, axis: "y", scale: 0.5 },
+  rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false },
+  kingsbane: { kit: "viking_weapons", node: "Wep_Sword_04", twoHanded: false },
+  hatchet: { kit: "viking_weapons", node: "Wep_Axe_01", twoHanded: false },
+  twin_fang: { kit: "viking_weapons", node: "Wep_Knife_01", twoHanded: false },
+  war_maul: { kit: "viking_weapons", node: "Wep_Hammer_01", twoHanded: true },
+  grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
+  dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
+  moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
+  gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
+  ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
+  wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
+  bone_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
+  willow_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
+  hexwood_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
 };
 
 /** Helm base id -> Viking attachment nodes stacked on the head. */
@@ -479,9 +463,6 @@ const SYNTY_HELMS: Record<string, string[]> = {
   wyrm_skull: ["Attach_Helmet_04", "Attach_Helmet_Wings_01"],
 };
 const SYNTY_HELM_DEFAULT = ["Attach_Helmet_01"];
-// Helmets pivot where the head bone sits; a hair's breadth up seats the rim on the brow.
-const SYNTY_HELM_OFFSET: [number, number, number] = [0, 0.02, 0];
-
 /**
  * Chest base id -> Viking fur mantle over the shoulders. Unlike helmets, furs
  * are authored in place over the T-posed character rather than in a bone's
@@ -516,31 +497,16 @@ const SYNTY_OVERLAYS = {
   greave: { size: [0.26, 0.13, 0.13] as const, offset: [0.2, 0, 0] as const },
 };
 
-/** Wrap a Synty weapon so its authored axis lands on +Y, the grip's convention. */
-function orientWeapon(model: THREE.Object3D, look: SyntyWeaponLook): THREE.Object3D {
-  if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
-  if (look.axis === "y") return model;
-  // Measured in Blender: a quarter turn about X brings a +Z blade out the thumb side.
-  const wrapper = new THREE.Group();
-  model.rotation.x = Math.PI / 2;
-  wrapper.add(model);
-  return wrapper;
-}
-
 function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const rig = new AnimRig(inst, SYNTY_HUMAN_RIG, "idle", "run");
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
 
-  // The chest bone's rest frame in the character's own space, captured before
-  // the first mixer update. Props authored in place over the bind pose (fur
-  // mantles) are re-expressed through it, so equipping one mid-animation
-  // lands it where it was authored, not where the bone happens to be.
-  rig.group.updateMatrixWorld(true);
-  const chestBone = rig.bone("chest");
-  const chestRestInverse = chestBone
-    ? rig.group.matrixWorld.clone().invert().multiply(chestBone.matrixWorld).invert()
-    : null;
+  // Bone rest frames in the character's own space, captured before the first
+  // mixer update: pieces authored in place over the bind pose (fur mantles)
+  // are re-expressed through them, so equipping one mid-animation lands it
+  // where it was authored, not where the bone happens to be.
+  const restInverses = captureRestInverses(rig.group);
 
   const gear: THREE.Object3D[] = [];
   const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
@@ -556,14 +522,16 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     mesh.castShadow = true;
     return mesh;
   };
-  /** Hang a character-space attachment's meshes on the chest bone; false when unavailable. */
-  const addMantle = (name: string, item: Item): boolean => {
-    const parts = kitMeshes(kits, "viking_attachments", name);
-    if (!chestRestInverse || !parts || parts.length === 0) return false;
-    for (const { mesh, matrix } of parts) {
-      const clone = cloneProp(mesh);
-      chestRestInverse.clone().multiply(matrix).decompose(clone.position, clone.quaternion, clone.scale);
-      addGear("chest", clone, item);
+  /** Wear a Viking attachment on the bone its kind rides; false when the kit or bone is missing. */
+  const wear = (name: string, item: Item): boolean => {
+    const placement = wornPlacement(kits, "viking_attachments", name);
+    const bone = placement && rig.bone(placement.role);
+    if (!placement || !bone) return false;
+    const added = wearPiece(kits, "viking_attachments", name, placement, bone, restInverses.get(bone));
+    if (!added) return false;
+    for (const piece of added) {
+      applyRarityGlow(piece, item);
+      gear.push(piece);
     }
     return true;
   };
@@ -574,20 +542,14 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     gear.length = 0;
 
     if (eq.helm) {
-      for (const name of SYNTY_HELMS[eq.helm.baseId] ?? SYNTY_HELM_DEFAULT) {
-        const src = kitNode(kits, "viking_attachments", name);
-        if (!src) continue;
-        const helm = cloneProp(src);
-        helm.position.set(...SYNTY_HELM_OFFSET);
-        addGear("head", helm, eq.helm);
-      }
+      for (const name of SYNTY_HELMS[eq.helm.baseId] ?? SYNTY_HELM_DEFAULT) wear(name, eq.helm);
     }
 
     if (eq.chest) {
       const look = chestLook(eq.chest.baseId);
       const mat = flatMat(look.color, look.metal ? 0.45 : 0.75);
       const mantle = SYNTY_MANTLES[eq.chest.baseId];
-      const furred = mantle ? addMantle(mantle, eq.chest) : false;
+      const furred = mantle ? wear(mantle, eq.chest) : false;
       if (!furred && mantle !== null) {
         const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
         addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
@@ -608,19 +570,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       applyRarityGlow(model, offhand);
       rig.attach("l", model);
     } else if (offhand) {
-      const src = kitNode(kits, "viking_weapons", SYNTY_SHIELDS[offhand.baseId] ?? SYNTY_SHIELD_DEFAULT);
-      if (src) {
-        // Shields face +Z with the boss forward; a half turn puts the painted
-        // face outward over the back of the hand (measured in Blender).
-        const shield = cloneProp(src);
-        shield.rotation.y = Math.PI;
-        const wrapper = new THREE.Group();
-        wrapper.add(shield);
-        applyRarityGlow(wrapper, offhand);
-        rig.attach("l", wrapper);
-      } else {
-        rig.attach("l", null);
-      }
+      const shield = heldModel(kits, "viking_weapons", SYNTY_SHIELDS[offhand.baseId] ?? SYNTY_SHIELD_DEFAULT);
+      if (shield) applyRarityGlow(shield, offhand);
+      rig.attach("l", shield);
     } else {
       rig.attach("l", null);
     }
@@ -628,14 +580,12 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     if (eq.weapon) {
       const look = SYNTY_WEAPONS[eq.weapon.baseId] ?? SYNTY_WEAPONS.rusted_blade!;
       twoHanded = look.twoHanded;
-      const src = kitNode(kits, look.kit, look.node);
-      if (src) {
-        const model = orientWeapon(cloneProp(src), look);
+      const model = heldModel(kits, look.kit, look.node);
+      if (model) {
+        if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
-        rig.attach("r", model);
-      } else {
-        rig.attach("r", null);
       }
+      rig.attach("r", model);
     } else {
       twoHanded = false;
       rig.attach("r", null);
@@ -758,8 +708,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   if (synty && inst) {
     const rig = new AnimRig(inst, RIG_SPECS[synty.rig], synty.idle, synty.walk);
     rig.group.scale.setScalar(synty.scale);
-    const weapon = synty.weapon ? kitNode(assets.kits, WEAPON_KITS[synty.rig], synty.weapon) : null;
-    if (weapon) rig.attach("r", cloneProp(weapon));
+    if (synty.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[synty.rig], synty.weapon));
     if (synty.tint !== undefined) tintRig(rig.group, synty.tint);
     return rig;
   }

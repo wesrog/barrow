@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as THREE from "three";
 import type { GameAssets } from "../render/models";
-import { buildCatalog, clipCounts, defaultClip, filterEntries, gridLayout } from "./catalog";
+import { ACTION_IDS, buildCatalog, clipCounts, DEFAULT_ARMS, defaultClip, filterEntries, gearId, gridLayout, heldOptions, wornOptions } from "./catalog";
 
 function rigged(name: string): THREE.Object3D {
   const character = new THREE.Object3D();
@@ -53,5 +53,43 @@ describe("asset catalog", () => {
     expect(grid.length).toBe(7);
     expect(grid[0]).toEqual({ x: 0, z: 0 });
     expect(grid[4]).toEqual({ x: 0, z: 3 });
+  });
+});
+
+describe("gear options", () => {
+  function armed(): GameAssets {
+    const assets = fakeAssets();
+    const named = (name: string) => {
+      const o = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1, 0.1), new THREE.MeshStandardMaterial());
+      o.name = name;
+      return o;
+    };
+    const weapons = new THREE.Group();
+    weapons.add(named("Wep_Sword_01"), named("Wep_Shield_01"), named("Not_A_Weapon"));
+    const attachments = new THREE.Group();
+    attachments.add(named("Attach_Hat_01"), named("Attach_Backpack_01"));
+    assets.kits.goblin_weapons = { scene: weapons, animations: [] } as unknown as GameAssets["kits"]["goblin_weapons"];
+    assets.kits.goblin_attachments = { scene: attachments, animations: [] } as unknown as GameAssets["kits"]["goblin_attachments"];
+    assets.weapons = { sword_1handed: new THREE.Group() } as unknown as GameAssets["weapons"];
+    return assets;
+  }
+
+  test("lists a rig's weapons (shields marked) and attachments; KayKit rigs get KayKit weapons", () => {
+    const assets = armed();
+    const [barbarian, warrior] = buildCatalog(assets);
+    const held = heldOptions(assets, warrior!);
+    expect(held.map((o) => o.id)).toEqual(["goblin_weapons/Wep_Sword_01", "goblin_weapons/Wep_Shield_01"]);
+    expect(held.map((o) => o.kind)).toEqual(["weapon", "shield"]);
+    expect(wornOptions(assets, warrior!).map((o) => o.label)).toEqual(["Hat 01", "Backpack 01"]);
+    expect(heldOptions(assets, barbarian!).map((o) => o.id)).toEqual(["kaykit/sword_1handed"]);
+    expect(wornOptions(assets, barbarian!)).toEqual([]);
+    expect(warrior!.rest.size).toBeGreaterThan(0);
+  });
+
+  test("default arms name real options and every action is a known clip id", () => {
+    expect(gearId(DEFAULT_ARMS.goblin!.r!)).toBe("goblin_weapons/Wep_Sword_01");
+    expect(gearId(DEFAULT_ARMS.goblin!.l!)).toBe("goblin_weapons/Wep_Shield_01");
+    expect(ACTION_IDS).toContain("attack1h");
+    expect(new Set(ACTION_IDS).size).toBe(ACTION_IDS.length);
   });
 });

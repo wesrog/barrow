@@ -1,33 +1,89 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { loadAssets } from "../render/models";
+import { gripInto, heldModel, wearPiece, wornPlacement } from "../render/gear";
+import { cloneProp, findNode, loadAssets, type GameAssets, type WeaponName } from "../render/models";
 import { display, mono } from "../ui/fonts";
 import {
+  ACTION_IDS,
   buildCatalog,
   clipCounts,
+  DEFAULT_ARMS,
   defaultClip,
   filterEntries,
+  gearId,
   gridLayout,
+  heldOptions,
   PACK_LABELS,
+  wornOptions,
   type CatalogEntry,
+  type GearOption,
   type PackId,
 } from "./catalog";
 
 /**
  * Asset viewer: every character model in a grid, each playing its idle,
  * with search, pack filters, a clip picker that drives all visible figures
- * or just the selected one, speed and pause. Click a figure to select it.
+ * or just the selected one, speed and pause. Click a figure to select it,
+ * then hand it weapons and shields from the kits (seated with its rig's
+ * grip), dress it in its pack's attachments, and fire its attack clips.
  */
 
 const ALL_PACKS: PackId[] = ["kaykit", "goblin_war_camp", "viking_realm", "dungeon_pack"];
 const IDLE = "(idle)";
+
+/**
+ * The URL can open the viewer on a scene: ?q=search&sel=entry id&r=held id
+ * &l=held id&wear=id,id&clip=name&arm=1. Handy for sharing a look and for
+ * scripted screenshots.
+ */
+const params = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 
 interface Live {
   entry: CatalogEntry;
   current: THREE.AnimationAction | null;
   label: HTMLDivElement;
   visible: boolean;
+  /** What each hand holds, by option id. */
+  held: { r: { id: string; obj: THREE.Object3D } | null; l: { id: string; obj: THREE.Object3D } | null };
+  /** Worn pieces by option id, each the objects it added. */
+  worn: Map<string, THREE.Object3D[]>;
+}
+
+type Hand = "r" | "l";
+
+/** Put an option in a hand (or empty it), seated with the rig's grip. */
+function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption | null): void {
+  if ((live.held[slot]?.id ?? null) === (option?.id ?? null)) return;
+  live.held[slot]?.obj.removeFromParent();
+  live.held[slot] = null;
+  if (!option) return;
+  const socket = slot === "r" ? live.entry.inst.handSlotR : live.entry.inst.handSlotL;
+  if (!socket) return;
+  const obj =
+    option.kit === "kaykit"
+      ? cloneProp(assets.weapons[option.node as WeaponName])
+      : heldModel(assets.kits, option.kit, option.node);
+  if (!obj) return;
+  gripInto(socket, live.entry.spec.grip[slot], obj);
+  live.held[slot] = { id: option.id, obj };
+}
+
+/** Put a worn piece on (or take it off) the bone its kind rides. */
+function wearItem(assets: GameAssets, live: Live, option: GearOption, on: boolean): void {
+  const have = live.worn.get(option.id);
+  if (on === !!have) return;
+  if (!on) {
+    for (const o of have!) o.removeFromParent();
+    live.worn.delete(option.id);
+    return;
+  }
+  if (option.kit === "kaykit") return;
+  const placement = wornPlacement(assets.kits, option.kit, option.node);
+  const bone = placement && findNode(live.entry.inst.group, live.entry.spec.bones[placement.role]);
+  if (!placement || !bone) return;
+  const added = wearPiece(assets.kits, option.kit, option.node, placement, bone, live.entry.rest.get(bone));
+  if (added) live.worn.set(option.id, added);
 }
 
 function play(live: Live, name: string | null): void {
@@ -49,17 +105,33 @@ export function Viewer() {
 
   const [entries, setEntries] = useState<CatalogEntry[]>([]);
   const [status, setStatus] = useState("loading models…");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(params.get("q") ?? "");
   const [packs, setPacks] = useState<Set<PackId>>(new Set(ALL_PACKS));
-  const [clip, setClip] = useState(IDLE);
+  const [clip, setClip] = useState(params.get("clip") ?? IDLE);
   const [target, setTarget] = useState<"all" | "selected">("all");
   const [speed, setSpeed] = useState(1);
   const [paused, setPaused] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(params.get("sel"));
   const [tick, setTick] = useState(0); // re-render the sidebar's "playing" readout
+  const assetsRef = useRef<GameAssets | null>(null);
+  const [armAll, setArmAll] = useState(params.get("arm") === "1");
+  /** Explicit hand choices per entry (option ids); unset hands follow "arm everyone". */
+  const [hands, setHands] = useState<Map<string, { r?: string | null; l?: string | null }>>(() => {
+    const sel = params.get("sel");
+    const r = params.get("r");
+    const l = params.get("l");
+    return sel && (r || l) ? new Map([[sel, { ...(r ? { r } : {}), ...(l ? { l } : {}) }]]) : new Map();
+  });
+  const [worn, setWorn] = useState<Map<string, Set<string>>>(() => {
+    const sel = params.get("sel");
+    const wear = params.get("wear");
+    return sel && wear ? new Map([[sel, new Set(wear.split(","))]]) : new Map();
+  });
 
   const visible = useMemo(() => filterEntries(entries, query, packs), [entries, query, packs]);
   const selected = entries.find((e) => e.id === selectedId) ?? null;
+  const selectedHeld = useMemo(() => (selected && assetsRef.current ? heldOptions(assetsRef.current, selected) : []), [selected, entries]);
+  const selectedWorn = useMemo(() => (selected && assetsRef.current ? wornOptions(assetsRef.current, selected) : []), [selected, entries]);
   const clipOptions = useMemo(
     () => (target === "selected" && selected ? selected.clips.map((name) => ({ name, count: 1 })) : clipCounts(visible)),
     [target, selected, visible],
@@ -183,6 +255,7 @@ export function Viewer() {
     loadAssets()
       .then((assets) => {
         if (!mounted) return;
+        assetsRef.current = assets;
         const catalog = buildCatalog(assets);
         for (const entry of catalog) {
           entry.inst.group.scale.setScalar(entry.scale);
@@ -193,12 +266,14 @@ export function Viewer() {
           const label = document.createElement("div");
           label.className = "label";
           overlay.appendChild(label);
-          const live: Live = { entry, current: null, label, visible: true };
+          const live: Live = { entry, current: null, label, visible: true, held: { r: null, l: null }, worn: new Map() };
           play(live, defaultClip(entry));
           livesRef.current.set(entry.id, live);
         }
         setEntries(catalog);
         setStatus(`${catalog.length} characters`);
+        // Dev hook: poke held objects and the camera from the console while tuning grips.
+        (window as unknown as { __viewer?: unknown }).__viewer = { lives: livesRef.current, camera: cameraRef.current, scene };
       })
       .catch((err: unknown) => {
         console.error(err);
@@ -259,6 +334,48 @@ export function Viewer() {
     for (const live of livesRef.current.values()) live.entry.inst.mixer.timeScale = paused ? 0 : speed;
   }, [speed, paused]);
 
+  // --- Hands: an explicit choice wins; otherwise "arm everyone" hands out each rig's defaults ---
+  useEffect(() => {
+    const assets = assetsRef.current;
+    if (!assets) return;
+    for (const live of livesRef.current.values()) {
+      const options = heldOptions(assets, live.entry);
+      const choice = hands.get(live.entry.id) ?? {};
+      const defaults = DEFAULT_ARMS[live.entry.rig] ?? {};
+      for (const slot of ["r", "l"] as const) {
+        const wanted =
+          choice[slot] !== undefined ? choice[slot] : armAll && defaults[slot] ? gearId(defaults[slot]!) : null;
+        holdItem(assets, live, slot, wanted ? options.find((o) => o.id === wanted) ?? null : null);
+      }
+    }
+  }, [hands, armAll, entries]);
+
+  useEffect(() => {
+    const assets = assetsRef.current;
+    if (!assets) return;
+    for (const live of livesRef.current.values()) {
+      const set = worn.get(live.entry.id);
+      if (!set && live.worn.size === 0) continue;
+      for (const option of wornOptions(assets, live.entry)) wearItem(assets, live, option, set?.has(option.id) ?? false);
+    }
+  }, [worn, entries]);
+
+  const setHand = (id: string, slot: Hand, option: string | null) =>
+    setHands((prev) => {
+      const next = new Map(prev);
+      next.set(id, { ...(prev.get(id) ?? {}), [slot]: option });
+      return next;
+    });
+  const toggleWorn = (id: string, option: string) =>
+    setWorn((prev) => {
+      const next = new Map(prev);
+      const set = new Set(prev.get(id) ?? []);
+      if (set.has(option)) set.delete(option);
+      else set.add(option);
+      next.set(id, set);
+      return next;
+    });
+
   useEffect(() => {
     const ring = ringRef.current;
     const live = selectedId ? livesRef.current.get(selectedId) : null;
@@ -266,6 +383,26 @@ export function Viewer() {
     ring.visible = !!live;
     if (live) ring.position.set(live.entry.inst.group.position.x, 0.02, live.entry.inst.group.position.z);
   }, [selectedId, visible]);
+
+  /** A three-quarter view of the selected figure, close enough to judge a grip. */
+  function frameSelected() {
+    const cam = cameraRef.current;
+    const live = selectedId ? livesRef.current.get(selectedId) : null;
+    if (!cam || !live) return;
+    const p = live.entry.inst.group.position;
+    cam.camera.position.set(p.x - 2.0, 1.4, p.z + 2.2);
+    cam.controls.target.set(p.x, 0.8, p.z);
+    cam.controls.update();
+  }
+
+  // A URL that names a figure opens on it, once the figures exist.
+  const framedRef = useRef(false);
+  useEffect(() => {
+    if (framedRef.current || !params.get("sel") || entries.length === 0) return;
+    framedRef.current = true;
+    setTarget("selected");
+    frameSelected();
+  }, [entries]);
 
   function resetCamera() {
     const cam = cameraRef.current;
@@ -320,6 +457,9 @@ export function Viewer() {
           <label className="check">
             <input type="radio" checked={target === "selected"} onChange={() => setTarget("selected")} disabled={!selected} /> selected only
           </label>
+          <label className="check">
+            <input type="checkbox" checked={armAll} onChange={(e) => setArmAll(e.target.checked)} /> arm everyone
+          </label>
         </div>
         <label className="field">
           <span>clip</span>
@@ -340,6 +480,9 @@ export function Viewer() {
         <div className="row">
           <button onClick={() => setPaused((p) => !p)}>{paused ? "play" : "pause"}</button>
           <button onClick={resetCamera}>reset camera</button>
+          <button onClick={frameSelected} disabled={!selected}>
+            frame
+          </button>
           <button onClick={() => setClip(IDLE)}>idle</button>
         </div>
         {selected && (
@@ -349,6 +492,67 @@ export function Viewer() {
               {PACK_LABELS[selected.pack]} · rig {selected.rig} · {selected.boneCount} bones · {selected.clips.length} clips
               <br />
               playing: {playing ?? "nothing"}
+            </div>
+            {(["r", "l"] as const).map((slot) => {
+              const chosen = hands.get(selected.id)?.[slot];
+              const defaults = DEFAULT_ARMS[selected.rig]?.[slot];
+              const value = chosen !== undefined ? chosen ?? "" : armAll && defaults ? gearId(defaults) : "";
+              const options = slot === "l" ? [...selectedHeld].sort((a, b) => Number(b.kind === "shield") - Number(a.kind === "shield")) : selectedHeld;
+              return (
+                <label key={slot} className="field">
+                  <span>{slot === "r" ? "right hand" : "left hand"}</span>
+                  <select value={value} onChange={(e) => setHand(selected.id, slot, e.target.value || null)}>
+                    <option value="">empty</option>
+                    {options.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.kind === "shield" ? "⛨ " : ""}
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              );
+            })}
+            <div className="field">
+              <span>actions</span>
+              <div className="chips">
+                {ACTION_IDS.map((id) => {
+                  const name = defaultClip(selected, id);
+                  if (!name) return null;
+                  return (
+                    <button
+                      key={id}
+                      className={name === playing ? "chip on" : "chip"}
+                      title={name}
+                      onClick={() => {
+                        setTarget("selected");
+                        setClip(name);
+                      }}
+                    >
+                      {id}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {selectedWorn.length > 0 && (
+              <div className="field">
+                <span>wear</span>
+                <div className="chips">
+                  {selectedWorn.map((o) => (
+                    <button
+                      key={o.id}
+                      className={worn.get(selected.id)?.has(o.id) ? "chip on" : "chip"}
+                      onClick={() => toggleWorn(selected.id, o.id)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="field">
+              <span>clips</span>
             </div>
             <div className="chips">
               {selected.clips.map((name) => (

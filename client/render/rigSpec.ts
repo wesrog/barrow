@@ -112,11 +112,13 @@ export const KAYKIT_RIG: RigSpec = {
 
 /**
  * Synty's humanoid rig (Goblin War Camp, Viking Realm). Bones and grip were
- * measured on the rig: fingers run along the hand bone's X axis and the
- * knuckle line along Z, so a gripped handle lies along Z with the blade
- * toward the index side (-Z on the right hand, +Z on the left). Weapons are
- * authored blade-up (+Y) with the pivot at the grip; the palm centre sits
- * 0.1 along X from the wrist.
+ * measured on the rig: fingers run along the hand bone's X axis (+X left,
+ * -X right), the knuckle line along Z with the index finger at +Z on the
+ * left hand and -Z on the right, and Y is the palm normal. A gripped handle
+ * lies along the knuckle line with the blade toward the index side, so a
+ * quarter turn about X takes a weapon's +Y (every held piece is turned to
+ * that by gear.ts) onto ±Z; the palm centre sits 0.1 along X from the wrist.
+ * Checked in the viewer: the axe rides along the thigh, head forward, edge out.
  */
 const SYNTY_BONES: Record<BoneRole, string> = {
   handR: "Hand_R",
@@ -130,8 +132,8 @@ const SYNTY_BONES: Record<BoneRole, string> = {
   lowerLegR: "LowerLeg_R",
 };
 const SYNTY_GRIP = {
-  r: { rotation: [Math.PI, 0, 0], position: [-0.1, 0, 0] } as Grip,
-  l: { rotation: [0, 0, 0], position: [0.1, 0, 0] } as Grip,
+  r: { rotation: [-Math.PI / 2, 0, 0], position: [-0.1, 0, 0] } as Grip,
+  l: { rotation: [Math.PI / 2, 0, 0], position: [0.1, 0, 0] } as Grip,
 };
 
 /** The Goblin Locomotion pack's stand-ins, used when the KayKit copies are absent. */
@@ -208,9 +210,11 @@ export const SYNTY_DUNGEON_RIG: RigSpec = {
     lowerLegL: "calf_l",
     lowerLegR: "calf_r",
   },
+  // The UE hand frames mirror Synty's in Y and Z (measured: right index
+  // finger at +Z, palm toward -Y), so the quarter turns swap sign.
   grip: {
-    r: { rotation: [0, 0, 0], position: [-0.1, 0, 0] },
-    l: { rotation: [Math.PI, 0, 0], position: [0.1, 0, 0] },
+    r: { rotation: [Math.PI / 2, 0, 0], position: [-0.1, 0, 0] },
+    l: { rotation: [-Math.PI / 2, 0, 0], position: [0.1, 0, 0] },
   },
   walkSpeedRef: 3,
 };

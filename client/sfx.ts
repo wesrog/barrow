@@ -16,6 +16,8 @@ export const SAMPLES: Record<string, string[]> = {
   // combat
   swing_sharp: one("drawKnife1", "drawKnife2", "drawKnife3"),
   swing_blunt: one("cloth1", "cloth2", "cloth3", "cloth4"),
+  // enemy hits: the plate strikes, heavy and light shuffled together, with a blade's slice on top for sharp edges
+  hit_plate: [...five("impactPlate_heavy"), ...five("impactPlate_light")],
   hit_sharp: one("knifeSlice", "knifeSlice2", "chop"),
   hit_blunt: five("impactPunch_heavy"),
   body_soft: five("impactSoft_medium"),

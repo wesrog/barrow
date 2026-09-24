@@ -716,12 +716,13 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
   hit: (c, _v, edge) => {
     // The recorded blade or punch carries the hit; the synth keeps the low
     // body and the flesh under it.
+    // Every landed blow is a plate strike, heavy or light by the draw; a blade
+    // adds its slice on top, a haft the heavier body under it.
+    playSample("hit_plate", { gain: 0.85, sat: true });
     if (edge === "sharp") {
-      playSample("hit_sharp", { gain: 0.9, sat: true });
-      playSample("body_soft", { gain: 0.5, at: 0.01 });
+      playSample("hit_sharp", { gain: 0.5, at: 0.01 });
       slash(c, rnd(0.85, 1.2));
     } else {
-      playSample("hit_blunt", { gain: 0.9, sat: true });
       playSample("body_heavy", { gain: 0.4, at: 0.01 });
       impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
     }

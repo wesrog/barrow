@@ -85,6 +85,8 @@ export interface PlayerJoin {
   id: PlayerId;
   /** CharacterSave JSON, when the joiner brings an existing hero. */
   character?: string;
+  /** Where to stand on arrival; the world's START_ZONE unless a test says otherwise. */
+  start?: ZoneId;
 }
 
 /** One tick's worth of the world's input: what every player did, plus roster churn. */

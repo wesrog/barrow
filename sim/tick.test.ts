@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { mapFromStrings } from "./map";
-import { createGame, joinPlayer, step, stepSolo, travel, TICK_RATE } from "./tick";
+import { createGame, joinPlayer, step, stepSolo, travel, TICK_RATE, START_ZONE } from "./tick";
 import { createGameOn, player } from "./test-helpers";
 import { getZone } from "./state";
 import { spawnMonster } from "./monsters";
@@ -103,8 +103,8 @@ describe("determinism", () => {
 
   test("two-player determinism: same seed + same frames ⇒ identical state", () => {
     const script = (g: GameState) => {
-      const p0 = joinPlayer(g, { id: 0 });
-      joinPlayer(g, { id: 1 });
+      const p0 = joinPlayer(g, { id: 0, start: "surface" });
+      joinPlayer(g, { id: 1, start: "surface" });
       // A quest round trip — accept, kill, turn in — folded into the script:
       // two replicas must still land on identical state afterward.
       const surface = getZone(g, "surface");
@@ -143,5 +143,22 @@ describe("determinism", () => {
     stepSolo(game, {});
     stepSolo(game, {});
     expect(game.tick).toBe(2);
+  });
+});
+
+describe("start zone", () => {
+  test("a joining player stands on the Barrow Crypt's first floor, camp kept as checkpoint", () => {
+    expect(START_ZONE).toBe("dungeon:barrow:1");
+    const state = createGame(7);
+    const p = joinPlayer(state, { id: 3 });
+    expect(p.zoneId).toBe(START_ZONE);
+    expect(p.checkpoint).toBe("overworld");
+    const zone = state.zones.get(START_ZONE)!;
+    expect(zone).toBeTruthy();
+    expect(p.pos).toEqual(zone.map.spawn);
+    expect(state.events.some((e) => e.type === "traveled" && e.playerId === 3)).toBe(true);
+    // Tests that ask for the camp still get it.
+    const camper = joinPlayer(state, { id: 4, start: "surface" });
+    expect(camper.zoneId).toBe("surface");
   });
 });

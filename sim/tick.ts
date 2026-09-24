@@ -77,6 +77,13 @@ const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 
 export { ensureDungeonFloor, ensureSurface } from "./world";
 
+/**
+ * Where every arriving player stands first: the Barrow Crypt's first floor,
+ * straight into the fight. The camp stays the checkpoint, so death and the
+ * stairs up still lead back to safe ground.
+ */
+export const START_ZONE: ZoneId = dungeonZoneId("barrow", 1);
+
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {
   if (to === "surface") ensureSurface(state);
@@ -334,6 +341,8 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
   };
   state.players.set(join.id, p);
   if (join.character) applyCharacter(state, join.id, join.character);
+  const start = join.start ?? START_ZONE;
+  if (start !== "surface") travel(state, p, start);
   state.events.push({ type: "player_joined", playerId: join.id });
   return p;
 }

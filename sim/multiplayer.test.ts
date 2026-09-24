@@ -4,8 +4,8 @@ import { getZone } from "./state";
 
 const join2 = () => {
   const g = createGame(42);
-  joinPlayer(g, { id: 0 });
-  joinPlayer(g, { id: 1 });
+  joinPlayer(g, { id: 0, start: "surface" });
+  joinPlayer(g, { id: 1, start: "surface" });
   return g;
 };
 

@@ -1,54 +1,53 @@
 /**
- * Item icons from the Synty INTERFACE packs when scripts/ui-icons.ts has
- * copied them (licensed, so gitignored), else the game-icons.net SVGs in git.
- * Two kinds of pack icon: coloured renders of POLYGON weapons and items
- * (Fantasy Warrior HUD's ICON_SM_* sets), drawn as images with a rarity glow,
- * and white silhouettes (both packs' Inventory sets) masked and tinted like
- * the SVGs. A missing pack changes the look, not the layout.
+ * Item icons from the licensed art packs when scripts/ui-icons.ts has copied
+ * them (gitignored), else the game-icons.net SVGs in git. Coloured icons
+ * (the AssetSmithy set, the Synty Warrior HUD's rendered items) draw as
+ * images with a rarity glow; white silhouettes mask and tint like the SVGs.
+ * A missing pack changes the look, not the layout.
  */
 
 /**
- * Base id -> "set/piece" in the copied art manifest. Weapons, shields, orbs,
- * rings, amulets, potions, quest items and the heavier helms get a Fantasy
- * Warrior HUD render each; armour, boots and the plain helm, which the packs
- * have no renders for, use a white silhouette from either pack's Inventory
- * set (fw- names have no underscore before the number).
+ * Base id -> "set/piece" in the copied art manifest. Gear (weapons, shields,
+ * helms, armour, boots) comes from the AssetSmithy fantasy icons, sixteen per
+ * kind ordered roughly plain to enchanted, so tiers climb through them.
+ * Potions, rings, amulets, orbs and quest items, which that set lacks, stay
+ * on the Warrior HUD's rendered bottles, rings, necklaces and gems.
  */
 export const SYNTY_ITEM_ICONS: Record<string, string> = {
-  rusted_blade: "fw-weapons/Wep_Sword_01",
-  kingsbane: "fw-weapons/Wep_Sword_15",
-  hatchet: "fw-weapons/Wep_Axe_01",
-  grave_scythe: "fw-weapons/Wep_Axe_10",
-  dire_flail: "fw-weapons/Wep_Mace_03",
-  war_maul: "fw-weapons/Wep_Hammer_02",
-  moon_glaive: "fw-weapons/Wep_Spear_04",
-  twin_fang: "fw-weapons/Wep_Dagger_02",
-  gnarled_staff: "fw-weapons/Wep_Staff_04",
-  ember_staff: "fw-weapons/Wep_Staff_01",
-  wyrmwood_staff: "fw-weapons/Wep_Staff_09",
-  bone_wand: "fw-weapons/Wep_Sceptre_08",
-  willow_wand: "fw-weapons/Wep_Sceptre_03",
-  hexwood_wand: "fw-weapons/Wep_Sceptre_01",
+  rusted_blade: "as-weapons/one-handed_sword_01",
+  kingsbane: "as-weapons/one-handed_sword_14",
+  hatchet: "as-weapons/one-handed_hand_axe_01",
+  grave_scythe: "as-weapons/two-handed_battle_axe_11",
+  dire_flail: "as-weapons/flail_09",
+  war_maul: "as-weapons/war_hammer_07",
+  moon_glaive: "as-weapons/halberd_13",
+  twin_fang: "as-weapons/dagger_04",
+  gnarled_staff: "as-weapons/wizard_staff_01",
+  ember_staff: "as-weapons/wizard_staff_11",
+  wyrmwood_staff: "as-weapons/wizard_staff_06",
+  bone_wand: "as-weapons/magic_wand_01",
+  willow_wand: "as-weapons/magic_wand_05",
+  hexwood_wand: "as-weapons/magic_wand_14",
   ashen_orb: "fw-resources/Item_Gem_03",
   fen_pearl: "fw-resources/Item_Gem_01",
   grave_star: "fw-resources/Item_Crystal_05",
-  plank_buckler: "fw-weapons/Wep_Shield_05",
-  bone_targe: "fw-weapons/Wep_Shield_10",
-  rimed_kite: "fw-weapons/Wep_Shield_04",
-  barrow_bulwark: "fw-weapons/Wep_Shield_07",
-  cracked_helm: "fw-inventory/Helmets01",
-  bone_visage: "fw-resources/Item_Bird_Skull_01",
-  iron_barbute: "fw-resources/Chr_Attach_Soldier_01",
-  wyrm_skull: "fw-resources/Chr_Attach_King_Crown_01",
-  rag_tunic: "fw-inventory/Armor01",
-  studded_jerkin: "fw-inventory/Armor01",
-  grave_plate: "fs-inventory/Armor_01",
-  lamellar_coat: "fs-inventory/Armor_01",
-  bogsteel_plate: "fs-inventory/Armor_01",
-  worn_boots: "fs-inventory/Boots_01",
-  chain_greaves: "fs-inventory/Boots_01",
-  marsh_striders: "fs-inventory/Boots_01",
-  cragwalkers: "fs-inventory/Boots_01",
+  plank_buckler: "as-armor/light_shield_10",
+  bone_targe: "as-armor/heavy_shield_10",
+  rimed_kite: "as-armor/heavy_shield_13",
+  barrow_bulwark: "as-armor/heavy_shield_15",
+  cracked_helm: "as-armor/medium_head_armor_01",
+  bone_visage: "as-armor/heavy_head_armor_09",
+  iron_barbute: "as-armor/heavy_head_armor_01",
+  wyrm_skull: "as-armor/heavy_head_armor_12",
+  rag_tunic: "as-armor/light_body_armor_09",
+  studded_jerkin: "as-armor/medium_body_armor_01",
+  grave_plate: "as-armor/heavy_body_armor_01",
+  lamellar_coat: "as-armor/medium_body_armor_05",
+  bogsteel_plate: "as-armor/heavy_body_armor_15",
+  worn_boots: "as-armor/light_foot_armor_09",
+  chain_greaves: "as-armor/heavy_foot_armor_09",
+  marsh_striders: "as-armor/light_foot_armor_14",
+  cragwalkers: "as-armor/heavy_foot_armor_07",
   bone_ring: "fw-resources/Item_Ring_02",
   wight_band: "fw-resources/Item_Ring_03",
   grave_amulet: "fw-resources/Item_Necklace_Flat_03",
@@ -85,7 +84,7 @@ export interface IconManifest {
 /** Read the copied art's manifest once at startup; none means the SVGs. */
 export async function loadItemIcons(): Promise<void> {
   try {
-    const res = await fetch(`${BASE}/icons/synty/manifest.json`);
+    const res = await fetch(`${BASE}/icons/packs/manifest.json`);
     if (!res.ok) return;
     const manifest = (await res.json()) as IconManifest;
     if (manifest.version !== 3) return;
@@ -104,8 +103,8 @@ export function packIcons(manifest: IconManifest): Map<string, ResolvedIcon> {
     const render = p.kind === "render" ? p.files.Render : undefined;
     const file = render ?? p.files.Clean;
     if (!file) continue;
-    const icon: ResolvedIcon = { url: `${BASE}/icons/synty/${file}`, kind: render ? "image" : "mask" };
-    if (render && p.files.Side) icon.side = `${BASE}/icons/synty/${p.files.Side}`;
+    const icon: ResolvedIcon = { url: `${BASE}/icons/packs/${file}`, kind: render ? "image" : "mask" };
+    if (render && p.files.Side) icon.side = `${BASE}/icons/packs/${p.files.Side}`;
     out.set(`${p.set}/${p.name}`, icon);
   }
   return out;
@@ -116,7 +115,7 @@ export function packSprites(manifest: IconManifest): Map<string, string> {
   const out = new Map<string, string>();
   for (const p of manifest.pieces) {
     const file = p.kind === "sprite" ? p.files[""] : undefined;
-    if (file) out.set(`${p.set}/${p.name}`, `${BASE}/icons/synty/${file}`);
+    if (file) out.set(`${p.set}/${p.name}`, `${BASE}/icons/packs/${file}`);
   }
   return out;
 }

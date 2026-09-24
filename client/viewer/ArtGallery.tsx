@@ -43,7 +43,7 @@ export function ArtGallery({
         {shown.map((p) => {
           const key = `${p.set}/${p.name}`;
           const file = pieceFile(p, variant);
-          const url = `${base}/icons/synty/${file}`;
+          const url = `${base}/icons/packs/${file}`;
           const isIcon = p.kind === "icon";
           return (
             <button

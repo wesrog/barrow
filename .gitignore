@@ -10,4 +10,4 @@ assets-src/*
 public/models/synty/
 
 # Licensed UI icons copied by scripts/ui-icons.ts
-public/icons/synty/
+public/icons/packs/

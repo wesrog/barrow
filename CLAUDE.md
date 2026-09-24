@@ -15,21 +15,21 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   or tick "arm everyone". A URL can open a scene: `?q=Warrior%20Male%2001&sel=viking_realm/
   Warrior_Male_01&r=viking_weapons/Wep_Sword_02&l=viking_weapons/Wep_Shield_Set_01&wear=...
   &clip=...&arm=1`; `window.__viewer` exposes lives, camera and scene for console tuning.
-- **UI art:** `bun run assets:ui` copies every PNG of the INTERFACE packs unzipped under
-  `assets-src/synty/fantasy_screens/` and `assets-src/synty/fantasy_warrior_hud/` (demo
-  screenshots excepted) into `public/icons/synty/` (gitignored) with a version 3 manifest of
-  sets (`fs-`/`fw-` prefixed by pack) and pieces. Three kinds: `icon` is a white silhouette
-  (Clean/Stroke/Underlay), `render` an icon rendered from a POLYGON model (the Warrior HUD's
-  `ICON_SM_*` weapons and resources: coloured `Render`, white `Clean`, `Underlay`, `Side`),
-  `sprite` any other coloured art. The viewer's "2D art" tab (`/viewer.html?tab=art&sets=fw-weapons`)
+- **UI art:** `bun run assets:ui` copies every PNG of the licensed UI packs unzipped under
+  `assets-src/synty/fantasy_screens/`, `assets-src/synty/fantasy_warrior_hud/` and
+  `assets-src/assetsmithy/` (the 608 Fantasy Icons set; demo screenshots excepted) into
+  `public/icons/packs/` (gitignored) with a version 3 manifest of sets (`fs-`/`fw-`/`as-`
+  prefixed by pack) and pieces. Three kinds: `icon` is a white silhouette
+  (Clean/Stroke/Underlay), `render` a coloured item icon (the Warrior HUD's `ICON_SM_*` sets
+  with `Render`, white `Clean`, `Underlay` and `Side` files; every AssetSmithy icon), `sprite`
+  any other coloured art. The viewer's "2D art" tab (`/viewer.html?tab=art&sets=as-weapons`)
   browses it with set filters, tint swatches, variant and size controls. `client/ui/itemIcons.ts`
-  maps each item base to a piece: renders draw as images with a rarity glow, silhouettes as
+  maps each item base to a piece (gear on AssetSmithy, potions, rings, amulets, orbs and quest
+  items on Warrior HUD renders): renders draw as images with a rarity glow, silhouettes as
   tinted masks, and the game-icons SVGs in git remain the fallback when the manifest is absent.
-  `client/ui/ItemSlot.tsx` owns the inventory cell (`CELL`, 56px) and the framed slot every
-  grid and the equipped list build from: a slate box under a nine-slice of the Warrior HUD's
-  `Frame_Box12` (plain rarity border without the art). Side-view renders are 2048x1024 with the
-  weapon lying across the middle; `ItemIcon` sizes them by the slot's long side, turns them
-  upright in tall slots and clips the transparent margins.
+  `client/ui/ItemSlot.tsx` owns the inventory cell (`CELL`, 56px) and the borderless slate slot
+  every grid and the equipped list build from. Items have two footprints (1x1 for potions,
+  rings, amulets and quest items, 2x2 for gear), so icons show at exactly two sizes.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

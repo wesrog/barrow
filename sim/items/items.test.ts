@@ -220,13 +220,13 @@ describe("class-restricted weapons", () => {
     }
   });
 
-  test("wands are witch-only one-wide weapons spanning the level curve, weaker than the staff of their tier", () => {
+  test("wands are witch-only weapons spanning the level curve, weaker than the staff of their tier", () => {
     const wands = Object.values(BASES).filter((b) => b.id.endsWith("_wand"));
     expect(wands.length).toBeGreaterThanOrEqual(3);
     for (const w of wands) {
       expect(w.slot).toBe("weapon");
       expect(w.classReq).toBe("witch");
-      expect(w.w).toBe(1);
+      expect([w.w, w.h]).toEqual([2, 2]);
       expect(w.dmgMax).toBeDefined();
     }
     expect(Math.min(...wands.map((w) => w.levelReq))).toBe(1);

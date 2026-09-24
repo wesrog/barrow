@@ -21,7 +21,7 @@ export interface ArtPiece {
   kind: ArtKind;
   w: number;
   h: number;
-  /** Variant -> path under /icons/synty/. Icons carry Clean/Stroke/Underlay; renders Render (colour),
+  /** Variant -> path under /icons/packs/. Icons carry Clean/Stroke/Underlay; renders Render (colour),
    * Clean (white), Underlay and Side; sprites one "" entry. */
   files: Record<string, string>;
 }
@@ -50,7 +50,7 @@ export const TINTS: { name: string; css: string }[] = [
 
 export async function loadArtManifest(base: string): Promise<ArtManifest | null> {
   try {
-    const res = await fetch(`${base}/icons/synty/manifest.json`);
+    const res = await fetch(`${base}/icons/packs/manifest.json`);
     if (!res.ok) return null;
     const json = (await res.json()) as ArtManifest;
     return json.version === 3 ? json : null;

@@ -33,7 +33,7 @@ describe("art helpers", () => {
 });
 
 // Only where the licensed art was copied: the manifest must point at real files.
-const OUT = join(import.meta.dir, "../../public/icons/synty");
+const OUT = join(import.meta.dir, "../../public/icons/packs");
 describe.if(existsSync(join(OUT, "manifest.json")))("copied art manifest", () => {
   test("every piece's files exist and every set counts its pieces", () => {
     const manifest = JSON.parse(readFileSync(join(OUT, "manifest.json"), "utf8")) as ArtManifest;

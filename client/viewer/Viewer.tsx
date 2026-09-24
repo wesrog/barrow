@@ -680,10 +680,10 @@ export function Viewer() {
                       {artPiece.kind === "icon" ? (
                         <div
                           className="mask"
-                          style={{ backgroundColor: tint, WebkitMaskImage: `url(${BASE}/icons/synty/${file})`, maskImage: `url(${BASE}/icons/synty/${file})` }}
+                          style={{ backgroundColor: tint, WebkitMaskImage: `url(${BASE}/icons/packs/${file})`, maskImage: `url(${BASE}/icons/packs/${file})` }}
                         />
                       ) : (
-                        <img src={`${BASE}/icons/synty/${file}`} alt="" />
+                        <img src={`${BASE}/icons/packs/${file}`} alt="" />
                       )}
                       <figcaption>{v || "sprite"}</figcaption>
                     </figure>
@@ -691,7 +691,7 @@ export function Viewer() {
                 </div>
                 <div className="path" style={{ marginTop: 8 }}>
                   {Object.values(artPiece.files).map((f) => (
-                    <div key={f}>{`public/icons/synty/${f}`}</div>
+                    <div key={f}>{`public/icons/packs/${f}`}</div>
                   ))}
                 </div>
               </div>

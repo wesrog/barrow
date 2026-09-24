@@ -1,7 +1,8 @@
 /**
- * Copy the 2D art of the Synty INTERFACE packs out of the licensed source
- * folders into public/icons/synty/ (gitignored, like the models) and write a
- * manifest describing it: every PNG, grouped into sets by pack and folder and
+ * Copy the 2D art of the licensed UI packs (the Synty INTERFACE packs and the
+ * AssetSmithy fantasy icon set) out of their source folders into
+ * public/icons/packs/ (gitignored, like the models) and write a manifest
+ * describing it: every PNG, grouped into sets by pack and folder and
  * into pieces by name, with a piece's variants folded together. Each piece
  * has a kind: "icon" is a white silhouette the HUD masks and tints (variants
  * Clean/Stroke/Underlay), "render" an icon rendered from a POLYGON model
@@ -15,19 +16,31 @@
 import { copyFile, mkdir, open, readdir, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
-const OUT = "public/icons/synty";
+const OUT = "public/icons/packs";
 
-/** Each pack: where it was unzipped, which folders hold art, a short id that prefixes its sets. */
-const PACKS = [
+type Kind = "icon" | "render" | "sprite";
+
+/** Each pack: where it was unzipped, which folders hold art, a short id that
+ * prefixes its sets, and a fixed kind when its file names carry none (the
+ * AssetSmithy icons are all painted item renders). */
+const PACKS: { id: string; label: string; root: string; dirs: string[]; kind?: Kind }[] = [
   { id: "fs", label: "Fantasy Screens", root: "assets-src/synty/fantasy_screens", dirs: ["Sprites", "Core", "Samples"] },
   { id: "fw", label: "Fantasy Warrior HUD", root: "assets-src/synty/fantasy_warrior_hud/Source_Sprites", dirs: ["Sprites", "Core", "Sample"] },
+  { id: "as", label: "AssetSmithy Fantasy Icons", root: "assets-src/assetsmithy", dirs: ["Armor/256x256", "Weapons/256x256"], kind: "render" },
 ];
 
 /** Demo-UI screenshots, not art to use in a game. */
 const SKIP = /ExampleScreenshot/;
 
 /** Folder ids the generic rule (strip Icons_, lowercase, join with -) gets wrong. */
-const SET_ALIASES: Record<string, string> = { fantasyscreens: "screens", fantasywarrior: "warrior", samples: "samples", sample: "samples" };
+const SET_ALIASES: Record<string, string> = {
+  fantasyscreens: "screens",
+  fantasywarrior: "warrior",
+  samples: "samples",
+  sample: "samples",
+  "armor-256x256": "armor",
+  "weapons-256x256": "weapons",
+};
 
 /** File-name prefixes that carry no information once the set is known. */
 const NAME_PREFIXES = [
@@ -47,7 +60,6 @@ const NAME_PREFIXES = [
 ];
 const VARIANT_RE = /_(Clean|Stroke|Underlay|Side)$/;
 
-type Kind = "icon" | "render" | "sprite";
 interface Piece {
   set: string;
   name: string;
@@ -124,7 +136,7 @@ for (const pack of PACKS) {
       const id = `${pack.id}-${folderId(dirRel)}`;
       if (!sets.has(id)) sets.set(id, { id, pack: pack.id, label: `${pack.label} · ${folderLabel(dirRel)}`, dir: `${pack.root}/${dirRel}`, count: 0 });
       const file = rel.slice(rel.lastIndexOf("/") + 1);
-      const kind = kindOf(file);
+      const kind = pack.kind ?? kindOf(file);
       let stem = file.replace(/\.png$/i, "");
       for (const re of NAME_PREFIXES) stem = stem.replace(re, "");
       const variant = kind === "sprite" ? "" : (VARIANT_RE.exec(stem)?.[1] ?? (kind === "render" ? "Render" : ""));

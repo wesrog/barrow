@@ -70,7 +70,12 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   the square it clears around itself, the pack that lairs there and where its `$` chest sits;
   the placer keeps them off the spawn, safe ground, NPC clearings, exit mouths and fixed
   features, and refuses any spot whose walls would cut floor off. The camp's smithy, mead
-  table and training yard are fixed markers (`A`, `M`, `T`) in the overworld's area row.
+  table, training yard and shrine are fixed markers (`A`, `M`, `T`, `Y`) in the overworld's
+  area row; its hall and storehouse are `buildings` rows (`sim/buildings.ts`: a wall ring
+  with one door cell and a marker at the centre, `J` and `D`), stamped with the huts. Packs
+  keep `PACK_MARGIN` cells off the palisade, landmarks `LANDMARK_MARGIN`. A new character's
+  kit is `STARTING_WEAPON`/`STARTING_SKILL` in `sim/save.ts`: the warrior a rusted blade,
+  the witch a bone wand and one rank of firebolt.
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
@@ -81,7 +86,11 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   villagers on the human spec) and the hero build: a Viking Realm human (warrior male, leader
   female for the witch) dressed from the Viking weapon, shield, helmet and fur kits. In dev,
   `window.__barrow` exposes game, driver, input, assets, and scene (`scene.three` is the
-  Three scene, for finding placed props by name). Rig specs list clip candidates in
+  Three scene, for finding placed props by name). Every torch, candle and glow is a lamp:
+  it registers with the scene's lamp pool instead of joining the scene, and eight pooled
+  point lights take on the nearest lamps each frame (`LAMP_POOL`, `LAMP_REACH`), so the
+  shader compiles for one light count however many lamps a level carries. The hero's own
+  light and transient bolt and portal lights stay real. Rig specs list clip candidates in
   order (retargeted KayKit copy first, goblin pack second) so a machine missing a clip kit
   still animates. The hero stands 1.56 units and monster scales keep the heights the game was
   tuned at (Synty humanoids are authored 1.8 tall). `scatter.ts` instances the Viking nature kit over
@@ -115,6 +124,8 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   overwriting their position. `gear.ts` is the one path for held and worn kit pieces:
   `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y
   (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
+  a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
+  butt end (the wands are the Dungeon Pack's gem staff at two fifths),
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in

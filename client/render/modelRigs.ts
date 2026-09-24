@@ -255,6 +255,9 @@ interface SyntyWeaponLook {
   node: string;
   twoHanded: boolean;
   scale?: number;
+  /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
+   * is held by its handle end (the wands are cut-down staves). */
+  lift?: number;
 }
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
@@ -269,9 +272,11 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
-  bone_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
-  willow_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
-  hexwood_wand: { kit: "goblin_weapons", node: "Wep_Staff_01", twoHanded: false, scale: 0.5 },
+  // The wands: the Dungeon Pack's gem staff at two fifths, lifted so the hand
+  // closes on its butt end and the gem rides above the fist.
+  bone_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
+  willow_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
+  hexwood_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
 };
 
 /** Helm base id -> Viking attachment nodes stacked on the head. */
@@ -398,6 +403,8 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       const model = heldModel(kits, look.kit, look.node);
       if (model) {
         if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
+        // The wrapper holds one upright model; lifting it moves the grip down the shaft.
+        if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
       rig.attach("r", model);

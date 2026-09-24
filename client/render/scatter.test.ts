@@ -59,6 +59,7 @@ describe("bakeScatter", () => {
     const baked = bakeScatter(fakeKits())!;
     expect(baked.pine.length).toBe(SCATTER_PIECES.pine.length);
     expect(baked.bush.length).toBe(SCATTER_PIECES.bush.length);
+    expect(baked.tuft.length).toBe(SCATTER_PIECES.tuft.length);
     expect(bakeScatter({})).toBeNull();
   });
 });

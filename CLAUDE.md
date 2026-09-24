@@ -34,7 +34,7 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   grass, mud, dirt and rock textures into `public/textures/ground/` (gitignored). Each biome
   palette names one (`groundTexture`) and the colour it is multiplied by (`groundTint`);
   `client/render/ground.ts` tiles it every six cells, and a missing file leaves that biome on
-  its flat colour.
+  its flat colour. The moors are bare dirt with a grass tuft on one open cell in nineteen.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

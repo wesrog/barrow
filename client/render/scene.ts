@@ -544,9 +544,10 @@ export function createScene(
     dressMarkers(assets.kits, map.markers, CRYPT_SET_PIECES, placeProp, wallToward);
   } else {
     // --- Open ground: every region lays its own textured plane over its
-    // slice of the world (the grass is in the texture; no tuft meshes), then
-    // instanced pines, standing stones and bushes from the Viking nature kit
-    // tinted for the biome, or primitive crags and cones when that kit is absent. Cell hashes stay keyed on world
+    // slice of the world (bare dirt, with the odd grass tuft instanced on
+    // it), then instanced pines, standing stones and bushes from the Viking
+    // nature kit tinted for the biome, or primitive crags and cones when that
+    // kit is absent. Cell hashes stay keyed on world
     // coordinates, so the scatter is the same wherever a region sits. ---
     const baked = bakeScatter(assets.kits);
     const m = new THREE.Matrix4();
@@ -631,6 +632,12 @@ export function createScene(
               m.compose(pos.set(jx, bh + 0.22, jz), quat, scl.set(1, 1, 1));
               trunkMats.push(m.clone());
             }
+          } else if (batch && h % 19 === 0) {
+            // The odd tuft of grass on the bare ground; the dirt texture carries the rest.
+            quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+            const s = 0.7 + ((h >> 7) % 60) / 100;
+            m.compose(pos.set(jx, 0, jz), quat, scl.set(s, s, s));
+            batch.add("tuft", h >>> 10, m, x, y);
           }
         }
       }

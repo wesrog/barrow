@@ -32,16 +32,16 @@ export interface BiomePalette {
 }
 
 export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
-  // The moors' original night-heath look, lifted verbatim from the scene.
+  // The moors: bare earth under a cold sky, heather tufts on it, pines in the copses.
   moor: {
     bg: 0x0c1310,
     fogNear: 24,
     fogFar: 52,
     ambient: 0x70806e,
     ambientIntensity: 0.65,
-    ground: 0x1f2a1b,
-    groundTexture: "grass_pine",
-    groundTint: 0x7bdeff,
+    ground: 0x2a241d,
+    groundTexture: "dirt_pine",
+    groundTint: 0x90b6f2,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,
@@ -72,8 +72,8 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x6e7f78,
     ambientIntensity: 0.6,
     ground: 0x212a26,
-    groundTexture: "dirt_pine",
-    groundTint: 0x71d5ff,
+    groundTexture: "mud",
+    groundTint: 0xadfdff,
     rock: 0x39423e,
     pine: 0x16201c,
     trunk: 0x22201c,

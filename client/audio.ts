@@ -653,13 +653,13 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     const loud = rnd(0.6, 1.15); // some swings are half-hearted
     if (edge === "sharp") {
       // a bright recorded whoosh: steel through nothing, the synth air under it
-      playSample("swing_sharp", { gain: 0.75 * loud, at, jitterCents: 90 });
+      playSample("swing_sharp", { gain: 0.45 * loud, at, jitterCents: 90 });
       swingSharp(c, p, at, loud * 0.45);
       return;
     }
     if (edge === "blunt") {
       // a darker, longer whoosh for a haft hauled through air
-      playSample("swing_blunt", { gain: 0.7 * loud, at, jitterCents: 90 });
+      playSample("swing_blunt", { gain: 0.42 * loud, at, jitterCents: 90 });
       swingBlunt(c, p, at, loud * 0.5);
       return;
     }

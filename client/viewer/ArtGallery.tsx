@@ -27,7 +27,6 @@ export function ArtGallery({
   onSelect: (key: string | null) => void;
 }) {
   const shown = useMemo(() => (manifest ? filterPieces(manifest.pieces, query, sets) : []), [manifest, query, sets]);
-  const kinds = useMemo(() => new Map(manifest?.sets.map((s) => [s.id, s.kind]) ?? []), [manifest]);
   if (!manifest) {
     return (
       <div className="art">
@@ -45,7 +44,7 @@ export function ArtGallery({
           const key = `${p.set}/${p.name}`;
           const file = pieceFile(p, variant);
           const url = `${base}/icons/synty/${file}`;
-          const isIcon = kinds.get(p.set) === "icon";
+          const isIcon = p.kind === "icon";
           return (
             <button
               key={key}

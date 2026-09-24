@@ -5,29 +5,35 @@
 
 export interface ArtSet {
   id: string;
+  pack: string;
   label: string;
   dir: string;
-  /** Icons are white silhouettes to mask and tint; sprites are drawn as they are. */
-  kind: "icon" | "sprite";
   count: number;
 }
+
+/** Icons are white silhouettes to mask and tint; renders are coloured icons
+ * rendered from POLYGON models; sprites are any other coloured art. */
+export type ArtKind = "icon" | "render" | "sprite";
 
 export interface ArtPiece {
   set: string;
   name: string;
+  kind: ArtKind;
   w: number;
   h: number;
-  /** Variant -> path under /icons/synty/. Icons carry Clean/Stroke/Underlay; sprites one "" entry. */
+  /** Variant -> path under /icons/synty/. Icons carry Clean/Stroke/Underlay; renders Render (colour),
+   * Clean (white), Underlay and Side; sprites one "" entry. */
   files: Record<string, string>;
 }
 
 export interface ArtManifest {
   version: number;
+  packs: { id: string; label: string }[];
   sets: ArtSet[];
   pieces: ArtPiece[];
 }
 
-export const VARIANTS = ["Clean", "Stroke", "Underlay"] as const;
+export const VARIANTS = ["Render", "Clean", "Stroke", "Underlay", "Side"] as const;
 export type Variant = (typeof VARIANTS)[number];
 
 /** Colours the HUD tints icons with, plus plain white to see the art itself. */
@@ -47,7 +53,7 @@ export async function loadArtManifest(base: string): Promise<ArtManifest | null>
     const res = await fetch(`${base}/icons/synty/manifest.json`);
     if (!res.ok) return null;
     const json = (await res.json()) as ArtManifest;
-    return json.version === 2 ? json : null;
+    return json.version === 3 ? json : null;
   } catch {
     return null;
   }
@@ -58,11 +64,11 @@ export function filterPieces(pieces: readonly ArtPiece[], query: string, sets: R
   return pieces.filter((p) => sets.has(p.set) && (q === "" || p.name.toLowerCase().includes(q) || p.set.includes(q)));
 }
 
-/** The file to show for a piece: the asked variant, else the cleanest one it has. */
+/** The file to show for a piece: the asked variant, else the most useful one it has. */
 export function pieceFile(piece: ArtPiece, variant: Variant): string | null {
   const own = piece.files[variant];
   if (own) return own;
-  for (const v of ["Clean", "Underlay", "Stroke", ""]) {
+  for (const v of ["Render", "Clean", "Side", "Underlay", "Stroke", ""]) {
     const f = piece.files[v];
     if (f) return f;
   }

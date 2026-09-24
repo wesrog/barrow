@@ -15,13 +15,16 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   or tick "arm everyone". A URL can open a scene: `?q=Warrior%20Male%2001&sel=viking_realm/
   Warrior_Male_01&r=viking_weapons/Wep_Sword_02&l=viking_weapons/Wep_Shield_Set_01&wear=...
   &clip=...&arm=1`; `window.__viewer` exposes lives, camera and scene for console tuning.
-- **UI art:** `bun run assets:ui` copies every PNG under the INTERFACE Fantasy Screens pack's
-  `Sprites/` and `Core/` (icons as tintable white silhouettes in Clean/Stroke/Underlay variants,
-  sprites such as frames, bars and coins as they are; the 158 MB `Samples/` stays out) from
-  `assets-src/synty/fantasy_screens/` into `public/icons/synty/` (gitignored) with a version 2
-  manifest of sets and pieces. The viewer's "2D art" tab (`/viewer.html?tab=art`) browses it
-  with set filters, tint swatches, variant and size controls. `client/ui/itemIcons.ts` maps item
-  bases to inventory icons and falls back to the game-icons SVGs in git when the manifest is absent.
+- **UI art:** `bun run assets:ui` copies every PNG of the INTERFACE packs unzipped under
+  `assets-src/synty/fantasy_screens/` and `assets-src/synty/fantasy_warrior_hud/` (demo
+  screenshots excepted) into `public/icons/synty/` (gitignored) with a version 3 manifest of
+  sets (`fs-`/`fw-` prefixed by pack) and pieces. Three kinds: `icon` is a white silhouette
+  (Clean/Stroke/Underlay), `render` an icon rendered from a POLYGON model (the Warrior HUD's
+  `ICON_SM_*` weapons and resources: coloured `Render`, white `Clean`, `Underlay`, `Side`),
+  `sprite` any other coloured art. The viewer's "2D art" tab (`/viewer.html?tab=art&sets=fw-weapons`)
+  browses it with set filters, tint swatches, variant and size controls. `client/ui/itemIcons.ts`
+  maps each item base to a piece: renders draw as images with a rarity glow, silhouettes as
+  tinted masks, and the game-icons SVGs in git remain the fallback when the manifest is absent.
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

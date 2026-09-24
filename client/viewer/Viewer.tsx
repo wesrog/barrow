@@ -36,8 +36,8 @@ const IDLE = "(idle)";
 
 /**
  * The URL can open the viewer on a scene: ?q=search&sel=entry id&r=held id
- * &l=held id&wear=id,id&clip=name&arm=1. Handy for sharing a look and for
- * scripted screenshots.
+ * &l=held id&wear=id,id&clip=name&arm=1, or on the art tab: ?tab=art&artq=
+ * search&sets=id,id. Handy for sharing a look and for scripted screenshots.
  */
 const params = new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -137,7 +137,7 @@ export function Viewer() {
   const [artQuery, setArtQuery] = useState(params.get("artq") ?? "");
   const [artSets, setArtSets] = useState<Set<string>>(new Set());
   const [tint, setTint] = useState(TINTS[1]!.css);
-  const [variant, setVariant] = useState<Variant>("Clean");
+  const [variant, setVariant] = useState<Variant>("Render");
   const [artSize, setArtSize] = useState(56);
   const [artSelected, setArtSelected] = useState<string | null>(null);
   const artPiece = useMemo(() => art?.pieces.find((p) => `${p.set}/${p.name}` === artSelected) ?? null, [art, artSelected]);
@@ -271,7 +271,7 @@ export function Viewer() {
     loadArtManifest(BASE).then((manifest) => {
       if (!mounted) return;
       setArt(manifest);
-      if (manifest) setArtSets(new Set(manifest.sets.map((s) => s.id)));
+      if (manifest) setArtSets(new Set(params.get("sets")?.split(",") ?? manifest.sets.map((s) => s.id)));
     });
     loadAssets()
       .then((assets) => {
@@ -677,7 +677,7 @@ export function Viewer() {
                 <div className="variants">
                   {Object.entries(artPiece.files).map(([v, file]) => (
                     <figure key={v}>
-                      {art?.sets.find((s) => s.id === artPiece.set)?.kind === "icon" ? (
+                      {artPiece.kind === "icon" ? (
                         <div
                           className="mask"
                           style={{ backgroundColor: tint, WebkitMaskImage: `url(${BASE}/icons/synty/${file})`, maskImage: `url(${BASE}/icons/synty/${file})` }}

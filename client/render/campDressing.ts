@@ -11,7 +11,7 @@ import { kitNode, type KitName, type Kits } from "./models";
  */
 
 export interface DressingRow {
-  /** Marker character the prop attaches to (V trader, H healer, F fire, S stash, W waypoint). */
+  /** Marker character the prop attaches to (V trader, H healer, F fire, S stash, W waypoint, hut, or a crypt set piece). */
   marker: string;
   kit: KitName;
   node: string;
@@ -21,6 +21,62 @@ export interface DressingRow {
   /** Yaw in radians. The camera looks in from +x +z, so "behind" a marker is -x -z. */
   ry: number;
   scale: number;
+  /** Height above the floor, in world units (hanging cages, floor overlays). */
+  y?: number;
+  /** Stand against the nearest wall to the marker instead (`flat`: hang on its face), turned into the room, `along` cells off the marker's projection. `inset` sets the distance from the face outright (a rug before a throne). */
+  wall?: boolean;
+  flat?: boolean;
+  along?: number;
+  inset?: number;
+  /** Centre a corner-pivoted piece's footprint on the point (the kit's floor tiles). */
+  center?: boolean;
+  /** An emissive flame above the piece. */
+  flame?: { color: number; height: number; size?: number };
+  /** A real point light over the piece. */
+  light?: { color: number; intensity: number; height: number };
+}
+
+export interface PlaceOpts {
+  /** Shift of the piece inside its wrapper, in the piece's own units (end-pivoted walls). */
+  offset?: readonly [number, number, number];
+  center?: boolean;
+  y?: number;
+  flame?: { color: number; height: number; size?: number };
+  light?: { color: number; intensity: number; height: number };
+}
+
+/** The nearest wall from a cell whose face the camera can see: its direction,
+ * how many cells away it stands (1 = adjacent), and a sideways step in cells
+ * when the straight ray would have run out through a doorway. */
+export interface WallHit {
+  dx: number;
+  dy: number;
+  dist: number;
+  along?: number;
+}
+export type WallToward = (x: number, y: number) => WallHit | null;
+
+/**
+ * Where a piece goes to sit against a wall: just inside the face, `along`
+ * cells sideways from the cell centre `(cx, cz)`, turned so its front (+z)
+ * looks into the room. Flat pieces (banners, chains) hang on the face
+ * itself; the rest keep their own depth off it unless `inset` says how far.
+ */
+export function againstWall(
+  wall: WallHit,
+  cx: number,
+  cz: number,
+  along = 0,
+  flat = false,
+  inset?: number,
+): { x: number; z: number; ry: number } {
+  const back = wall.dist - 0.5 - (inset ?? (flat ? 0.04 : 0.22));
+  const side = along + (wall.along ?? 0);
+  return {
+    x: cx + wall.dx * back - wall.dy * side,
+    z: cz + wall.dy * back + wall.dx * side,
+    ry: Math.atan2(-wall.dx, -wall.dy),
+  };
 }
 
 const PROPS: KitName = "viking_props";
@@ -77,34 +133,46 @@ export const HUT_WALLS = {
   wallOffset: [-1.25, 0, 0] as const,
 };
 
-/** Where a placed prop goes: world x/z, yaw, uniform scale, and an optional
- * offset of the piece inside its wrapper, in the piece's own units. */
-export type PlaceProp = (
-  node: THREE.Object3D,
-  x: number,
-  z: number,
-  ry: number,
-  scale: number,
-  offset?: readonly [number, number, number],
-) => void;
+/** Where a placed prop goes: world x/z, yaw, uniform scale, and what rides with it. */
+export type PlaceProp = (node: THREE.Object3D, x: number, z: number, ry: number, scale: number, opts?: PlaceOpts) => void;
 
 /**
- * Place every row whose kit loaded around every matching marker. Returns the
- * marker characters that got dressed, so the scene keeps its primitive
- * stand-ins (stone ring, dungeon crates) only where the kit is missing.
+ * Place every row of a table whose kit loaded around every matching marker.
+ * Wall rows need `wallToward`; without it, or with no wall in reach, they are
+ * skipped. Returns the marker characters that got dressed, so a scene keeps
+ * primitive stand-ins only where a kit is missing.
  */
-export function dressCamp(kits: Kits, markers: readonly MapMarker[], place: PlaceProp): Set<string> {
+export function dressMarkers(
+  kits: Kits,
+  markers: readonly MapMarker[],
+  rows: readonly DressingRow[],
+  place: PlaceProp,
+  wallToward?: WallToward,
+): Set<string> {
   const dressed = new Set<string>();
   for (const marker of markers) {
-    for (const row of CAMP_DRESSING) {
+    for (const row of rows) {
       if (row.marker !== marker.ch) continue;
       const node = kitNode(kits, row.kit, row.node);
       if (!node) continue;
-      place(node, marker.x + row.dx, marker.y + row.dz, row.ry, row.scale);
+      const opts: PlaceOpts = { y: row.y, center: row.center, flame: row.flame, light: row.light };
+      if (row.wall) {
+        const wall = wallToward?.(Math.floor(marker.x), Math.floor(marker.y));
+        if (!wall) continue;
+        const at = againstWall(wall, Math.floor(marker.x) + 0.5, Math.floor(marker.y) + 0.5, row.along, row.flat, row.inset);
+        place(node, at.x, at.z, at.ry + row.ry, row.scale, opts);
+      } else {
+        place(node, marker.x + row.dx, marker.y + row.dz, row.ry, row.scale, opts);
+      }
       dressed.add(marker.ch);
     }
   }
   return dressed;
+}
+
+/** The camp's rows, on the town's markers and the hut homes. */
+export function dressCamp(kits: Kits, markers: readonly MapMarker[], place: PlaceProp): Set<string> {
+  return dressMarkers(kits, markers, CAMP_DRESSING, place);
 }
 
 /**
@@ -133,7 +201,7 @@ export function dressHuts(
       } else {
         // Walls on the north and south rows run along x; the flanks along z.
         const ry = Math.abs(y - hy) === HUT_RADIUS ? 0 : Math.PI / 2;
-        place(wall, x + 0.5, y + 0.5, ry, HUT_WALLS.scale, HUT_WALLS.wallOffset);
+        place(wall, x + 0.5, y + 0.5, ry, HUT_WALLS.scale, { offset: HUT_WALLS.wallOffset });
       }
       walled.add(`${x},${y}`);
     }

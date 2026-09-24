@@ -1,3 +1,4 @@
+import { SECRET } from "./map";
 import { describe, expect, test } from "bun:test";
 import { ensureDungeonFloor, stepSolo, travel } from "./tick";
 import { breakProp, chestLevelBonus } from "./breakables";
@@ -18,12 +19,13 @@ const roomMap = () =>
   ]);
 
 describe("breakable spawning", () => {
-  test("a crypt floor holds breakables, including exactly one chest", () => {
+  test("a crypt floor holds breakables, with a chest for every $ marker (the vault's, each hidden passage's)", () => {
     const state = soloGame(7);
-    const breakables = ensureDungeonFloor(state, "barrow", 1).breakables;
-    expect(breakables.size).toBeGreaterThan(0);
-    const chests = [...breakables.values()].filter((b) => b.kind === "chest");
-    expect(chests.length).toBe(1);
+    const zone = ensureDungeonFloor(state, "barrow", 1);
+    expect(zone.breakables.size).toBeGreaterThan(0);
+    // The floor's own treasure chest, plus one per $ marker (the vault's, each hidden passage's).
+    const chests = [...zone.breakables.values()].filter((b) => b.kind === "chest");
+    expect(chests.length).toBe(1 + zone.map.markers.filter((m) => m.ch === "$").length);
   });
 
   test("same seed produces the identical layout", () => {
@@ -41,9 +43,12 @@ describe("breakable spawning", () => {
     for (const b of zone.breakables.values()) {
       const cx = Math.floor(b.pos.x);
       const cy = Math.floor(b.pos.y);
-      expect(map.cells[cy * map.width + cx]).toBe(1);
+      // A hidden passage's chest waits on a secret cell until the run opens.
+      expect([1, SECRET]).toContain(map.cells[cy * map.width + cx]);
       expect(cx === Math.floor(map.spawn.x) && cy === Math.floor(map.spawn.y)).toBe(false);
+      // A $ marker is a chest's own spot; every other marker stays clear.
       for (const m of map.markers) {
+        if (m.ch === "$") continue;
         expect(cx === Math.floor(m.x) && cy === Math.floor(m.y)).toBe(false);
       }
     }

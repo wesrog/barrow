@@ -41,21 +41,25 @@ export interface DungeonStyle {
   erode: number;
   /** Monster pack budget per floor. */
   packs: number;
+  /** Open halls: big rooms with a crowd of `pack` monsters each, laid out after the rooms. */
+  halls: { count: number; wMin: number; wMax: number; hMin: number; hMax: number; pack: number };
+  /** Hidden passages per floor: one-wide runs of SECRET cells joining two rooms, a chest halfway. */
+  secrets: number;
 }
 
 export const DUNGEON_STYLES: Record<DungeonStyleId, DungeonStyle> = {
   // Clean rectangular halls under the barrow.
-  barrow_halls: { width: 44, height: 36, rooms: { count: 9, wMin: 5, wMax: 9, hMin: 4, hMax: 7 }, corridor: 2, erode: 0, packs: 14 },
+  barrow_halls: { width: 48, height: 40, rooms: { count: 9, wMin: 5, wMax: 9, hMin: 4, hMax: 7 }, corridor: 2, erode: 0, packs: 12, halls: { count: 2, wMin: 10, wMax: 13, hMin: 7, hMax: 9, pack: 7 }, secrets: 2 },
   // Rooty, eroded warrens under the fen.
-  root_warren: { width: 40, height: 34, rooms: { count: 8, wMin: 4, wMax: 7, hMin: 4, hMax: 6 }, corridor: 1, erode: 0.45, packs: 12 },
+  root_warren: { width: 40, height: 34, rooms: { count: 8, wMin: 4, wMax: 7, hMin: 4, hMax: 6 }, corridor: 1, erode: 0.45, packs: 10, halls: { count: 1, wMin: 8, wMax: 10, hMin: 6, hMax: 8, pack: 5 }, secrets: 1 },
   // Long narrow ossuary galleries.
-  gallow_ossuary: { width: 48, height: 30, rooms: { count: 10, wMin: 6, wMax: 11, hMin: 3, hMax: 5 }, corridor: 1, erode: 0.1, packs: 14 },
+  gallow_ossuary: { width: 48, height: 30, rooms: { count: 10, wMin: 6, wMax: 11, hMin: 3, hMax: 5 }, corridor: 1, erode: 0.1, packs: 12, halls: { count: 1, wMin: 12, wMax: 15, hMin: 5, hMax: 6, pack: 6 }, secrets: 2 },
   // Jagged gouges through the mountain.
-  cragmaw_gouge: { width: 40, height: 40, rooms: { count: 8, wMin: 4, wMax: 6, hMin: 4, hMax: 6 }, corridor: 1, erode: 0.55, packs: 12 },
+  cragmaw_gouge: { width: 40, height: 40, rooms: { count: 8, wMin: 4, wMax: 6, hMin: 4, hMax: 6 }, corridor: 1, erode: 0.55, packs: 10, halls: { count: 1, wMin: 8, wMax: 10, hMin: 7, hMax: 9, pack: 5 }, secrets: 1 },
   // Broad scorched vaults.
-  ember_catacomb: { width: 46, height: 38, rooms: { count: 9, wMin: 5, wMax: 10, hMin: 4, hMax: 8 }, corridor: 2, erode: 0.15, packs: 15 },
+  ember_catacomb: { width: 46, height: 38, rooms: { count: 9, wMin: 5, wMax: 10, hMin: 4, hMax: 8 }, corridor: 2, erode: 0.15, packs: 13, halls: { count: 2, wMin: 10, wMax: 13, hMin: 7, hMax: 9, pack: 7 }, secrets: 2 },
   // Tall cold halls under the crown.
-  violet_undercroft: { width: 44, height: 40, rooms: { count: 9, wMin: 5, wMax: 8, hMin: 5, hMax: 8 }, corridor: 2, erode: 0.05, packs: 15 },
+  violet_undercroft: { width: 44, height: 40, rooms: { count: 9, wMin: 5, wMax: 8, hMin: 5, hMax: 8 }, corridor: 2, erode: 0.05, packs: 13, halls: { count: 2, wMin: 9, wMax: 12, hMin: 8, hMax: 10, pack: 7 }, secrets: 2 },
 };
 
 export const DUNGEONS: Record<DungeonId, DungeonDef> = {

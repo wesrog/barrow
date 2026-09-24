@@ -68,6 +68,7 @@ import {
   applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem, questProgressSystem,
 } from "./systems/quests";
 import { npcWanderSystem } from "./systems/npcs";
+import { secretSystem } from "./systems/secrets";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -428,6 +429,7 @@ export function step(state: GameState, frame: Frame): void {
     // Leaping and charging players neither walk nor trip floor triggers until they stop.
     const grounded = () => acting().filter((p) => !p.leap && !p.charge);
     movementSystem(grounded());
+    secretSystem(state, zone, grounded());
     regionSystem(state, zone, grounded());
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());

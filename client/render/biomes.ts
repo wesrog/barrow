@@ -1,5 +1,6 @@
 import type { BiomeId } from "../../sim/areas";
 import type { DungeonStyleId } from "../../sim/dungeons";
+import type { DressingFamily } from "./cryptDressing";
 
 /** Everything the outdoor scene tints per region: sky, fog, ground, flora. */
 export interface BiomePalette {
@@ -126,8 +127,8 @@ export interface DungeonPalette {
   /** Multiplied into the wall/floor piece materials; white leaves them as authored. */
   wallTint: number;
   floorTint: number;
-  /** Relative dressing weights; 0 disables that prop family. */
-  dressing: { coffins: number; bones: number; columns: number };
+  /** Relative weights of the loose-prop families (cryptDressing.ts) scattered along the walls. */
+  dressing: Partial<Record<DressingFamily, number>>;
 }
 
 export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
@@ -140,7 +141,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.5,
     wallTint: 0xffffff,
     floorTint: 0xffffff,
-    dressing: { coffins: 3, bones: 2, columns: 2 },
+    dressing: { coffins: 3, bones: 2, columns: 2, vases: 2, rubble: 1, remains: 2, candles: 2, chains: 1, banners: 1, cages: 1, furniture: 1, lanterns: 1 },
   },
   // Warm rot-brown warrens, close air, root-choked: no coffins down here.
   root_warren: {
@@ -151,7 +152,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.6,
     wallTint: 0xd8b48e,
     floorTint: 0xc9b493,
-    dressing: { coffins: 0, bones: 2, columns: 0 },
+    dressing: { bones: 2, rubble: 3, vases: 1, remains: 1, candles: 1, mushrooms: 4 },
   },
   // Cold grey-green ossuary light, bone everywhere, ranks of columns.
   gallow_ossuary: {
@@ -162,7 +163,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.55,
     wallTint: 0xd2e0cc,
     floorTint: 0xc4d2be,
-    dressing: { coffins: 1, bones: 5, columns: 3 },
+    dressing: { coffins: 1, bones: 5, columns: 3, remains: 3, chains: 2, cages: 2, candles: 1 },
   },
   // Raw slate gouges, thin ochre light, bare rock.
   cragmaw_gouge: {
@@ -173,7 +174,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.62,
     wallTint: 0xd9cbb4,
     floorTint: 0xccbfa8,
-    dressing: { coffins: 0, bones: 1, columns: 1 },
+    dressing: { bones: 1, columns: 1, rubble: 3, mushrooms: 2 },
   },
   // Ember-lit scorched vaults, warm dark, cracked columns.
   ember_catacomb: {
@@ -184,7 +185,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.58,
     wallTint: 0xe0b294,
     floorTint: 0xd0a488,
-    dressing: { coffins: 1, bones: 2, columns: 3 },
+    dressing: { coffins: 1, bones: 2, columns: 3, candles: 3, banners: 2, remains: 1, rubble: 1 },
   },
   // Violet-black cold halls, starlight seeping down.
   violet_undercroft: {
@@ -195,6 +196,6 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.56,
     wallTint: 0xd0c4ec,
     floorTint: 0xbfb4da,
-    dressing: { coffins: 2, bones: 1, columns: 4 },
+    dressing: { coffins: 2, bones: 1, columns: 4, candles: 2, banners: 2, furniture: 2, vases: 1, lanterns: 2 },
   },
 };

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import * as THREE from "three";
-import { CAMP_DRESSING, HUT_WALLS, dressCamp, dressHuts } from "./campDressing";
+import { CAMP_DRESSING, HUT_WALLS, againstWall, dressCamp, dressHuts, dressMarkers, type DressingRow } from "./campDressing";
 import { KIT_URLS, type Kits } from "./models";
 
 function fakeKits(): Kits {
@@ -42,6 +42,42 @@ describe("dressCamp", () => {
   });
 });
 
+describe("dressMarkers", () => {
+  const rows: DressingRow[] = [
+    { marker: "K", kit: "viking_props", node: "Prop_Awning_01", dx: 0, dz: 0, ry: 0, scale: 0.4, wall: true },
+    { marker: "K", kit: "viking_props", node: "Prop_Fire_Pit_02", dx: 0, dz: 0, ry: 0, scale: 0.4, wall: true, flat: true, along: 2 },
+    { marker: "K", kit: "viking_props", node: "Prop_Awning_01", dx: 1, dz: 0, ry: 0, scale: 0.4 },
+  ];
+
+  test("wall rows sit just inside the nearest wall face, turned into the room", () => {
+    const placed: { name: string; x: number; z: number; ry: number }[] = [];
+    // The wall is three cells north of the marker (y decreasing).
+    const north = () => ({ dx: 0, dy: -1, dist: 3 });
+    dressMarkers(fakeKits(), [{ ch: "K", x: 10.5, y: 20.5 }], rows, (node, x, z, ry) => placed.push({ name: node.name, x, z, ry }), north);
+    expect(placed.length).toBe(3);
+    const throne = placed[0]!;
+    expect(throne.x).toBeCloseTo(10.5);
+    expect(throne.z).toBeCloseTo(20.5 - 3 + 0.5 + 0.22); // its own depth off the face at z = 18
+    expect(throne.ry).toBeCloseTo(0); // front (+z) faces back into the room
+    const hanging = placed[1]!;
+    expect(hanging.z).toBeCloseTo(20.5 - 3 + 0.5 + 0.04); // flat on the face
+    expect(hanging.x).toBeCloseTo(10.5 + 2); // `along` runs sideways along the wall
+    expect(placed[2]!.x).toBeCloseTo(11.5); // plain rows still offset from the marker
+  });
+
+  test("wall rows are skipped when no wall is in reach", () => {
+    const placed: string[] = [];
+    dressMarkers(fakeKits(), [{ ch: "K", x: 10.5, y: 20.5 }], rows, (node) => placed.push(node.name), () => null);
+    expect(placed).toEqual(["Prop_Awning_01"]);
+  });
+
+  test("againstWall faces each wall direction into the room", () => {
+    expect(againstWall({ dx: 1, dy: 0, dist: 1 }, 0.5, 0.5).ry).toBeCloseTo(-Math.PI / 2);
+    expect(Math.abs(againstWall({ dx: 0, dy: 1, dist: 1 }, 0.5, 0.5).ry)).toBeCloseTo(Math.PI);
+    expect(againstWall({ dx: -1, dy: 0, dist: 1 }, 0.5, 0.5).x).toBeCloseTo(0.5 - 0.28);
+  });
+});
+
 describe("dressHuts", () => {
   const structures = () => {
     const scene = new THREE.Group();
@@ -57,8 +93,8 @@ describe("dressHuts", () => {
     const placed: { name: string; x: number; z: number; ry: number; offset?: readonly number[] }[] = [];
     // The doorway sits south of home, as the carver leaves it when the gate lies that way.
     const door = { x: 42, y: 24 };
-    const walled = dressHuts(structures(), [{ x: 42.5, y: 22.5 }], (x, y) => x === door.x && y === door.y, (node, x, z, ry, _s, offset) =>
-      placed.push({ name: node.name, x, z, ry, offset }),
+    const walled = dressHuts(structures(), [{ x: 42.5, y: 22.5 }], (x, y) => x === door.x && y === door.y, (node, x, z, ry, _s, opts) =>
+      placed.push({ name: node.name, x, z, ry, offset: opts?.offset }),
     );
     expect(walled.size).toBe(15);
     expect(walled.has("42,24")).toBe(false);

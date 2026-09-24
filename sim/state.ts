@@ -214,6 +214,7 @@ export type SimEvent =
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }
+  | { type: "secret_found"; playerId: PlayerId; cells: Vec[]; zone: ZoneId }
   | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | { type: "gold_picked"; playerId: PlayerId; amount: number }

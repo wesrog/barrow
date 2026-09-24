@@ -51,8 +51,15 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
 ## Layout
 
 - `sim/` — rng, state, tick, elements (resistances), debuffs, dungeons (registry), dungeon-gen (floor generator),
-  systems/ (movement, ai, combat, death, xp),
-  items/ (bases, affixes, treasure, generate), character, skills (trees/tiers/rank math), map
+  systems/ (movement, ai, combat, death, xp, secrets),
+  items/ (bases, affixes, treasure, generate), character, skills (trees/tiers/rank math), map.
+  A crypt floor is rooms plus a few big `halls` (each with a crowd of its own pack), corridors,
+  erosion, then `secrets` hidden passages: 1-wide L runs of `SECRET` cells (walls until a player
+  brushes one; `secretSystem` reveals the whole run, bumps `map.revision`, emits `secret_found`)
+  with a `$` chest marker mid-run. Spare rooms get one set-piece marker each from `SET_PIECES`
+  (K throne, G gaol, L library, P ritual circle, which also spawns three extra monsters); halls
+  carry an `R` marker. Lowercase markers are monster spawns. Players start on the crypt's first
+  floor (`START_ZONE`); `PlayerJoin.start` overrides it (tests use `"surface"`).
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
@@ -62,7 +69,8 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   the per-monster look table (undead types on the Dungeon Pack rig, raiders on the goblin rig,
   villagers on the human spec) and the hero build: a Viking Realm human (warrior male, leader
   female for the witch) dressed from the Viking weapon, shield, helmet and fur kits. In dev,
-  `window.__barrow` exposes game, driver, input, assets. Rig specs list clip candidates in
+  `window.__barrow` exposes game, driver, input, assets, and scene (`scene.three` is the
+  Three scene, for finding placed props by name). Rig specs list clip candidates in
   order (retargeted KayKit copy first, goblin pack second) so a machine missing a clip kit
   still animates. The hero stands 1.56 units and monster scales keep the heights the game was
   tuned at (Synty humanoids are authored 1.8 tall). `scatter.ts` instances the Viking nature kit over
@@ -73,7 +81,20 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   stall, sickbed, banner, rune stone) and inside huts, plus `dressHuts`, which raises log walls
   and corner posts on a hut dweller's wall ring (`hutRing` in `sim/npcs.ts`, shared with the
   zone carver) and hands the scene the cells to leave bare. The primitive campfire and
-  dungeon-prop stall remain the fallback. Kit nodes stand at the origin but a few carry a
+  dungeon-prop stall remain the fallback. `dressMarkers` is the general form: any row table on
+  any markers, with `wall` rows set against the nearest wall the scene's `wallToward` finds.
+  Only a room's -x and -z walls show the camera their faces (the near walls' blocks hide
+  anything set against them), so `wallToward` searches those two directions, up to ten cells,
+  stepping one cell sideways when the straight ray would leave through a doorway; `flat` rows
+  hang on the face, `inset` sets the standoff, `center` puts a corner-pivoted tile on the point,
+  and `flame`/`light` rows add a flickering flame or a point light. `cryptDressing.ts` holds
+  the Dungeon Pack side: `DUNGEON_DRESSING` families of loose props (coffins, bones, vases,
+  candles, chains, banners, cages, mushrooms, lanterns...) scattered along walls by cell hash
+  with per-style weights in `biomes.ts`, and `CRYPT_SET_PIECES`, the rows around each
+  generator marker. The crypt keeps wall facades per cell and the dark cores as one
+  InstancedMesh with an index per cell, so `secret_found` can shrink a passage's cores away,
+  drop its facades, lay floor tiles, and re-face the walls beside it; hidden cells wear the
+  cracked wall on every face as a tell. Kit nodes stand at the origin but a few carry a
   translation that centres an offset mesh, so place them inside a wrapper group rather than
   overwriting their position. `gear.ts` is the one path for held and worn kit pieces:
   `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y

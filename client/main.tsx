@@ -146,7 +146,15 @@ function Game({
       setReady(true);
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
-        (window as { __barrow?: unknown }).__barrow = { game, driver, input: uiInputRef, assets };
+        (window as { __barrow?: unknown }).__barrow = {
+          game,
+          driver,
+          input: uiInputRef,
+          assets,
+          get scene() {
+            return scene;
+          },
+        };
       }
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
@@ -573,6 +581,9 @@ function Game({
                 );
                 save(); // a border crossing is a moment worth keeping
               }
+              break;
+            case "secret_found":
+              if (e.playerId === localId()) pushToast("a hidden passage opens");
               break;
             case "waypoint_found":
               if (e.playerId === localId()) {

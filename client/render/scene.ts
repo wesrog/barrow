@@ -28,6 +28,7 @@ import { againstWall, dressBuildings, dressCamp, dressHuts, dressMarkers, dressP
 import type { BuildingDef } from "../../sim/buildings";
 import { CRYPT_SET_PIECES, DUNGEON_DRESSING, type DressingFamily } from "./cryptDressing";
 import { WILD_SET_PIECES } from "./wildDressing";
+import { CRYPT_LIGHTS, OUTDOOR_LIGHTS, type LightScatter } from "./lightDressing";
 import { LANDMARKS } from "../../sim/landmarks";
 import { bakeScatter, ScatterBatch } from "./scatter";
 import { groundGeometry, groundMaterial } from "./ground";
@@ -431,6 +432,50 @@ export function createScene(
     dressMarkers(assets.kits, map.markers, WILD_SET_PIECES, placeProp);
   }
 
+  /** Scatter one setting's lights: at most one per block, on open floor clear of
+   * markers, walls the scene raised, and the camp, chosen by the cell hash. */
+  const scatterLights = (spec: LightScatter, avoid: (x: number, y: number) => boolean): void => {
+    const pieces = spec.pieces.filter((p) => p.parts.every((part) => kitNode(assets.kits, part.kit, part.node)));
+    const total = pieces.reduce((s, p) => s + p.weight, 0);
+    if (total === 0) return;
+    const keep = map.markers.filter((m) => !/[a-z]/.test(m.ch));
+    for (let by = 0; by < map.height; by += spec.block) {
+      for (let bx = 0; bx < map.width; bx += spec.block) {
+        const bh = hash(bx * 7 + 3, by * 13 + 5);
+        if ((bh % 1000) / 1000 >= spec.chance) continue;
+        // a few tries inside the block for a spot with open floor around it
+        for (let t = 0; t < 6; t++) {
+          const th = hash(bx + t * 31, by + t * 17);
+          const x = bx + (th % spec.block);
+          const y = by + ((th >> 8) % spec.block);
+          let open = true;
+          for (let dy = -spec.clear; dy <= spec.clear && open; dy++) {
+            for (let dx = -spec.clear; dx <= spec.clear; dx++) {
+              if (!isWalkable(map, x + dx, y + dy)) {
+                open = false;
+                break;
+              }
+            }
+          }
+          if (!open || avoid(x, y) || stairCells.has(`${x},${y}`)) continue;
+          if (keep.some((m) => Math.hypot(x + 0.5 - m.x, y + 0.5 - m.y) < 3)) continue;
+          let roll = (th >> 16) % total;
+          const piece = pieces.find((p) => (roll -= p.weight) < 0)!;
+          const ry = ((th >> 4) % 628) / 100;
+          const cos = Math.cos(ry);
+          const sin = Math.sin(ry);
+          piece.parts.forEach((part, i) => {
+            const dx = (part.dx ?? 0) * piece.scale;
+            const dz = (part.dz ?? 0) * piece.scale;
+            // the piece's first part carries the flame and the lamp
+            placeProp(kitNode(assets.kits, part.kit, part.node)!, x + 0.5 + dx * cos + dz * sin, y + 0.5 - dx * sin + dz * cos, ry + (part.ry ?? 0), piece.scale, i === 0 ? { flame: piece.flame, light: piece.light } : undefined);
+          });
+          break;
+        }
+      }
+    }
+  };
+
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
   // Stair cells (down and up) get a real stairwell instead of a floor tile.
@@ -544,6 +589,8 @@ export function createScene(
       }
     }
     dressMarkers(assets.kits, map.markers, CRYPT_SET_PIECES, placeProp, wallToward);
+    // Braziers and candle stands in the open middle of rooms, clear of the walls' dressing.
+    scatterLights(CRYPT_LIGHTS, (x, y) => Math.hypot(x + 0.5 - map.spawn.x, y + 0.5 - map.spawn.y) < 3);
   } else {
     // --- Open ground: every region lays its own textured plane over its
     // slice of the world (bare dirt, with the odd grass tuft instanced on
@@ -656,6 +703,17 @@ export function createScene(
         addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
       }
     }
+  }
+
+  // Standing torches, braziers and small campfires over the open ground; the
+  // camp and its surroundings are lit already.
+  if (outdoor) {
+    scatterLights(
+      OUTDOOR_LIGHTS,
+      (x, y) =>
+        walled.has(`${x},${y}`) ||
+        map.camps.some((c) => x >= c.x0 - 4 && x < c.x1 + 4 && y >= c.y0 - 4 && y < c.y1 + 4),
+    );
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---

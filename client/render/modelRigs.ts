@@ -306,7 +306,8 @@ interface SyntyWeaponLook {
 
 /** The crossbow's seat, tuned in the viewer's grip tuner. */
 const CROSSBOW_ADJUST: SyntyWeaponLook["adjust"] = {
-  ranged: { rot: [90, 0, 0], pos: [0, 0, 0], scale: 1 },
+  rest: { rot: [0, 0, 0], pos: [0, 0, 0], scale: 1 },
+  ranged: { rot: [90, -104, 0], pos: [-0.75, 0.225, 0], scale: 1 },
 };
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {

@@ -46,6 +46,9 @@ export interface ModelRig extends Rig {
   clipNames(): string[];
   /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
   footfall?: () => void;
+  /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms);
+   * moving drops it at once. */
+  holdStance(clip: ClipId, until: number): void;
 }
 
 export interface HeroModelRig extends ModelRig {
@@ -81,6 +84,7 @@ class AnimRig implements ModelRig {
   private lastNow: number | null = null;
   private current: THREE.AnimationAction | null = null;
   private oneShotUntil = 0;
+  private stance: { name: string; until: number } | null = null;
   private idleName: string | undefined;
   private walkName: string | undefined;
   footfall?: () => void;
@@ -149,6 +153,11 @@ class AnimRig implements ModelRig {
     this.oneShotUntil = 0;
   }
 
+  holdStance(clip: ClipId, until: number): void {
+    const name = this.clipName(clip);
+    if (name) this.stance = { name, until };
+  }
+
   bone(role: BoneRole): THREE.Object3D | null {
     return findNode(this.group, this.spec.bones[role]);
   }
@@ -160,9 +169,13 @@ class AnimRig implements ModelRig {
     if (this.oneShotUntil > 0 && this.oneShotUntil !== Number.POSITIVE_INFINITY && this.moveCancels && speed > 1.0) {
       this.oneShotUntil = 0;
     }
+    // Walking or running lowers a held stance; so does waiting it out.
+    if (this.stance && (speed > 0.4 || now >= this.stance.until)) this.stance = null;
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
-      if (speed > 0.4 && this.walkName) {
+      if (this.stance) {
+        this.play(this.stance.name, 0.12);
+      } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
         if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));
       } else if (this.idleName) {

@@ -1303,6 +1303,17 @@ export function createScene(
   // --- Arrows: the Viking kit's arrow (centred, 1 unit along Z) flies from the
   // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
   const ARROW_SPEED = 28; // cells per second: a blur, not a lob
+  /** Longest a bolt's streak grows, in cells. */
+  const STREAK_LEN = 1.6;
+  /** A unit-length cone lying along the bolt's -Z (behind it), wide end at the bolt; scaled in Z for length. */
+  const STREAK_GEO = (() => {
+    const geo = new THREE.ConeGeometry(0.03, 1, 6, 1, true);
+    // The cone stands on +Y with its apex up: lift the base to the origin, then tip +Y onto -Z
+    // so the base sits at the bolt and the point trails behind it (the bolt group faces +Z).
+    geo.translate(0, 0.5, 0);
+    geo.rotateX(-Math.PI / 2);
+    return geo;
+  })();
   /** The release: a small hot flash that swells and fades in a blink at the weapon's muzzle. */
   const flashGeo = new THREE.IcosahedronGeometry(0.07, 1);
   const releaseFlash = (at: THREE.Vector3): void => {
@@ -1331,7 +1342,7 @@ export function createScene(
       const arrow = src.clone(true);
       arrow.position.set(0, 0, 0);
       g.add(arrow);
-      g.scale.setScalar(bolt ? 1.1 : 0.7);
+      g.scale.setScalar(bolt ? 1.3 : 0.7);
     } else {
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4), flatMat(0x8a6a3a));
       shaft.rotation.x = Math.PI / 2;
@@ -1348,6 +1359,19 @@ export function createScene(
     const dur = Math.max(60, (flight / ARROW_SPEED) * 1000);
     const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, sy + (0.7 - sy) * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
     if (muzzle) releaseFlash(muzzle);
+    // A bright streak trails the bolt: a thin cone, fat at the bolt and fading to
+    // nothing behind it, added on top of the scene so it reads against the dark.
+    // It grows out of the muzzle rather than sticking out behind the archer.
+    const streakMat = new THREE.MeshBasicMaterial({
+      color: 0xfff0c8,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const streak = new THREE.Mesh(STREAK_GEO, streakMat);
+    streak.scale.set(1, 1, 0.01);
+    g.add(streak);
     g.position.copy(at(0));
     g.lookAt(at(0.05));
     scene.add(g);
@@ -1356,9 +1380,13 @@ export function createScene(
       (t) => {
         g.position.copy(at(t));
         g.lookAt(at(Math.min(1, t + 0.05)));
+        // The streak's length in the bolt group's units: up to STREAK_LEN cells, never more than the ground flown.
+        const flown = t * flight;
+        streak.scale.set(1, 1, Math.max(0.01, Math.min(STREAK_LEN, flown)) / g.scale.x);
       },
       () => {
         scene.remove(g);
+        streakMat.dispose();
         fx.burst(to.x, 0.7, to.y, 0xcfc4a8, 4, 0.8);
       },
     );
@@ -1369,6 +1397,7 @@ export function createScene(
   // skill fires on its cast tick) is held back to that frame, and a bolt with
   // no shot playing (a remote hero, a cancelled clip) starts one first. ---
   const SHOT_BLEND_MS = 80;
+  const AIM_HOLD_MS = 2500;
   const SHOT_RELEASE_S = 0.15;
   const shotAt = new Map<PlayerId, { at: number; timeScale: number }>();
   const releaseMs = (timeScale: number) => SHOT_BLEND_MS + (SHOT_RELEASE_S / timeScale) * 1000;
@@ -1377,7 +1406,11 @@ export function createScene(
     const last = shotAt.get(playerId);
     const now = performance.now();
     if (last && now - last.at < 60) return; // a multishot's arrows share one draw
-    heroOf(playerId)?.rig.oneShot("shoot", { timeScale, cancelOnMove: false });
+    const rig = heroOf(playerId)?.rig;
+    rig?.oneShot("shoot", { timeScale, cancelOnMove: false });
+    // Between shots the crossbow stays up: the aiming stance holds for a few
+    // seconds after the last one, until the archer walks or runs.
+    rig?.holdStance("aim", now + AIM_HOLD_MS);
     shotAt.set(playerId, { at: now, timeScale });
   };
   /** Fly a bolt once the archer's shot reaches its release frame. */

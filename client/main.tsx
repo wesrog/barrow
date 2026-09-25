@@ -480,9 +480,17 @@ function Game({
               scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
               break;
-            case "player_swing":
-              play("swing", undefined, weaponEdge(game));
+            case "player_swing": {
+              // The whoosh is for blows that meet only air. A swing with a
+              // monster in reach will land (the sim strikes whatever is
+              // nearest within reach), so the hit sound speaks for it.
+              const hero = localPlayer(game);
+              const inReach = [...zoneOf(game, hero).monsters.values()].some(
+                (m) => m.life > 0 && Math.hypot(m.pos.x - hero.pos.x, m.pos.y - hero.pos.y) <= hero.range * 1.35,
+              );
+              if (!inReach) play("swing", undefined, weaponEdge(game));
               break;
+            }
             case "monster_swing":
               if (e.ranged) play("spit", zoneOf(game, localPlayer(game)).monsters.get(e.id)?.typeId);
               break;

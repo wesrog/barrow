@@ -63,13 +63,14 @@ export interface HeroModelRig extends ModelRig {
   attackClip(): ClipId;
 }
 
+/** Rarity shows as a faint wash of its colour over the piece's own texture, not a glow. */
 const RARITY_GLOW: Record<string, number> = {
-  magic: 0x2a3ea0,
-  rare: 0x8a7420,
-  unique: 0x8a5010,
+  magic: 0x5a78ff,
+  rare: 0xe0c040,
+  unique: 0xe08a30,
 };
 
-function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.35): void {
+function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.07): void {
   const glow = RARITY_GLOW[item.rarity];
   if (glow === undefined) return;
   obj.traverse((child) => {
@@ -183,8 +184,10 @@ class AnimRig implements ModelRig {
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
       if (this.stance) {
-        const action = this.play(this.stance.name, 0.12);
-        // Skip the clip's opening raise, and keep its loop from wrapping back through it.
+        // Played once and held on its last frame: looping would wrap back through the
+        // clip's opening raise (a lowered pose) and flick the weapon down mid-hold.
+        const action = this.play(this.stance.name, 0.12, false);
+        // Skip the opening raise.
         if (action && action.time < this.stance.from) action.time = this.stance.from;
       } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
@@ -256,20 +259,10 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Shared by both hero families: rarity glow on held weapons is stronger than on armor. */
-const WEAPON_GLOW = 0.5;
+/** Shared by both hero families: rarity glow on held weapons is a touch stronger than on armor. */
+const WEAPON_GLOW = 0.08;
 
 // ---------------------------------------------------------------------------
-const CHEST_LOOKS: Record<string, { color: number; metal: boolean; big: boolean }> = {
-  rag_tunic: { color: 0x6a5a44, metal: false, big: false },
-  studded_jerkin: { color: 0x4a3a2c, metal: false, big: false },
-  grave_plate: { color: 0x8a94a4, metal: true, big: true },
-};
-
-function chestLook(baseId: string) {
-  return CHEST_LOOKS[baseId] ?? CHEST_LOOKS.rag_tunic!;
-}
-
 /** Whether an off-hand item is a caster orb (a shield-slot item that deals damage). */
 function isOrb(item: Item): boolean {
   return BASES[item.baseId]!.dmgMin !== undefined;
@@ -431,16 +424,6 @@ const SYNTY_SHIELDS: Record<string, string> = {
 };
 const SYNTY_SHIELD_DEFAULT = "Wep_Shield_Set_01";
 
-/**
- * Box overlays for the chest in the Synty rig's bone frames, where X
- * runs along the bone, Y points backward, and Z sideways (measured on the
- * rig). Sizes are in the model's 1.8-unit-tall space.
- */
-const SYNTY_OVERLAYS = {
-  pauldron: { size: [0.16, 0.16, 0.16] as const, big: [0.2, 0.2, 0.2] as const, offset: [0.03, 0, 0] as const },
-  plate: { size: [0.3, 0.18, 0.36] as const, offset: [0.05, -0.04, 0] as const },
-};
-
 function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const rig = new AnimRig(inst, SYNTY_HUMAN_RIG, "idle", "run");
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
@@ -465,19 +448,6 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const restInverses = captureRestInverses(rig.group);
 
   const gear: THREE.Object3D[] = [];
-  const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
-    const bone = rig.bone(role);
-    if (!bone) return;
-    applyRarityGlow(mesh, item);
-    bone.add(mesh);
-    gear.push(mesh);
-  };
-  const box = (size: readonly [number, number, number], offset: readonly [number, number, number], mat: THREE.Material) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
-    mesh.position.set(...offset);
-    mesh.castShadow = true;
-    return mesh;
-  };
   /** Wear a Viking attachment on the bone its kind rides; false when the kit or bone is missing. */
   const wear = (name: string, item: Item): boolean => {
     const placement = wornPlacement(kits, "viking_attachments", name);
@@ -501,17 +471,11 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       for (const name of SYNTY_HELMS[eq.helm.baseId] ?? SYNTY_HELM_DEFAULT) wear(name, eq.helm);
     }
 
+    // Chest armour shows as its fur mantle (the rag tunic wears none). The flat box
+    // plate and pauldrons it used to add read as coloured boxes once rarity tinted them.
     if (eq.chest) {
-      const look = chestLook(eq.chest.baseId);
-      const mat = flatMat(look.color, look.metal ? 0.45 : 0.75);
       const mantle = SYNTY_MANTLES[eq.chest.baseId];
-      const furred = mantle ? wear(mantle, eq.chest) : false;
-      if (!furred && mantle !== null) {
-        const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
-        addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
-        addGear("upperArmR", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
-      }
-      addGear("chest", box(SYNTY_OVERLAYS.plate.size, SYNTY_OVERLAYS.plate.offset, mat), eq.chest);
+      if (mantle) wear(mantle, eq.chest);
     }
 
     // Boots draw nothing on the model for now: the box greaves hung off the
@@ -578,7 +542,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     return off;
   };
   hero.muzzle = () => {
-    if (!held) return null;
+    // Only while the crossbow is raised: a bolt loosed from the resting seat (a frame
+    // hitch, a remote hero) would flash wherever the lowered weapon happens to point.
+    if (!held || held.pose !== "ranged") return null;
     held.model.updateWorldMatrix(true, false);
     return held.model.localToWorld(held.tip.clone());
   };

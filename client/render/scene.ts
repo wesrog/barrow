@@ -1394,26 +1394,34 @@ export function createScene(
       },
     );
   };
-  // --- Shots: the bolt waits for the crossbow. The shoot clip kicks at its
-  // release about 0.15 s in (measured off the clip's bone motion), after an
-  // 80 ms blend from whatever was playing; a bolt the sim resolves sooner (a
+  // --- Shots: the bolt waits for the crossbow. The shoot clip plays from its
+  // raised pose (0.2 s in) and recoils at about 0.25 s, after an 80 ms blend
+  // (measured off the clip's bone motion); a bolt the sim resolves sooner (a
   // skill fires on its cast tick) is held back to that frame, and a bolt with
   // no shot playing (a remote hero, a cancelled clip) starts one first. ---
   const SHOT_BLEND_MS = 80;
   const AIM_HOLD_MS = 2500;
-  const SHOT_RELEASE_S = 0.15;
+  /** The shoot clip opens by raising the crossbow from a neutral pose (its first 0.2 s):
+   * start past that, the recoil lands just after, and end once it settles. */
+  const SHOT_START_S = 0.2;
+  const SHOT_END_S = 0.45;
+  /** The aiming clip also spends its first 0.2 s raising: hold it from 0.3 s on. */
+  const AIM_FROM_S = 0.3;
+  const SHOT_RELEASE_S = 0.25;
   const shotAt = new Map<PlayerId, { at: number; timeScale: number }>();
-  const releaseMs = (timeScale: number) => SHOT_BLEND_MS + (SHOT_RELEASE_S / timeScale) * 1000;
+  const releaseMs = (timeScale: number) => SHOT_BLEND_MS + ((SHOT_RELEASE_S - SHOT_START_S) / timeScale) * 1000;
   /** Raise and loose: the shoot clip, which running never cancels. One per volley. */
   const startShot = (playerId: PlayerId, timeScale: number): void => {
     const last = shotAt.get(playerId);
     const now = performance.now();
     if (last && now - last.at < 60) return; // a multishot's arrows share one draw
     const rig = heroOf(playerId)?.rig;
-    rig?.oneShot("shoot", { timeScale, cancelOnMove: false });
+    // Trimmed to the raised part of the clip: its opening raise and closing lowering would
+    // drop the crossbow between shots only for the held aim to raise it again, a fidget.
+    rig?.oneShot("shoot", { timeScale, cancelOnMove: false, startAt: SHOT_START_S, endAt: SHOT_END_S });
     // Between shots the crossbow stays up: the aiming stance holds for a few
     // seconds after the last one, until the archer walks or runs.
-    rig?.holdStance("aim", now + AIM_HOLD_MS);
+    rig?.holdStance("aim", now + AIM_HOLD_MS, AIM_FROM_S);
     shotAt.set(playerId, { at: now, timeScale });
   };
   /** Fly a bolt once the archer's shot reaches its release frame. */

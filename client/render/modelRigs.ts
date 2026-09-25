@@ -35,7 +35,7 @@ import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 export interface ModelRig extends Rig {
   readonly family: RigFamily;
   /** Play a one-shot clip (attack, death, taunt), then return to locomotion. */
-  oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
+  oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean; startAt?: number; endAt?: number }): void;
   /** Cancel a held one-shot (revive after a held death pose). */
   release(): void;
   /** The named bone for a role, if this rig has it. */
@@ -46,9 +46,9 @@ export interface ModelRig extends Rig {
   clipNames(): string[];
   /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
   footfall?: () => void;
-  /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms);
-   * moving drops it at once. */
-  holdStance(clip: ClipId, until: number): void;
+  /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms),
+   * playing it from `from` seconds on and never looping back before that; moving drops it at once. */
+  holdStance(clip: ClipId, until: number, from?: number): void;
 }
 
 export interface HeroModelRig extends ModelRig {
@@ -88,7 +88,7 @@ class AnimRig implements ModelRig {
   private lastNow: number | null = null;
   private current: THREE.AnimationAction | null = null;
   private oneShotUntil = 0;
-  private stance: { name: string; until: number } | null = null;
+  private stance: { name: string; until: number; from: number } | null = null;
   private idleName: string | undefined;
   private walkName: string | undefined;
   footfall?: () => void;
@@ -141,7 +141,7 @@ class AnimRig implements ModelRig {
 
   private moveCancels = true;
 
-  oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
+  oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean; startAt?: number; endAt?: number } = {}): void {
     const name = this.clipName(clip);
     if (!name) return;
     // Force a restart so back-to-back identical attacks replay from the top.
@@ -149,17 +149,22 @@ class AnimRig implements ModelRig {
     if (!action) return;
     action.timeScale = opts.timeScale ?? 1;
     this.moveCancels = !opts.hold && (opts.cancelOnMove ?? true);
-    const dur = (action.getClip().duration / action.timeScale) * 1000;
-    this.oneShotUntil = opts.hold ? Number.POSITIVE_INFINITY : performance.now() + dur * 0.85;
+    // `startAt` and `endAt` (seconds into the clip) trim a one-shot: KayKit's ranged
+    // clips open by raising the weapon from a neutral pose and close by lowering it,
+    // which a held stance would only undo again.
+    const start = Math.min(opts.startAt ?? 0, action.getClip().duration);
+    action.time = start;
+    const end = opts.endAt !== undefined ? Math.min(opts.endAt, action.getClip().duration) : action.getClip().duration * 0.85;
+    this.oneShotUntil = opts.hold ? Number.POSITIVE_INFINITY : performance.now() + (Math.max(0, end - start) / action.timeScale) * 1000;
   }
 
   release(): void {
     this.oneShotUntil = 0;
   }
 
-  holdStance(clip: ClipId, until: number): void {
+  holdStance(clip: ClipId, until: number, from = 0): void {
     const name = this.clipName(clip);
-    if (name) this.stance = { name, until };
+    if (name) this.stance = { name, until, from };
   }
 
   bone(role: BoneRole): THREE.Object3D | null {
@@ -178,7 +183,9 @@ class AnimRig implements ModelRig {
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
       if (this.stance) {
-        this.play(this.stance.name, 0.12);
+        const action = this.play(this.stance.name, 0.12);
+        // Skip the clip's opening raise, and keep its loop from wrapping back through it.
+        if (action && action.time < this.stance.from) action.time = this.stance.from;
       } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
         if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));

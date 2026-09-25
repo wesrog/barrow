@@ -318,6 +318,10 @@ export const PALISADE = {
   sign: "Prop_Sign_Post_01",
   beacon: "Prop_Beacon_01",
   beaconScale: 0.35,
+  /** The big torches either side of the way in, outside the wall: the Dungeon Pack's torch stick, man-high. */
+  bigTorchKit: "dungeon_props",
+  bigTorch: "Prop_TorchStick_01",
+  bigTorchScale: 1.4,
 } as const;
 
 /**
@@ -378,9 +382,19 @@ export function dressPalisade(
     if (gate.length > 0) {
       const mid = gate.reduce((acc, c) => ({ x: acc.x + c.x / gate.length, y: acc.y + c.y / gate.length }), { x: 0, y: 0 });
       const out = mid.x >= camp.x1 ? { dx: 1, dy: 0 } : mid.x < camp.x0 ? { dx: -1, dy: 0 } : mid.y >= camp.y1 ? { dx: 0, dy: 1 } : { dx: 0, dy: -1 };
-      if (sign) place(sign, mid.x + 0.5 + out.dx * 1.6 - out.dy * 2.2, mid.y + 0.5 + out.dy * 1.6 + out.dx * 2.2, Math.atan2(out.dx, out.dy) + Q, 0.5);
+      // A big torch either side of the gap, just outside the wall.
+      const bigTorch = kitNode(kits, PALISADE.bigTorchKit, PALISADE.bigTorch);
+      if (bigTorch) {
+        for (const side of [-1, 1]) {
+          place(bigTorch, mid.x + 0.5 + out.dx * 1.3 - out.dy * side * 2.2, mid.y + 0.5 + out.dy * 1.3 + out.dx * side * 2.2, 0, PALISADE.bigTorchScale, {
+            flame: { color: 0xff8c28, height: 1.8, size: 0.14 },
+            light: { color: 0xff9a45, intensity: 3.6, height: 2.0 },
+          });
+        }
+      }
+      if (sign) place(sign, mid.x + 0.5 + out.dx * 3.2 - out.dy * 3.2, mid.y + 0.5 + out.dy * 3.2 + out.dx * 3.2, Math.atan2(out.dx, out.dy) + Q, 0.5);
       if (beacon) {
-        place(beacon, mid.x + 0.5 + out.dx * 2.6 + out.dy * 2.8, mid.y + 0.5 + out.dy * 2.6 - out.dx * 2.8, 0, PALISADE.beaconScale, {
+        place(beacon, mid.x + 0.5 + out.dx * 4.2 + out.dy * 3.4, mid.y + 0.5 + out.dy * 4.2 - out.dx * 3.4, 0, PALISADE.beaconScale, {
           flame: { color: 0xff8c28, height: 1.55, size: 0.16 },
           light: { color: 0xff9a45, intensity: 4, height: 1.9 },
         });

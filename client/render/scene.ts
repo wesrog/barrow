@@ -17,7 +17,7 @@ const CHAMPION_TINTS: Record<ChampionModifier, number> = {
   stoneskin: 0x8a8a6a,
   volatile: 0xd87828,
 };
-import { potionKind } from "../../sim/items/bases";
+import { BASES, potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
@@ -28,6 +28,7 @@ import { againstWall, dressBuildings, dressCamp, dressHuts, dressMarkers, dressP
 import type { BuildingDef } from "../../sim/buildings";
 import { CRYPT_SET_PIECES, DUNGEON_DRESSING, type DressingFamily } from "./cryptDressing";
 import { WILD_SET_PIECES } from "./wildDressing";
+import { CRYPT_LIGHTS, OUTDOOR_LIGHTS, type LightScatter } from "./lightDressing";
 import { LANDMARKS } from "../../sim/landmarks";
 import { bakeScatter, ScatterBatch } from "./scatter";
 import { groundGeometry, groundMaterial } from "./ground";
@@ -70,6 +71,8 @@ export interface SceneHandle {
   pick(state: GameState, clientX: number, clientY: number): PickResult;
   /** Spawn a floating damage number at a world position. */
   addDamageNumber(pos: Vec, text: string, color: string): void;
+  /** Milliseconds until a bolt in flight at this monster lands (0 if none): its hit waits for it. */
+  impactDelay(monsterId: number): number;
   /** Flash an expanding blast ring at a world position. */
   addExplosion(pos: Vec, radius: number): void;
   /** Play any visual reaction this sim event deserves (swings, hits, deaths...). */
@@ -160,10 +163,14 @@ export function createScene(
   scene.add(moon);
   scene.add(moon.target);
 
-  // Torso height, not overhead: right above the scalp the falloff term blows
-  // up and a bare head reads as a lamp. From the chest the crown faces away.
-  const heroLight = new THREE.PointLight(0xffb35c, 6, 9, 1.6);
-  heroLight.position.set(0, 1.05, 0);
+  // Out of the body, a unit toward the camera at shoulder height. Inside the torso
+  // (where it once sat) the falloff blew out whatever swung within a hand's width:
+  // the back while running, the hands and crossbow while aiming. Right above the
+  // scalp a bare head read as a lamp. Out here it lights the faces the camera
+  // sees; the intensity keeps the ground pool close to what it was from the chest.
+  const HERO_LIGHT_OFFSET = new THREE.Vector3(0.7, 1.3, 0.7);
+  const heroLight = new THREE.PointLight(0xffb35c, 10, 9, 1.6);
+  heroLight.position.copy(HERO_LIGHT_OFFSET);
   scene.add(heroLight);
 
   // --- Lamps: every torch, candle, brazier, pad and glow in the level is a
@@ -431,6 +438,50 @@ export function createScene(
     dressMarkers(assets.kits, map.markers, WILD_SET_PIECES, placeProp);
   }
 
+  /** Scatter one setting's lights: at most one per block, on open floor clear of
+   * markers, walls the scene raised, and the camp, chosen by the cell hash. */
+  const scatterLights = (spec: LightScatter, avoid: (x: number, y: number) => boolean): void => {
+    const pieces = spec.pieces.filter((p) => p.parts.every((part) => kitNode(assets.kits, part.kit, part.node)));
+    const total = pieces.reduce((s, p) => s + p.weight, 0);
+    if (total === 0) return;
+    const keep = map.markers.filter((m) => !/[a-z]/.test(m.ch));
+    for (let by = 0; by < map.height; by += spec.block) {
+      for (let bx = 0; bx < map.width; bx += spec.block) {
+        const bh = hash(bx * 7 + 3, by * 13 + 5);
+        if ((bh % 1000) / 1000 >= spec.chance) continue;
+        // a few tries inside the block for a spot with open floor around it
+        for (let t = 0; t < 6; t++) {
+          const th = hash(bx + t * 31, by + t * 17);
+          const x = bx + (th % spec.block);
+          const y = by + ((th >> 8) % spec.block);
+          let open = true;
+          for (let dy = -spec.clear; dy <= spec.clear && open; dy++) {
+            for (let dx = -spec.clear; dx <= spec.clear; dx++) {
+              if (!isWalkable(map, x + dx, y + dy)) {
+                open = false;
+                break;
+              }
+            }
+          }
+          if (!open || avoid(x, y) || stairCells.has(`${x},${y}`)) continue;
+          if (keep.some((m) => Math.hypot(x + 0.5 - m.x, y + 0.5 - m.y) < 3)) continue;
+          let roll = (th >> 16) % total;
+          const piece = pieces.find((p) => (roll -= p.weight) < 0)!;
+          const ry = ((th >> 4) % 628) / 100;
+          const cos = Math.cos(ry);
+          const sin = Math.sin(ry);
+          piece.parts.forEach((part, i) => {
+            const dx = (part.dx ?? 0) * piece.scale;
+            const dz = (part.dz ?? 0) * piece.scale;
+            // the piece's first part carries the flame and the lamp
+            placeProp(kitNode(assets.kits, part.kit, part.node)!, x + 0.5 + dx * cos + dz * sin, y + 0.5 - dx * sin + dz * cos, ry + (part.ry ?? 0), piece.scale, i === 0 ? { flame: piece.flame, light: piece.light } : undefined);
+          });
+          break;
+        }
+      }
+    }
+  };
+
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
   // Stair cells (down and up) get a real stairwell instead of a floor tile.
@@ -544,6 +595,8 @@ export function createScene(
       }
     }
     dressMarkers(assets.kits, map.markers, CRYPT_SET_PIECES, placeProp, wallToward);
+    // Braziers and candle stands in the open middle of rooms, clear of the walls' dressing.
+    scatterLights(CRYPT_LIGHTS, (x, y) => Math.hypot(x + 0.5 - map.spawn.x, y + 0.5 - map.spawn.y) < 3);
   } else {
     // --- Open ground: every region lays its own textured plane over its
     // slice of the world (bare dirt, with the odd grass tuft instanced on
@@ -656,6 +709,17 @@ export function createScene(
         addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
       }
     }
+  }
+
+  // Standing torches, braziers and small campfires over the open ground; the
+  // camp and its surroundings are lit already.
+  if (outdoor) {
+    scatterLights(
+      OUTDOOR_LIGHTS,
+      (x, y) =>
+        walled.has(`${x},${y}`) ||
+        map.camps.some((c) => x >= c.x0 - 4 && x < c.x1 + 4 && y >= c.y0 - 4 && y < c.y1 + 4),
+    );
   }
 
   // --- Stairs down: a real stairwell sinking into a dark shaft ---
@@ -999,6 +1063,8 @@ export function createScene(
     lastPos: { x: number; y: number } | null;
     equipSignature: string;
     targetYaw: number;
+    /** The direction of the last shot while the archer stands to it: the body turns so the weapon, not the chest, points there. */
+    aimYaw: number | null;
     wasDead: boolean;
     /** Character name over the head — remote party members only. */
     nameplate: HTMLDivElement | null;
@@ -1037,6 +1103,7 @@ export function createScene(
       lastPos: null,
       equipSignature: "",
       targetYaw: 0,
+      aimYaw: null,
       wasDead: false,
       nameplate: plate,
     };
@@ -1242,6 +1309,175 @@ export function createScene(
     );
   };
 
+  // --- Arrows: the Viking kit's arrow (centred, 1 unit along Z) flies from the
+  // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
+  const ARROW_SPEED = 28; // cells per second: a blur, not a lob
+  /** Longest a bolt's streak grows, in cells. */
+  const STREAK_LEN = 1.6;
+  /** A unit-length cone lying along the bolt's -Z (behind it), wide end at the bolt; scaled in Z for length. */
+  const STREAK_GEO = (() => {
+    const geo = new THREE.ConeGeometry(0.03, 1, 6, 1, true);
+    // The cone stands on +Y with its apex up: lift the base to the origin, then tip +Y onto -Z
+    // so the base sits at the bolt and the point trails behind it (the bolt group faces +Z).
+    geo.translate(0, 0.5, 0);
+    geo.rotateX(-Math.PI / 2);
+    return geo;
+  })();
+  /** The release: a small hot flash that swells and fades in a blink at the weapon's muzzle. */
+  const flashGeo = new THREE.IcosahedronGeometry(0.07, 1);
+  const releaseFlash = (at: THREE.Vector3): void => {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0.95, depthWrite: false });
+    const flash = new THREE.Mesh(flashGeo, mat);
+    flash.position.copy(at);
+    scene.add(flash);
+    fx.tween(
+      110,
+      (t) => {
+        flash.scale.setScalar(0.6 + t * 1.4);
+        mat.opacity = 0.95 * (1 - t);
+      },
+      () => {
+        scene.remove(flash);
+        mat.dispose();
+      },
+    );
+  };
+  const boltFlightMs = (cells: number): number => Math.max(60, (cells / ARROW_SPEED) * 1000);
+  const arrowFlight = (from: Vec, to: Vec, muzzle?: THREE.Vector3): void => {
+    // A crossbow bolt when that kit loaded (0.46 long, along Z), else the Viking arrow (1 long).
+    const bolt = kitNode(assets.kits, "crossbow_weapons", "Wep_Crossbow_Bolt_01");
+    const src = bolt ?? kitNode(assets.kits, "viking_weapons", "Wep_Arrow_01");
+    const g = new THREE.Group();
+    if (src) {
+      const arrow = src.clone(true);
+      arrow.position.set(0, 0, 0);
+      g.add(arrow);
+      g.scale.setScalar(bolt ? 1.3 : 0.7);
+    } else {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4), flatMat(0x8a6a3a));
+      shaft.rotation.x = Math.PI / 2;
+      g.add(shaft);
+    }
+    const dx = to.x - from.x;
+    const dz = to.y - from.y;
+    const dist = Math.hypot(dx, dz) || 1;
+    // Out of the weapon's tip when the archer's crossbow gives one, else a step ahead at chest height.
+    const sx = muzzle ? muzzle.x : from.x + (dx / dist) * 0.4;
+    const sz = muzzle ? muzzle.z : from.y + (dz / dist) * 0.4;
+    const sy = muzzle ? muzzle.y : 1.15;
+    const flight = Math.max(0.3, Math.hypot(to.x - sx, to.y - sz));
+    const dur = boltFlightMs(flight);
+    const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, sy + (0.7 - sy) * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
+    if (muzzle) releaseFlash(muzzle);
+    // A bright streak trails the bolt: a thin cone, fat at the bolt and fading to
+    // nothing behind it, added on top of the scene so it reads against the dark.
+    // It grows out of the muzzle rather than sticking out behind the archer.
+    const streakMat = new THREE.MeshBasicMaterial({
+      color: 0xfff0c8,
+      transparent: true,
+      opacity: 0.4,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const streak = new THREE.Mesh(STREAK_GEO, streakMat);
+    streak.scale.set(1, 1, 0.01);
+    g.add(streak);
+    g.position.copy(at(0));
+    g.lookAt(at(0.05));
+    scene.add(g);
+    fx.tween(
+      dur,
+      (t) => {
+        g.position.copy(at(t));
+        g.lookAt(at(Math.min(1, t + 0.05)));
+        // The streak's length in the bolt group's units: up to STREAK_LEN cells, never more than the ground flown.
+        const flown = t * flight;
+        streak.scale.set(1, 1, Math.max(0.01, Math.min(STREAK_LEN, flown)) / g.scale.x);
+      },
+      () => {
+        scene.remove(g);
+        streakMat.dispose();
+        fx.burst(to.x, 0.7, to.y, 0xcfc4a8, 4, 0.8);
+      },
+    );
+  };
+  // --- Shots: the bolt waits for the crossbow. The shoot clip plays from its
+  // raised pose (0.2 s in) and recoils at about 0.25 s, after an 80 ms blend
+  // (measured off the clip's bone motion); a bolt the sim resolves sooner (a
+  // skill fires on its cast tick) is held back to that frame, and a bolt with
+  // no shot playing (a remote hero, a cancelled clip) starts one first. ---
+  const SHOT_BLEND_MS = 80;
+  const AIM_HOLD_MS = 2500;
+  /** The shoot clip opens by raising the crossbow from a neutral pose (its first 0.2 s):
+   * start past that, the recoil lands just after, and end once it settles. */
+  const SHOT_START_S = 0.2;
+  const SHOT_END_S = 0.45;
+  /** The aiming clip also spends its first 0.2 s raising: hold it from 0.3 s on. */
+  const AIM_FROM_S = 0.3;
+  const SHOT_RELEASE_S = 0.25;
+  const shotAt = new Map<PlayerId, { at: number; timeScale: number }>();
+  const releaseMs = (timeScale: number) => SHOT_BLEND_MS + ((SHOT_RELEASE_S - SHOT_START_S) / timeScale) * 1000;
+  /** Raise and loose: the shoot clip, which running never cancels. One per volley. */
+  const startShot = (playerId: PlayerId, timeScale: number): void => {
+    const last = shotAt.get(playerId);
+    const now = performance.now();
+    if (last && now - last.at < 60) return; // a multishot's arrows share one draw
+    const rig = heroOf(playerId)?.rig;
+    // Trimmed to the raised part of the clip: its opening raise and closing lowering would
+    // drop the crossbow between shots only for the held aim to raise it again, a fidget.
+    rig?.oneShot("shoot", { timeScale, cancelOnMove: false, startAt: SHOT_START_S, endAt: SHOT_END_S });
+    // Between shots the crossbow stays up: the aiming stance holds for a few
+    // seconds after the last one, until the archer walks or runs.
+    rig?.holdStance("aim", now + AIM_HOLD_MS, AIM_FROM_S);
+    shotAt.set(playerId, { at: now, timeScale });
+  };
+  /** When each bolt in flight lands, by the monster it struck: the sim resolves the
+   * hit on the tick it looses, and the hit's flash, number and sound wait for the bolt. */
+  const boltLands = new Map<number, number>();
+  const impactDelay = (monsterId: number): number => {
+    const at = boltLands.get(monsterId);
+    if (at === undefined) return 0;
+    const left = at - performance.now();
+    if (left <= 0) boltLands.delete(monsterId);
+    return Math.max(0, left);
+  };
+  /** A monster takes a blow: a white flash, a squash-pop, a spray of blood. */
+  const monsterStruck = (id: number, pos: Vec): void => {
+    const mesh = monsterRigs.get(id)?.group;
+    if (mesh) {
+      fx.flash(mesh, 0xffffff);
+      // Squash-pop around the rig's own base scale, not scale 1.
+      const base = mesh.scale.x;
+      fx.tween(120, (t) => {
+        const s = 1 + Math.sin(t * Math.PI) * 0.14;
+        mesh.scale.set(base * s, base * (2 - s), base * s);
+      }, () => mesh.scale.setScalar(base));
+    }
+    fx.burst(pos.x, 0.55, pos.y, 0x8a2a2a, 6, 1.8);
+  };
+  /** Fly a bolt once the archer's shot reaches its release frame. */
+  const loosedBolt = (playerId: PlayerId, from: Vec, to: Vec, hit: number | null = null): void => {
+    let shot = shotAt.get(playerId);
+    const now = performance.now();
+    if (!shot || now - shot.at > 700) {
+      startShot(playerId, 1.6);
+      shot = shotAt.get(playerId)!;
+    }
+    const wait = shot.at + releaseMs(shot.timeScale) - now;
+    // Timed from the archer, not the muzzle a little ahead: a hit a frame late reads fine, one early does not.
+    if (hit !== null) boltLands.set(hit, now + Math.max(0, wait) + boltFlightMs(Math.hypot(to.x - from.x, to.y - from.y)));
+    const f = { ...from };
+    const t = { ...to };
+    // The tip is read at the release frame, where the pose has the crossbow up.
+    const fly = () => arrowFlight(f, t, heroOf(playerId)?.rig.muzzle() ?? undefined);
+    if (wait <= 0) fly();
+    else fx.tween(wait, () => {}, fly);
+  };
+
+  /** Does this player hold a bow? Their basic attack is then a shot. */
+  const holdsBow = (p: { equipment: { weapon: { baseId: string } | null } } | undefined): boolean =>
+    p?.equipment.weapon ? BASES[p.equipment.weapon.baseId]?.reach !== undefined : false;
+
   // --- Flying spell projectiles: a flame streaks caster -> target, then pops ---
   const boltFlight = (from: Vec, to: Vec, coreColor: number, glowColor: number) => {
     const g = new THREE.Group();
@@ -1370,6 +1606,12 @@ export function createScene(
         if (dx * dx + dy * dy > 1e-6) {
           facing.set(dx, 0, dy).normalize();
           entry.targetYaw = Math.atan2(facing.x, facing.z);
+          entry.aimYaw = null; // moving lowers the aim
+        } else if (entry.aimYaw !== null) {
+          // Standing to a shot: turn the body by however far the crossbow points off
+          // the chest in this pose, so the barrel, not the chest, lines up with the bolt.
+          const off = entry.rig.aimOffset();
+          entry.targetYaw = entry.aimYaw - (off ?? 0);
         }
         group.rotation.y = approachAngle(group.rotation.y, entry.targetYaw, frameDt * 14);
         // Death and revival play through animation clips, not a rotation hack.
@@ -1410,7 +1652,7 @@ export function createScene(
           py = y;
         }
       }
-      heroLight.position.set(px, 1.05, py);
+      heroLight.position.set(px + HERO_LIGHT_OFFSET.x, HERO_LIGHT_OFFSET.y, py + HERO_LIGHT_OFFSET.z);
       if (outdoor) applyAtmosphere(px);
 
       // Sync monster rigs with sim state. Only the hero's neighborhood keeps a
@@ -1959,11 +2201,22 @@ export function createScene(
           const dy = event.to.y - swinger.pos.y;
           if (dx * dx + dy * dy > 1e-6) entry.targetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
+          if (holdsBow(swinger)) {
+            // A shot: draw and loose; the bolt arrives as its own event and waits for the release.
+            entry.aimYaw = entry.targetYaw;
+            startShot(event.playerId, 1.6);
+            break;
+          }
           entry.rig.oneShot(entry.rig.attackClip(), { timeScale: 1.6 });
           fx.tween(200, (t) => {
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
             entry.fxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
           }, () => entry.fxOffset.set(0, 0, 0));
+          break;
+        }
+        case "arrow": {
+          // The sim already flew it: from the archer to the monster it struck, a wall, or the end of its reach.
+          loosedBolt(event.playerId, event.from, event.to, event.hit);
           break;
         }
         case "monster_swing": {
@@ -2006,17 +2259,9 @@ export function createScene(
           break;
         }
         case "monster_hit": {
-          const mesh = monsterRigs.get(event.id)?.group;
-          if (mesh) {
-            fx.flash(mesh, 0xffffff);
-            // Squash-pop around the rig's own base scale, not scale 1.
-            const base = mesh.scale.x;
-            fx.tween(120, (t) => {
-              const s = 1 + Math.sin(t * Math.PI) * 0.14;
-              mesh.scale.set(base * s, base * (2 - s), base * s);
-            }, () => mesh.scale.setScalar(base));
-          }
-          fx.burst(event.pos.x, 0.55, event.pos.y, 0x8a2a2a, 6, 1.8);
+          const wait = impactDelay(event.id);
+          if (wait > 0) fx.tween(wait, () => {}, () => monsterStruck(event.id, event.pos));
+          else monsterStruck(event.id, event.pos);
           break;
         }
         case "player_hit": {
@@ -2036,12 +2281,20 @@ export function createScene(
             const mesh = rig.group;
             if (rig.oneShot) {
               // Play the death clip in place, keep the mixer running, then sink away.
-              rig.oneShot("death", { hold: true });
-              const start = performance.now();
-              fx.tween(1400, (t) => {
-                rig.animate!(start + t * 1400, 0, 0);
-                if (t > 0.7) mesh.position.y = -((t - 0.7) / 0.3) * 0.6;
-              }, () => scene.remove(mesh));
+              // A killing bolt still in the air: the monster keeps its feet until it lands.
+              const wait = impactDelay(event.id);
+              const die = () => {
+                rig.oneShot!("death", { hold: true });
+                const start = performance.now();
+                fx.tween(1400, (t) => {
+                  rig.animate!(start + t * 1400, 0, 0);
+                  if (t > 0.7) mesh.position.y = -((t - 0.7) / 0.3) * 0.6;
+                }, () => scene.remove(mesh));
+              };
+              if (wait > 0) {
+                const from = performance.now();
+                fx.tween(wait, (t) => rig.animate!(from + t * wait, 0, 0), die);
+              } else die();
             } else {
               const dir = ((event.id * 61) % 2) * 2 - 1;
               fx.tween(300, (t) => {
@@ -2053,7 +2306,9 @@ export function createScene(
             }
           }
           monsterFxOffsets.delete(event.id);
-          fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
+          const deathWait = impactDelay(event.id);
+          if (deathWait > 0) fx.tween(deathWait, () => {}, () => fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6));
+          else fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
           break;
         }
         case "secret_found": {
@@ -2092,7 +2347,18 @@ export function createScene(
           const shake = (amount: number) => {
             if (event.playerId === localId()) fx.shake(amount);
           };
-          if (event.skill === "cleave") {
+          if (event.skill === "powershot" || event.skill === "multishot") {
+            if (casterEntry) casterEntry.aimYaw = casterEntry.targetYaw;
+            startShot(event.playerId, event.skill === "powershot" ? 1.2 : 1.6);
+            if (event.at) loosedBolt(event.playerId, event.pos, event.at, event.hit ?? null);
+            if (event.skill === "powershot") shake(0.05);
+          } else if (event.skill === "snare") {
+            caster?.oneShot("cast", { timeScale: 1.5 });
+            if (event.at) {
+              ring(event.at, 1.8, 0x9c8a5a, 450);
+              fx.burst(event.at.x, 0.15, event.at.y, 0x6b5a3a, 10, 1.6);
+            }
+          } else if (event.skill === "cleave") {
             caster?.oneShot("attackSpin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
             shake(0.08);
@@ -2179,6 +2445,7 @@ export function createScene(
       }
     },
 
+    impactDelay,
     addDamageNumber(pos, text, color) {
       const at = worldToScreen(pos, 1.3);
       const el = document.createElement("div");

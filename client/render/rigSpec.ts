@@ -24,6 +24,10 @@ export type ClipId =
   | "attackSlice"
   | "cast"
   | "castRaise"
+  /** Loosing an arrow: the bow's basic attack and its shots. */
+  | "shoot"
+  /** Holding the crossbow up between shots. */
+  | "aim"
   | "cheer"
   | "jump"
   | "taunt"
@@ -83,6 +87,8 @@ const KAYKIT_CLIPS = {
   attackSlice: "2H_Melee_Attack_Slice",
   cast: "Spellcast_Shoot",
   castRaise: "Spellcast_Raise",
+  shoot: "2H_Ranged_Shoot",
+  aim: "2H_Ranged_Aiming",
   cheer: "Cheer",
   jump: "Jump_Full_Short",
   taunt: "Taunt",
@@ -132,6 +138,8 @@ const GOBLIN_FALLBACKS: Record<ClipId, string> = {
   attackSlice: "Idle_Fidget_Swipe",
   cast: "Idle_Fidget_Swipe",
   castRaise: "Idle_Fidget_Swipe",
+  shoot: "Idle_Fidget_Swipe",
+  aim: "Idle_Fidget_Menacing",
   cheer: "Jump_Idle",
   jump: "Jump_Idle",
   taunt: "Idle_Fidget_Menacing",

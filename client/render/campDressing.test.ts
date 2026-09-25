@@ -169,9 +169,14 @@ describe("dressPalisade", () => {
       node.name = name;
       props.add(node);
     }
+    const dungeon = new THREE.Group();
+    const stick = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial());
+    stick.name = PALISADE.bigTorch;
+    dungeon.add(stick);
     return {
       viking_structures: { scene: structures, animations: [] } as unknown as Kits["viking_structures"],
       viking_props: { scene: props, animations: [] } as unknown as Kits["viking_props"],
+      dungeon_props: { scene: dungeon, animations: [] } as unknown as Kits["dungeon_props"],
     };
   };
 
@@ -204,6 +209,15 @@ describe("dressPalisade", () => {
       const piece = placed.find((p) => p.name === name)!;
       expect(piece.x).toBeGreaterThan(7);
     }
+    // A big lit torch either side of the gap, just outside the wall, one north of the gate row and one south.
+    const big = placed.filter((p) => p.name === PALISADE.bigTorch);
+    expect(big.length).toBe(2);
+    for (const b of big) {
+      expect(b.x).toBeGreaterThan(7);
+      expect(b.opts?.flame).toBeDefined();
+    }
+    expect(Math.min(...big.map((b) => b.z))).toBeLessThan(3.5);
+    expect(Math.max(...big.map((b) => b.z))).toBeGreaterThan(3.5);
   });
 
   test("raises nothing without the structures kit", () => {

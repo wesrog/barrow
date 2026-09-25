@@ -153,12 +153,12 @@ describe("Synty hero", () => {
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeTruthy();
     // The grave plate wears a fur mantle from the attachments kit, hung on the
     // chest bone in its rest frame (chest rests at 1.2, the fur at 1.4), and
-    // no box pauldrons; the plate box stays.
+    // nothing else: no box plate or pauldrons.
     const chest = hero.group.getObjectByName("Spine_02")!;
     const mantle = chest.getObjectByName("SM_Chr_Attach_Fur_03") as THREE.Mesh;
     expect(mantle).toBeTruthy();
     expect(mantle.position.y).toBeCloseTo(0.2);
-    expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(2);
+    expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
     // Every weapon takes the flat one-handed slice unless its row says otherwise.
     expect(hero.attackClip()).toBe("attack1h");
@@ -188,13 +188,13 @@ describe("Synty hero", () => {
     expect(mantle.quaternion.w).toBeCloseTo(1);
   });
 
-  test("keeps box pauldrons for chests without a mantle in the kit", () => {
+  test("never hangs box plates or pauldrons on a chest, mantle or not", () => {
     const hero = makeHeroModelRig(fakeHeroAssets(), "warrior");
-    hero.setEquipment({ ...BARE, chest: gearItem("lamellar_coat") });
-    expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
-    hero.setEquipment({ ...BARE, chest: gearItem("rag_tunic") });
-    expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    expect(hero.group.getObjectByName("Spine_02")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
+    for (const chest of ["lamellar_coat", "rag_tunic"]) {
+      hero.setEquipment({ ...BARE, chest: gearItem(chest, "magic") });
+      expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
+      expect(hero.group.getObjectByName("Spine_02")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
+    }
   });
 
   test("prefers the retargeted KayKit idle when that kit is present", () => {

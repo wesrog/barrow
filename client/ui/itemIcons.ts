@@ -15,6 +15,10 @@
  */
 export const SYNTY_ITEM_ICONS: Record<string, string> = {
   rusted_blade: "as-weapons/one-handed_sword_01",
+  short_bow: "as-weapons/crossbow_01",
+  hunting_bow: "as-weapons/crossbow_05",
+  yew_longbow: "as-weapons/crossbow_10",
+  horn_bow: "as-weapons/crossbow_14",
   kingsbane: "as-weapons/one-handed_sword_14",
   hatchet: "as-weapons/one-handed_hand_axe_01",
   grave_scythe: "as-weapons/two-handed_battle_axe_11",

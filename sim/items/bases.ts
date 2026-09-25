@@ -11,11 +11,13 @@ export interface ItemBase {
   h: number;
   levelReq: number;
   /** Only this class may equip it; anyone otherwise. */
-  classReq?: "warrior" | "witch";
+  classReq?: "warrior" | "witch" | "ranger";
   /** Weapons only: what the strike sounds like — a cutting edge or a crushing mass. */
   edge?: WeaponEdge;
   /** Weapons only: needs both hands, so nothing rides in the shield slot alongside it. */
   twoHanded?: true;
+  /** Bows only: how far the basic attack reaches, in cells, where melee reaches arm's length. */
+  reach?: number;
   dmgMin?: number;
   dmgMax?: number;
   defense?: number;
@@ -29,6 +31,11 @@ const base = (b: ItemBase) => b;
 
 export const BASES: Record<string, ItemBase> = {
   // --- weapons ---
+  // bows: the ranger's, two-handed, with the reach to hit from across a room
+  short_bow: base({ id: "short_bow", name: "Short Bow", slot: "weapon", edge: "sharp", twoHanded: true, reach: 6.5, w: 2, h: 2, levelReq: 1, classReq: "ranger", dmgMin: 2, dmgMax: 5 }),
+  hunting_bow: base({ id: "hunting_bow", name: "Hunting Bow", slot: "weapon", edge: "sharp", twoHanded: true, reach: 7, w: 2, h: 2, levelReq: 7, classReq: "ranger", dmgMin: 4, dmgMax: 10 }),
+  yew_longbow: base({ id: "yew_longbow", name: "Yew Longbow", slot: "weapon", edge: "sharp", twoHanded: true, reach: 7.5, w: 2, h: 2, levelReq: 14, classReq: "ranger", dmgMin: 7, dmgMax: 17 }),
+  horn_bow: base({ id: "horn_bow", name: "Horn Bow", slot: "weapon", edge: "sharp", twoHanded: true, reach: 7.5, w: 2, h: 2, levelReq: 22, classReq: "ranger", dmgMin: 12, dmgMax: 28 }),
   rusted_blade: base({ id: "rusted_blade", name: "Rusted Blade", slot: "weapon", edge: "sharp", w: 2, h: 2, levelReq: 1, dmgMin: 1, dmgMax: 6 }),
   gnarled_staff: base({ id: "gnarled_staff", name: "Gnarled Staff", slot: "weapon", edge: "blunt", twoHanded: true, w: 2, h: 2, levelReq: 1, classReq: "witch", dmgMin: 2, dmgMax: 7 }),
   bone_wand: base({ id: "bone_wand", name: "Bone Wand", slot: "weapon", edge: "blunt", w: 2, h: 2, levelReq: 1, classReq: "witch", dmgMin: 1, dmgMax: 3 }),

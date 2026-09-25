@@ -45,6 +45,15 @@ export const PLAYER_STRIKE_TICKS = 5;
 export const MONSTER_STRIKE_TICKS = 4;
 
 /** Resolve the player's in-flight swing at its contact frame. */
+/** A basic attack at this reach or beyond is a shot, and a shot needs a clear line. */
+const SHOT_REACH = 2;
+
+/** Can the player's basic attack reach this spot: in range, and for a bow, in sight. */
+function basicReaches(zone: ZoneState, p: Player, pos: Vec, slack = 1): boolean {
+  if (dist(p.pos, pos) > p.range * slack) return false;
+  return p.range < SHOT_REACH || hasLineOfSight(zone.map, p.pos, pos);
+}
+
 function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void {
   if (!p.pendingStrike || state.tick < p.pendingStrike.at) return;
   const strike = p.pendingStrike;
@@ -53,13 +62,13 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
   let target: Monster | null = null;
   if (strike.target !== null) {
     const m = zone.monsters.get(strike.target);
-    if (m && dist(p.pos, m.pos) <= p.range * 1.35) target = m;
+    if (m && basicReaches(zone, p, m.pos, 1.35)) target = m;
   } else {
     // Swing-in-place: whatever is nearest within reach when the blade lands.
     let bestD = Infinity;
     for (const m of zone.monsters.values()) {
       const d = dist(m.pos, p.pos);
-      if (d <= p.range && d < bestD) {
+      if (d < bestD && basicReaches(zone, p, m.pos)) {
         target = m;
         bestD = d;
       }
@@ -185,7 +194,7 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
       p.attackTarget = null;
       continue;
     }
-    if (dist(p.pos, target.pos) <= p.range) {
+    if (basicReaches(zone, p, target.pos)) {
       p.path = [];
       if (p.swingCooldown === 0) {
         p.swingCooldown = p.swingEvery;

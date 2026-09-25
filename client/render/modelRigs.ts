@@ -263,6 +263,7 @@ function visibleOffhand(eq: Equipment): Item | null {
 const SYNTY_HERO_NODES: Record<Klass, string> = {
   warrior: "Warrior_Male_01",
   witch: "Leader_Female_01",
+  ranger: "Warrior_Female_01",
 };
 
 /** Heroes stand 1.56 units in the scene (2.17 x 0.72, the height everything was
@@ -289,8 +290,13 @@ interface SyntyWeaponLook {
   kit: KitName;
   node: string;
   twoHanded: boolean;
-  /** The basic swing: the flat one-handed slice unless a row asks for the chop. */
-  swing?: "chop" | "slice";
+  /** The basic swing: the flat one-handed slice unless a row asks for the chop; bows shoot. */
+  swing?: "chop" | "slice" | "shoot";
+  /** The hand that holds it: the right unless the row says left (a bow rides the left fist). */
+  hand?: "l";
+  /** Extra turn about the forearm after the grip, in radians: the ranged clips hold the fist
+   * palm down, so a bow needs a quarter turn to stand upright (checked in the viewer). */
+  roll?: number;
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
    * is held by its handle end (the wands are cut-down staves). */
@@ -306,6 +312,11 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
   moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
+  // bows: the Goblin War Camp's, in the left fist, loosed with the two-handed ranged shot
+  short_bow: { kit: "goblin_weapons", node: "Wep_Bow_01", twoHanded: true, swing: "shoot", hand: "l", roll: -Math.PI / 2 },
+  hunting_bow: { kit: "goblin_weapons", node: "Wep_Bow_01", twoHanded: true, swing: "shoot", hand: "l", scale: 1.1 , roll: -Math.PI / 2 },
+  yew_longbow: { kit: "goblin_weapons", node: "Wep_Bow_02", twoHanded: true, swing: "shoot", hand: "l", roll: -Math.PI / 2 },
+  horn_bow: { kit: "goblin_weapons", node: "Wep_Bow_02", twoHanded: true, swing: "shoot", hand: "l", scale: 1.1 , roll: -Math.PI / 2 },
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
@@ -362,7 +373,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
   let armed = false;
-  let swing: "chop" | "slice" = "slice";
+  let swing: "chop" | "slice" | "shoot" = "slice";
+  /** A held piece whose roll depends on the clip: its grip turn, and the extra roll for the ranged clips. */
+  let rolled: { model: THREE.Object3D; base: THREE.Quaternion; ranged: THREE.Quaternion } | null = null;
 
   // Bone rest frames in the character's own space, captured before the first
   // mixer update: pieces authored in place over the bind pose (fur mantles)
@@ -448,9 +461,24 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
         if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
-      rig.attach("r", model);
+      if (look.hand === "l") {
+        rig.attach("l", model);
+        rig.attach("r", null);
+      } else {
+        rig.attach("r", model);
+      }
+      // The grip set the wrapper's turn; the roll spins it about the forearm (hand X)
+      // from there, but only while a ranged clip holds the fist palm down. At rest the
+      // plain grip already stands a bow upright.
+      rolled = null;
+      if (model && look.roll) {
+        const base = model.quaternion.clone();
+        const ranged = base.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll));
+        rolled = { model, base, ranged };
+      }
     } else {
       twoHanded = false;
+      rolled = null;
       rig.attach("r", null);
     }
   };
@@ -458,7 +486,13 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   // (the two-handed chop read as a windmill on the Viking), unless a weapon's
   // row asks for the chop; bare hands throw a punch. Skills pick their own
   // clips.
-  hero.attackClip = () => (!armed ? "attackUnarmed" : swing === "chop" ? "attackChop1h" : "attack1h");
+  hero.attackClip = () =>
+    !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  const animate = rig.animate.bind(rig);
+  hero.animate = (now, phase, speed) => {
+    animate(now, phase, speed);
+    if (rolled) rolled.model.quaternion.copy(rig.currentClip()?.includes("Ranged") ? rolled.ranged : rolled.base);
+  };
   return hero;
 }
 

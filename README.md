@@ -27,7 +27,7 @@ Without the model kits the game refuses to start and names the missing kit. With
 
 ## How the game plays
 
-**Start.** The lobby is a night camp with a warrior and a witch standing at a fire. Click one to see it perform and read about the class, name it, and forge it. Characters live in the browser's local storage; you can keep several and switch between them.
+**Start.** The lobby is a night camp with a warrior, a witch and a ranger standing at a fire. Click one to see it perform and read about the class, name it, and forge it. Characters live in the browser's local storage; you can keep several and switch between them.
 
 **The camp.** New characters start in the palisaded camp on the Wither Moors: a trader, a healer, a stash, a waypoint, a jarl's hall, a storehouse, a smithy, a training yard and a shrine. Nothing hostile comes inside.
 
@@ -37,7 +37,7 @@ Without the model kits the game refuses to start and names the missing kit. With
 
 **Fighting.** Left click moves, attacks and interacts. The right mouse button and the q, w, e, r and f keys cast whatever you have bound to those slots. One in five monsters is a champion with a modifier and a guaranteed drop. Breakables and chests hold loot too. Death leaves your worn gear on a corpse where you fell and puts you back in the camp; walk out and reclaim it.
 
-**Classes and skills.** The warrior has Arms, Warcries and Fury; the witch has Fire, Frost and Hexes. Each tree opens at tiers 1, 4, 8, 12, 18 and 24 for six skills a tree, 36 in all, with prerequisites and synergies between them. Every level grants one skill point, ranks go to ten, and a respec refunds everything. The warrior starts with a rusted blade; the witch with a bone wand and one rank of Firebolt.
+**Classes and skills.** The warrior has Arms, Warcries and Fury; the witch has Fire, Frost and Hexes; the ranger has Archery, Hunting and Survival and shoots from across the room with a bow. Each tree opens at tiers 1, 4, 8, 12, 18 and 24 for six skills a tree, 54 in all, with prerequisites and synergies between them. Every level grants one skill point, ranks go to ten, and a respec refunds everything. The warrior starts with a rusted blade; the witch with a bone wand and one rank of Firebolt; the ranger with a short bow and one rank of Power Shot.
 
 **Loot.** Weapons, shields and orbs, helms, chest pieces, boots, rings, amulets and potions, in normal, magic, rare and unique rarities with affixes rolled from level-gated groups. Gear wears down and breaks unless repaired. The inventory is a grid with two item sizes (small for potions, rings, amulets and quest items; large for gear), a belt row each for healing and mana potions, a stash in camp, and a trader who buys and sells. Loot on the ground is marked as better, worse or mixed against what you wear before you touch it.
 

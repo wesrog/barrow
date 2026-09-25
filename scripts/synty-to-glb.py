@@ -95,6 +95,7 @@ KAYKIT_CLIPS = [
     "Idle", "Idle_B", "Idle_Combat", "Unarmed_Idle", "2H_Melee_Idle",
     "Walking_A", "Walking_B", "Walking_D_Skeletons", "Running_A", "Running_B",
     "1H_Melee_Attack_Chop", "1H_Melee_Attack_Slice_Diagonal", "1H_Melee_Attack_Slice_Horizontal", "1H_Melee_Attack_Stab",
+    "2H_Ranged_Aiming", "2H_Ranged_Shoot", "2H_Ranged_Shooting", "2H_Ranged_Reload",
     "2H_Melee_Attack_Chop", "2H_Melee_Attack_Slice", "2H_Melee_Attack_Spin", "2H_Melee_Attack_Stab",
     "Unarmed_Melee_Attack_Punch_A", "Unarmed_Melee_Attack_Punch_B", "Unarmed_Melee_Attack_Kick",
     "Spellcast_Shoot", "Spellcast_Raise", "Spellcast_Long", "Spellcasting",

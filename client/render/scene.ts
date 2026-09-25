@@ -17,7 +17,7 @@ const CHAMPION_TINTS: Record<ChampionModifier, number> = {
   stoneskin: 0x8a8a6a,
   volatile: 0xd87828,
 };
-import { potionKind } from "../../sim/items/bases";
+import { BASES, potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
@@ -1300,6 +1300,49 @@ export function createScene(
     );
   };
 
+  // --- Arrows: the Viking kit's arrow (centred, 1 unit along Z) flies from the
+  // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
+  const ARROW_SPEED = 28; // cells per second: a blur, not a lob
+  const arrowFlight = (from: Vec, to: Vec): void => {
+    const src = kitNode(assets.kits, "viking_weapons", "Wep_Arrow_01");
+    const g = new THREE.Group();
+    if (src) {
+      const arrow = src.clone(true);
+      arrow.position.set(0, 0, 0);
+      g.add(arrow);
+      g.scale.setScalar(0.7);
+    } else {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4), flatMat(0x8a6a3a));
+      shaft.rotation.x = Math.PI / 2;
+      g.add(shaft);
+    }
+    const dx = to.x - from.x;
+    const dz = to.y - from.y;
+    const dist = Math.hypot(dx, dz) || 1;
+    const sx = from.x + (dx / dist) * 0.4;
+    const sz = from.y + (dz / dist) * 0.4;
+    const flight = Math.max(0.3, dist - 0.4);
+    const dur = Math.max(60, (flight / ARROW_SPEED) * 1000);
+    const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, 1.15 - 0.45 * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
+    g.position.copy(at(0));
+    g.lookAt(at(0.05));
+    scene.add(g);
+    fx.tween(
+      dur,
+      (t) => {
+        g.position.copy(at(t));
+        g.lookAt(at(Math.min(1, t + 0.05)));
+      },
+      () => {
+        scene.remove(g);
+        fx.burst(to.x, 0.7, to.y, 0xcfc4a8, 4, 0.8);
+      },
+    );
+  };
+  /** Does this player hold a bow? Their basic attack is then a shot. */
+  const holdsBow = (p: { equipment: { weapon: { baseId: string } | null } } | undefined): boolean =>
+    p?.equipment.weapon ? BASES[p.equipment.weapon.baseId]?.reach !== undefined : false;
+
   // --- Flying spell projectiles: a flame streaks caster -> target, then pops ---
   const boltFlight = (from: Vec, to: Vec, coreColor: number, glowColor: number) => {
     const g = new THREE.Group();
@@ -2017,6 +2060,14 @@ export function createScene(
           const dy = event.to.y - swinger.pos.y;
           if (dx * dx + dy * dy > 1e-6) entry.targetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
+          if (holdsBow(swinger)) {
+            // A shot: draw and loose, the arrow leaving on the release frame.
+            entry.rig.oneShot("shoot", { timeScale: 1.6 });
+            const from = { ...swinger.pos };
+            const to = { ...event.to };
+            fx.tween(140, () => {}, () => arrowFlight(from, to));
+            break;
+          }
           entry.rig.oneShot(entry.rig.attackClip(), { timeScale: 1.6 });
           fx.tween(200, (t) => {
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
@@ -2150,7 +2201,17 @@ export function createScene(
           const shake = (amount: number) => {
             if (event.playerId === localId()) fx.shake(amount);
           };
-          if (event.skill === "cleave") {
+          if (event.skill === "powershot" || event.skill === "multishot") {
+            caster?.oneShot("shoot", { timeScale: event.skill === "powershot" ? 1.2 : 1.6 });
+            if (event.at) arrowFlight(event.pos, event.at);
+            if (event.skill === "powershot") shake(0.05);
+          } else if (event.skill === "snare") {
+            caster?.oneShot("cast", { timeScale: 1.5 });
+            if (event.at) {
+              ring(event.at, 1.8, 0x9c8a5a, 450);
+              fx.burst(event.at.x, 0.15, event.at.y, 0x6b5a3a, 10, 1.6);
+            }
+          } else if (event.skill === "cleave") {
             caster?.oneShot("attackSpin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
             shake(0.08);

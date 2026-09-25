@@ -84,7 +84,7 @@ function summarize(entry: RosterEntry): CharacterSummary {
   try {
     const save = JSON.parse(entry.raw) as CharacterSave;
     if (typeof save.name === "string" && save.name.trim()) name = save.name;
-    if (save.klass === "witch") klass = "witch";
+    if (save.klass === "witch" || save.klass === "ranger") klass = save.klass;
     if (Number.isFinite(save.level)) level = save.level;
   } catch {
     // Unreadable save: show the placeholder identity; the sim will reject it on join.

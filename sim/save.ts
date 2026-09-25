@@ -78,12 +78,14 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
 export const STARTING_WEAPON: Record<Klass, { baseId: string; name: string }> = {
   warrior: { baseId: "rusted_blade", name: "Rusted Blade" },
   witch: { baseId: "bone_wand", name: "Bone Wand" },
+  ranger: { baseId: "short_bow", name: "Short Bow" },
 };
 
 /** What each class already knows on day one. The warrior's blade is her
  * skill; the witch's wand is a poor club, so she brings one bolt of fire. */
 export const STARTING_SKILL: Partial<Record<Klass, SkillId>> = {
   witch: "firebolt",
+  ranger: "powershot",
 };
 
 /** A brand-new level-1 character of the given class, as a save payload. */
@@ -161,7 +163,7 @@ export function applyCharacter(state: GameState, playerId: PlayerId, raw: string
   if (!normalized) return false;
 
   p.name = typeof save.name === "string" && save.name.trim() ? save.name : "Wanderer";
-  p.klass = save.klass === "witch" ? "witch" : "warrior";
+  p.klass = save.klass === "witch" || save.klass === "ranger" ? save.klass : "warrior";
   p.level = save.level;
   p.xp = save.xp;
   if (save.v < VERSION || normalized.unknownRanked) {

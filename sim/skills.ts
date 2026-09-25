@@ -2,8 +2,8 @@ import type { GameState, Player } from "./state";
 import type { Element } from "./elements";
 export type { Element } from "./elements";
 
-export type Klass = "warrior" | "witch";
-export type TreeId = "arms" | "warcries" | "fury" | "fire" | "frost" | "hexes";
+export type Klass = "warrior" | "witch" | "ranger";
+export type TreeId = "arms" | "warcries" | "fury" | "fire" | "frost" | "hexes" | "archery" | "hunting" | "survival";
 export type Tier = 1 | 4 | 8 | 12 | 18 | 24;
 export type SkillKind = "active" | "passive";
 /** How the client aims a cast: none = fire-and-forget, target = a monster, point = a ground spot. */
@@ -22,7 +22,13 @@ export type SkillId =
   // witch · frost
   | "frostbolt" | "frostnova" | "icearmor" | "glacialspike" | "blizzard" | "coldmastery"
   // witch · hexes
-  | "weaken" | "blink" | "focus" | "slow" | "soulchain" | "doom";
+  | "weaken" | "blink" | "focus" | "slow" | "soulchain" | "doom"
+  // ranger · archery
+  | "powershot" | "multishot" | "eagleeye" | "piercingshot" | "volley" | "deadeye"
+  // ranger · hunting
+  | "snare" | "firetrap" | "houndcall" | "beartrap" | "packhunt" | "beastlore"
+  // ranger · survival
+  | "evasion" | "swiftness" | "secondwind" | "camouflage" | "hunterseye" | "lastlight";
 
 export interface TreeDef {
   id: TreeId;
@@ -74,6 +80,9 @@ export const TREES: Record<TreeId, TreeDef> = {
   fire: { id: "fire", klass: "witch", name: "Fire", blurb: "raw burning damage, blast and burn" },
   frost: { id: "frost", klass: "witch", name: "Frost", blurb: "cold that slows, freezes, and shatters" },
   hexes: { id: "hexes", klass: "witch", name: "Hexes", blurb: "curses that soften a pack for whatever kills it" },
+  archery: { id: "archery", klass: "ranger", name: "Archery", blurb: "shots that hit harder, fly farther, and find more than one mark" },
+  hunting: { id: "hunting", klass: "ranger", name: "Hunting", blurb: "snares, traps, and the hounds that run a pack down" },
+  survival: { id: "survival", klass: "ranger", name: "Survival", blurb: "the knack of never being where the blow lands" },
 };
 
 // ── geometry ──
@@ -105,6 +114,48 @@ export const CURSE_RADIUS = 2.5;
 export const CURSE_RANGE = 10;
 /** Chill slows move and attack speed by this fraction. */
 export const CHILL_POWER = 0.4;
+/** Snare: thrown within this range, it catches everything within the radius of where it lands. */
+export const SNARE_RANGE = 9;
+export const SNARE_RADIUS = 1.8;
+/** Multishot's extra arrows find monsters within this distance of the aimed one. */
+export const MULTISHOT_SPREAD = 4;
+
+// ── ranger rank math ──
+
+/** Power Shot: weapon damage, 150% +12% per extra rank. Arrows from a skill never miss. */
+export function powershotMultiplier(rank: number): number {
+  return 1.5 + 0.12 * (rank - 1);
+}
+/** Multishot: three arrows, one more every second rank. */
+export function multishotCount(rank: number): number {
+  return 3 + Math.floor((rank - 1) / 2);
+}
+/** Multishot: each arrow at 60% weapon damage, +4% per extra rank. */
+export function multishotMultiplier(rank: number): number {
+  return 0.6 + 0.04 * (rank - 1);
+}
+/** Eagle Eye: +0.3 cells of reach and +15 attack rating per rank. */
+export function eagleEyeRange(rank: number): number {
+  return 0.3 * rank;
+}
+export function eagleEyeAttackRating(rank: number): number {
+  return 15 * rank;
+}
+/** Snare: −30% move and attack speed, +3% per extra rank, for 3 s +0.4 s per extra rank. */
+export function snarePower(rank: number): number {
+  return 0.3 + 0.03 * (rank - 1);
+}
+export function snareTicks(rank: number): number {
+  return 75 + 10 * (rank - 1);
+}
+/** Evasion: +8% defense per rank. */
+export function evasionDefense(rank: number): number {
+  return 0.08 * rank;
+}
+/** Swiftness: +3% move speed per rank. */
+export function swiftnessSpeed(rank: number): number {
+  return 0.03 * rank;
+}
 
 // ── warrior rank math ──
 
@@ -436,12 +487,53 @@ export const SKILLS: Record<SkillId, SkillDef> = {
   doom: row({ id: "doom", name: "Doom", klass: "witch", tree: "hexes", tier: 24, targeting: "point", element: "shadow", manaCost: 10, castTicks: 16,
     prereqs: ["soulchain"], synergies: [{ from: "slow", text: "+5% duration per Slow rank" }],
     describe: (r) => `curse everything within ${CURSE_RADIUS} · +${pct(doomPower(r1(r)))} damage taken from everything for ${secs(doomTicks(r1(r), 0))}` }),
+
+  // ── ranger · archery ──
+  powershot: row({ id: "powershot", name: "Power Shot", klass: "ranger", tree: "archery", tier: 1, targeting: "target", manaCost: 3, castTicks: 16,
+    describe: (r) => `a drawn-out shot that never misses · ${pct(powershotMultiplier(r1(r)))} weapon damage` }),
+  multishot: row({ id: "multishot", name: "Multishot", klass: "ranger", tree: "archery", tier: 4, targeting: "target", manaCost: 6, castTicks: 18,
+    prereqs: ["powershot"],
+    describe: (r) => `${multishotCount(r1(r))} arrows at the mark and those near it · ${pct(multishotMultiplier(r1(r)))} weapon damage each` }),
+  eagleeye: passive({ id: "eagleeye", name: "Eagle Eye", klass: "ranger", tree: "archery", tier: 8,
+    describe: (r) => `+${eagleEyeRange(r1(r)).toFixed(1)} reach · +${eagleEyeAttackRating(r1(r))} attack rating` }),
+  piercingshot: pending({ id: "piercingshot", name: "Piercing Shot", klass: "ranger", tree: "archery", tier: 12, targeting: "target", manaCost: 8, castTicks: 16,
+    prereqs: ["multishot"], describe: (r) => `an arrow through every monster in its line · ${pct(1.1 + 0.08 * (r1(r) - 1))} weapon damage` }),
+  volley: pending({ id: "volley", name: "Volley", klass: "ranger", tree: "archery", tier: 18, targeting: "point", manaCost: 12, castTicks: 20,
+    prereqs: ["piercingshot"], describe: (r) => `a rain of arrows over a patch of ground · ${pct(0.8 + 0.06 * (r1(r) - 1))} weapon damage to each` }),
+  deadeye: pending({ id: "deadeye", name: "Deadeye", klass: "ranger", tree: "archery", tier: 24, kind: "passive",
+    describe: (r) => `${pct(0.03 * r1(r))} chance of a double-damage shot beyond 4 cells` }),
+  // ── ranger · hunting ──
+  snare: row({ id: "snare", name: "Snare", klass: "ranger", tree: "hunting", tier: 1, targeting: "point", manaCost: 4, castTicks: 14,
+    describe: (r) => `catch everything within ${SNARE_RADIUS} · −${pct(snarePower(r1(r)))} move and attack speed for ${secs(snareTicks(r1(r)))}` }),
+  firetrap: pending({ id: "firetrap", name: "Fire Trap", klass: "ranger", tree: "hunting", tier: 4, targeting: "point", element: "fire", manaCost: 7, castTicks: 16,
+    prereqs: ["snare"], describe: (r) => `a buried charge · ${6 + 4 * (r1(r) - 1)}–${11 + 6 * (r1(r) - 1)} fire to whatever steps on it` }),
+  houndcall: pending({ id: "houndcall", name: "Hound Call", klass: "ranger", tree: "hunting", tier: 8, manaCost: 10, castTicks: 18,
+    describe: (r) => `a hound at your side for ${secs(750 + 75 * (r1(r) - 1))}` }),
+  beartrap: pending({ id: "beartrap", name: "Bear Trap", klass: "ranger", tree: "hunting", tier: 12, targeting: "point", manaCost: 8, castTicks: 16,
+    prereqs: ["firetrap"], describe: (r) => `iron jaws hold a monster fast for ${secs(50 + 5 * (r1(r) - 1))}` }),
+  packhunt: pending({ id: "packhunt", name: "Pack Hunt", klass: "ranger", tree: "hunting", tier: 18, manaCost: 14, castTicks: 20,
+    prereqs: ["houndcall"], describe: (r) => `${2 + Math.floor((r1(r) - 1) / 3)} hounds run with you` }),
+  beastlore: pending({ id: "beastlore", name: "Beast Lore", klass: "ranger", tree: "hunting", tier: 24, kind: "passive",
+    describe: (r) => `hounds deal +${pct(0.08 * r1(r))} damage and last ${pct(0.05 * r1(r))} longer` }),
+  // ── ranger · survival ──
+  evasion: passive({ id: "evasion", name: "Evasion", klass: "ranger", tree: "survival", tier: 1,
+    describe: (r) => `+${pct(evasionDefense(r1(r)))} defense` }),
+  swiftness: passive({ id: "swiftness", name: "Swiftness", klass: "ranger", tree: "survival", tier: 4,
+    describe: (r) => `+${pct(swiftnessSpeed(r1(r)))} move speed` }),
+  secondwind: pending({ id: "secondwind", name: "Second Wind", klass: "ranger", tree: "survival", tier: 8, kind: "passive",
+    describe: (r) => `+${(0.02 * r1(r)).toFixed(2)} life regenerated per tick out of combat` }),
+  camouflage: pending({ id: "camouflage", name: "Camouflage", klass: "ranger", tree: "survival", tier: 12, manaCost: 8, castTicks: 12,
+    describe: (r) => `monsters lose sight of you for ${secs(50 + 5 * (r1(r) - 1))}` }),
+  hunterseye: pending({ id: "hunterseye", name: "Hunter's Eye", klass: "ranger", tree: "survival", tier: 18, kind: "passive",
+    describe: (r) => `monsters under half life take +${pct(0.04 * r1(r))} from your arrows` }),
+  lastlight: pending({ id: "lastlight", name: "Last Light", klass: "ranger", tree: "survival", tier: 24, manaCost: 16, castTicks: 20,
+    describe: (r) => `below 25% life, +${pct(0.1 * r1(r))} damage for ${secs(125)}` }),
 };
 
 /** Every skill id, in definition (and therefore save/init) order. */
 export const SKILL_IDS = Object.keys(SKILLS) as SkillId[];
 
-const TREE_ORDER: TreeId[] = ["arms", "warcries", "fury", "fire", "frost", "hexes"];
+const TREE_ORDER: TreeId[] = ["arms", "warcries", "fury", "fire", "frost", "hexes", "archery", "hunting", "survival"];
 
 export function CLASS_TREES(klass: Klass): TreeDef[] {
   return TREE_ORDER.map((id) => TREES[id]).filter((t) => t.klass === klass);

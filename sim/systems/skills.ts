@@ -56,6 +56,14 @@ import {
   STOMP_RADIUS,
   stompMultiplier,
   stompStunTicks,
+  MULTISHOT_SPREAD,
+  SNARE_RADIUS,
+  SNARE_RANGE,
+  multishotCount,
+  multishotMultiplier,
+  powershotMultiplier,
+  snarePower,
+  snareTicks,
   type SkillId,
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
@@ -244,6 +252,18 @@ function rollSkillDamage(state: GameState, p: Player, multiplier: number): numbe
 }
 
 type Cast = NonNullable<PlayerInput["cast"]>;
+
+/** A bow skill reaches what the bow reaches: the player's range, along a clear line. */
+function arrowReaches(zone: ZoneState, p: Player, c: { pos: { x: number; y: number } }): boolean {
+  return Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= p.range && hasLineOfSight(zone.map, p.pos, c.pos);
+}
+
+/** The cast's hovered monster if an arrow reaches it, else the nearest one that one does. */
+function arrowMark(zone: ZoneState, p: Player, cast: Cast): Monster | undefined {
+  const hint = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
+  if (hint && arrowReaches(zone, p, hint)) return hint;
+  return nearestTo(p.pos, [...zone.monsters.values()].filter((c) => arrowReaches(zone, p, c)));
+}
 
 /** Hover-targeted bolt: the pick is a hint, reach decides, out-of-reach queues a walk-in. */
 function castBolt(state: GameState, zone: ZoneState, p: Player, cast: Cast, skill: BoltSkill): void {
@@ -560,6 +580,45 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         at: { ...targets[0]!.pos },
         zone: zone.id,
       });
+      break;
+    }
+    case "powershot": {
+      // A drawn-out shot: never misses, hits hard, at whatever the bow can reach.
+      const m = arrowMark(zone, p, cast);
+      if (!m) return;
+      if (!spendMana(state, p, "powershot")) return;
+      hitMonster(state, zone, m, p, rollSkillDamage(state, p, powershotMultiplier(p.skills.powershot)), "physical");
+      state.events.push({ type: "skill_cast", playerId: p.id, skill: "powershot", pos: { ...p.pos }, at: { ...m.pos }, zone: zone.id });
+      break;
+    }
+    case "multishot": {
+      // Arrows at the mark and the nearest others around it that a bow can reach.
+      const mark = arrowMark(zone, p, cast);
+      if (!mark) return;
+      const others = [...zone.monsters.values()]
+        .filter((c) => c !== mark && Math.hypot(c.pos.x - mark.pos.x, c.pos.y - mark.pos.y) <= MULTISHOT_SPREAD && arrowReaches(zone, p, c))
+        .sort((a, b) => Math.hypot(a.pos.x - mark.pos.x, a.pos.y - mark.pos.y) - Math.hypot(b.pos.x - mark.pos.x, b.pos.y - mark.pos.y));
+      const targets = [mark, ...others].slice(0, multishotCount(p.skills.multishot));
+      if (!spendMana(state, p, "multishot")) return;
+      const mult = multishotMultiplier(p.skills.multishot);
+      for (const m of targets) {
+        hitMonster(state, zone, m, p, rollSkillDamage(state, p, mult), "physical");
+        state.events.push({ type: "skill_cast", playerId: p.id, skill: "multishot", pos: { ...p.pos }, at: { ...m.pos }, zone: zone.id });
+      }
+      break;
+    }
+    case "snare": {
+      if (!cast.at) return;
+      const at = cast.at;
+      if (Math.hypot(at.x - p.pos.x, at.y - p.pos.y) > SNARE_RANGE) return;
+      if (!hasLineOfSight(zone.map, p.pos, at)) return;
+      if (!spendMana(state, p, "snare")) return;
+      const power = snarePower(p.skills.snare);
+      const until = state.tick + snareTicks(p.skills.snare);
+      for (const m of zone.monsters.values()) {
+        if (Math.hypot(m.pos.x - at.x, m.pos.y - at.y) <= SNARE_RADIUS) applyDebuff(m, { kind: "slow", power, until });
+      }
+      state.events.push({ type: "skill_cast", playerId: p.id, skill: "snare", pos: { ...p.pos }, at: { x: at.x, y: at.y }, zone: zone.id });
       break;
     }
     case "firebolt":

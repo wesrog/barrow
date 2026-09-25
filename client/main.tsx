@@ -481,6 +481,12 @@ function Game({
               play("hurt");
               break;
             case "player_swing": {
+              // A bow's basic attack is a shot: the release, never a whoosh.
+              const weapon = localPlayer(game).equipment.weapon;
+              if (weapon && BASES[weapon.baseId]?.reach !== undefined) {
+                play("shoot");
+                break;
+              }
               // The whoosh is for blows that meet only air. A swing with a
               // monster in reach will land (the sim strikes whatever is
               // nearest within reach), so the hit sound speaks for it.
@@ -681,6 +687,8 @@ function Game({
               else if (e.skill === "soulchain") play("spit");
               else if (e.skill === "frostnova") play("cleave");
               else if (e.skill === "blink") play("leap");
+              else if (e.skill === "powershot" || e.skill === "multishot") play("shoot");
+              else if (e.skill === "snare") play("equip");
               else if (e.skill === "focus") {
                 scene.addDamageNumber(localPlayer(game).pos, "focus!", "#b08ad1");
                 play("warcry");

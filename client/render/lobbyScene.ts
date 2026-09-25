@@ -39,10 +39,12 @@ const VIEW_HEIGHT = 7;
 const PROPS: KitName = "viking_props";
 const NATURE: KitName = "viking_nature";
 
-/** The two figures at the fire: where they stand, which way they face, and their colours. */
-const FIGURES: Record<Klass, { x: number; z: number; ry: number; glow: number; ring: number; perform: readonly ("cheer" | "taunt" | "castRaise" | "attack1h")[] }> = {
+/** The figures at the fire: where they stand, which way they face, and their colours. */
+const FIGURES: Record<Klass, { x: number; z: number; ry: number; glow: number; ring: number; perform: readonly ("cheer" | "taunt" | "castRaise" | "attack1h" | "shoot")[] }> = {
   warrior: { x: -1.6, z: 1.1, ry: Math.PI / 4 + 0.45, glow: 0xffb35c, ring: 0xd9a441, perform: ["taunt", "cheer", "attack1h"] },
   witch: { x: 1.6, z: -1.1, ry: Math.PI / 4 - 0.45, glow: 0x9a6ae8, ring: 0xa47cf0, perform: ["castRaise", "cheer"] },
+  // behind the fire, between the other two, facing out across it
+  ranger: { x: -1.3, z: -1.5, ry: Math.PI / 4, glow: 0x9ccf7a, ring: 0x7fb85a, perform: ["shoot", "cheer"] },
 };
 
 /** Kit props around the fire: node, position, yaw, scale. Rows, not code. */
@@ -237,6 +239,15 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
     witch.setEquipment(eq);
   }
   const witchFigure = makeFigure("witch", witch);
+
+  const ranger = makeHeroModelRig(assets, "ranger");
+  {
+    const eq = createEquipment();
+    eq.weapon = showpiece("horn_bow", "Horn Bow");
+    eq.helm = showpiece("cracked_helm", "Cracked Helm");
+    ranger.setEquipment(eq);
+  }
+  makeFigure("ranger", ranger);
 
   // --- Pointer: the figures are buttons ---
   const raycaster = new THREE.Raycaster();

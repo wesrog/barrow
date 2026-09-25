@@ -21,6 +21,7 @@
 import type { WeaponEdge } from "../sim/items/bases";
 
 type SoundName =
+  | "shoot"
   | "swing"
   | "hit"
   | "hurt"
@@ -644,6 +645,14 @@ function swingBlunt(c: AudioContext, p: number, at: number, loud: number): void 
 }
 
 const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge) => void> = {
+  shoot: (c) => {
+    // A bow loosed: the string's low thrum, a dry snap of release, the fletching's hiss away.
+    const p = rnd(0.9, 1.12);
+    sub(c, { from: 190 * p, to: 95 * p, dur: 0.12, gain: 0.22 });
+    metal(c, { freq: 150 * p, dur: 0.16, gain: 0.05, partials: 3 });
+    noise(c, { dur: 0.03, gain: 0.12, filterFrom: 2600, filterTo: 1200, q: 1.5 });
+    noise(c, { dur: 0.16, gain: 0.05, filterFrom: 3200 * p, filterTo: 1400 * p, q: 0.8, at: 0.02 });
+  },
   swing: (c, _v, edge) => {
     // Swings fire on a fixed attack cadence, so everything here fights the
     // metronome: a wide timing jitter, three different arc characters, a big

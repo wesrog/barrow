@@ -654,15 +654,17 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     if (edge === "sharp") {
       // a bright recorded whoosh: steel through nothing, the synth air under it
       playSample("swing_sharp", { gain: 0.144 * loud, at, jitterCents: 90 });
-      swingSharp(c, p, at, loud * 0.45);
+      swingSharp(c, p, at, loud * 0.22);
       return;
     }
     if (edge === "blunt") {
       // a darker, longer whoosh for a haft hauled through air
       playSample("swing_blunt", { gain: 0.134 * loud, at, jitterCents: 90 });
-      swingBlunt(c, p, at, loud * 0.5);
+      swingBlunt(c, p, at, loud * 0.25);
       return;
     }
+    // the synth air under a bare-handed swing sits at half its old level
+    const air = loud * 0.5;
     // bare hands: sleeve and cloth over the synth air
     playSample("swing_bare", { gain: 0.35 * loud, at, jitterCents: 150 });
     const kind = Math.random();
@@ -670,7 +672,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
       // full arc — long displaced air
       noise(c, {
         dur: rnd(0.12, 0.22),
-        gain: rnd(0.12, 0.2) * loud,
+        gain: rnd(0.12, 0.2) * air,
         filterFrom: rnd(1200, 1700) * p,
         filterTo: rnd(220, 360) * p,
         q: rnd(0.6, 0.9),
@@ -680,7 +682,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
       // short chop — quicker, brighter cut
       noise(c, {
         dur: rnd(0.07, 0.12),
-        gain: rnd(0.13, 0.22) * loud,
+        gain: rnd(0.13, 0.22) * air,
         filterFrom: rnd(1900, 2600) * p,
         filterTo: rnd(400, 650) * p,
         q: rnd(0.8, 1.3),
@@ -690,7 +692,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
       // heavy haul — dark, slow air with barely any top
       noise(c, {
         dur: rnd(0.14, 0.24),
-        gain: rnd(0.14, 0.22) * loud,
+        gain: rnd(0.14, 0.22) * air,
         filterFrom: rnd(700, 1000) * p,
         filterTo: rnd(150, 240) * p,
         filterType: "lowpass",
@@ -702,7 +704,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     if (Math.random() < 0.6) {
       noise(c, {
         dur: rnd(0.09, 0.16),
-        gain: rnd(0.05, 0.11) * loud,
+        gain: rnd(0.05, 0.11) * air,
         filterFrom: rnd(380, 620) * p,
         filterTo: rnd(110, 200) * p,
         filterType: "lowpass",
@@ -711,7 +713,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     }
     // occasional grip/cloth rustle at the start of the arc
     if (Math.random() < 0.25) {
-      noise(c, { dur: 0.04, gain: 0.06 * loud, filterFrom: rnd(900, 1400), filterTo: 500, q: 1.5, at });
+      noise(c, { dur: 0.04, gain: 0.06 * air, filterFrom: rnd(900, 1400), filterTo: 500, q: 1.5, at });
     }
   },
   hit: (c, _v, edge) => {

@@ -272,8 +272,9 @@ function loose(state: GameState, zone: ZoneState, p: Player, skill: SkillId, ang
   const sin = Math.sin(angle);
   const d = { x: dir.x * cos - dir.y * sin, y: dir.x * sin + dir.y * cos };
   const { to, hit } = traceArrow(zone, p.pos, d, p.range);
+  // The cast goes out before the hit it causes: the renderer holds the hit back until the bolt lands.
+  state.events.push({ type: "skill_cast", playerId: p.id, skill, pos: { ...p.pos }, at: to, hit: hit?.id ?? null, zone: zone.id });
   if (hit) hitMonster(state, zone, hit, p, rollSkillDamage(state, p, mult), "physical");
-  state.events.push({ type: "skill_cast", playerId: p.id, skill, pos: { ...p.pos }, at: to, zone: zone.id });
 }
 
 /** Hover-targeted bolt: the pick is a hint, reach decides, out-of-reach queues a walk-in. */

@@ -211,7 +211,8 @@ export type SimEvent =
   | { type: "skill_learned"; playerId: PlayerId; skill: SkillId; rank: number }
   | { type: "respec"; playerId: PlayerId; cost: number }
   | { type: "waypoint_found"; playerId: PlayerId; area: AreaId }
-  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; zone: ZoneId }
+  /** `hit`: the monster a skill arrow struck, announced before its hit so the bolt can land first. */
+  | { type: "skill_cast"; playerId: PlayerId; skill: SkillId; pos: Vec; at?: Vec; hit?: number | null; zone: ZoneId }
   | { type: "cast_failed"; playerId: PlayerId; reason: "mana" }
   | { type: "leap_land"; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | { type: "charge_hit"; playerId: PlayerId; pos: Vec; zone: ZoneId }

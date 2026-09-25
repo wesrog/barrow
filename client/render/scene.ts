@@ -71,6 +71,8 @@ export interface SceneHandle {
   pick(state: GameState, clientX: number, clientY: number): PickResult;
   /** Spawn a floating damage number at a world position. */
   addDamageNumber(pos: Vec, text: string, color: string): void;
+  /** Milliseconds until a bolt in flight at this monster lands (0 if none): its hit waits for it. */
+  impactDelay(monsterId: number): number;
   /** Flash an expanding blast ring at a world position. */
   addExplosion(pos: Vec, radius: number): void;
   /** Play any visual reaction this sim event deserves (swings, hits, deaths...). */
@@ -1336,6 +1338,7 @@ export function createScene(
       },
     );
   };
+  const boltFlightMs = (cells: number): number => Math.max(60, (cells / ARROW_SPEED) * 1000);
   const arrowFlight = (from: Vec, to: Vec, muzzle?: THREE.Vector3): void => {
     // A crossbow bolt when that kit loaded (0.46 long, along Z), else the Viking arrow (1 long).
     const bolt = kitNode(assets.kits, "crossbow_weapons", "Wep_Crossbow_Bolt_01");
@@ -1359,7 +1362,7 @@ export function createScene(
     const sz = muzzle ? muzzle.z : from.y + (dz / dist) * 0.4;
     const sy = muzzle ? muzzle.y : 1.15;
     const flight = Math.max(0.3, Math.hypot(to.x - sx, to.y - sz));
-    const dur = Math.max(60, (flight / ARROW_SPEED) * 1000);
+    const dur = boltFlightMs(flight);
     const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, sy + (0.7 - sy) * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
     if (muzzle) releaseFlash(muzzle);
     // A bright streak trails the bolt: a thin cone, fat at the bolt and fading to
@@ -1424,8 +1427,32 @@ export function createScene(
     rig?.holdStance("aim", now + AIM_HOLD_MS, AIM_FROM_S);
     shotAt.set(playerId, { at: now, timeScale });
   };
+  /** When each bolt in flight lands, by the monster it struck: the sim resolves the
+   * hit on the tick it looses, and the hit's flash, number and sound wait for the bolt. */
+  const boltLands = new Map<number, number>();
+  const impactDelay = (monsterId: number): number => {
+    const at = boltLands.get(monsterId);
+    if (at === undefined) return 0;
+    const left = at - performance.now();
+    if (left <= 0) boltLands.delete(monsterId);
+    return Math.max(0, left);
+  };
+  /** A monster takes a blow: a white flash, a squash-pop, a spray of blood. */
+  const monsterStruck = (id: number, pos: Vec): void => {
+    const mesh = monsterRigs.get(id)?.group;
+    if (mesh) {
+      fx.flash(mesh, 0xffffff);
+      // Squash-pop around the rig's own base scale, not scale 1.
+      const base = mesh.scale.x;
+      fx.tween(120, (t) => {
+        const s = 1 + Math.sin(t * Math.PI) * 0.14;
+        mesh.scale.set(base * s, base * (2 - s), base * s);
+      }, () => mesh.scale.setScalar(base));
+    }
+    fx.burst(pos.x, 0.55, pos.y, 0x8a2a2a, 6, 1.8);
+  };
   /** Fly a bolt once the archer's shot reaches its release frame. */
-  const loosedBolt = (playerId: PlayerId, from: Vec, to: Vec): void => {
+  const loosedBolt = (playerId: PlayerId, from: Vec, to: Vec, hit: number | null = null): void => {
     let shot = shotAt.get(playerId);
     const now = performance.now();
     if (!shot || now - shot.at > 700) {
@@ -1433,6 +1460,8 @@ export function createScene(
       shot = shotAt.get(playerId)!;
     }
     const wait = shot.at + releaseMs(shot.timeScale) - now;
+    // Timed from the archer, not the muzzle a little ahead: a hit a frame late reads fine, one early does not.
+    if (hit !== null) boltLands.set(hit, now + Math.max(0, wait) + boltFlightMs(Math.hypot(to.x - from.x, to.y - from.y)));
     const f = { ...from };
     const t = { ...to };
     // The tip is read at the release frame, where the pose has the crossbow up.
@@ -2183,7 +2212,7 @@ export function createScene(
         }
         case "arrow": {
           // The sim already flew it: from the archer to the monster it struck, a wall, or the end of its reach.
-          loosedBolt(event.playerId, event.from, event.to);
+          loosedBolt(event.playerId, event.from, event.to, event.hit);
           break;
         }
         case "monster_swing": {
@@ -2226,17 +2255,9 @@ export function createScene(
           break;
         }
         case "monster_hit": {
-          const mesh = monsterRigs.get(event.id)?.group;
-          if (mesh) {
-            fx.flash(mesh, 0xffffff);
-            // Squash-pop around the rig's own base scale, not scale 1.
-            const base = mesh.scale.x;
-            fx.tween(120, (t) => {
-              const s = 1 + Math.sin(t * Math.PI) * 0.14;
-              mesh.scale.set(base * s, base * (2 - s), base * s);
-            }, () => mesh.scale.setScalar(base));
-          }
-          fx.burst(event.pos.x, 0.55, event.pos.y, 0x8a2a2a, 6, 1.8);
+          const wait = impactDelay(event.id);
+          if (wait > 0) fx.tween(wait, () => {}, () => monsterStruck(event.id, event.pos));
+          else monsterStruck(event.id, event.pos);
           break;
         }
         case "player_hit": {
@@ -2256,12 +2277,20 @@ export function createScene(
             const mesh = rig.group;
             if (rig.oneShot) {
               // Play the death clip in place, keep the mixer running, then sink away.
-              rig.oneShot("death", { hold: true });
-              const start = performance.now();
-              fx.tween(1400, (t) => {
-                rig.animate!(start + t * 1400, 0, 0);
-                if (t > 0.7) mesh.position.y = -((t - 0.7) / 0.3) * 0.6;
-              }, () => scene.remove(mesh));
+              // A killing bolt still in the air: the monster keeps its feet until it lands.
+              const wait = impactDelay(event.id);
+              const die = () => {
+                rig.oneShot!("death", { hold: true });
+                const start = performance.now();
+                fx.tween(1400, (t) => {
+                  rig.animate!(start + t * 1400, 0, 0);
+                  if (t > 0.7) mesh.position.y = -((t - 0.7) / 0.3) * 0.6;
+                }, () => scene.remove(mesh));
+              };
+              if (wait > 0) {
+                const from = performance.now();
+                fx.tween(wait, (t) => rig.animate!(from + t * wait, 0, 0), die);
+              } else die();
             } else {
               const dir = ((event.id * 61) % 2) * 2 - 1;
               fx.tween(300, (t) => {
@@ -2273,7 +2302,9 @@ export function createScene(
             }
           }
           monsterFxOffsets.delete(event.id);
-          fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
+          const deathWait = impactDelay(event.id);
+          if (deathWait > 0) fx.tween(deathWait, () => {}, () => fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6));
+          else fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
           break;
         }
         case "secret_found": {
@@ -2315,7 +2346,7 @@ export function createScene(
           if (event.skill === "powershot" || event.skill === "multishot") {
             if (casterEntry) casterEntry.aimYaw = casterEntry.targetYaw;
             startShot(event.playerId, event.skill === "powershot" ? 1.2 : 1.6);
-            if (event.at) loosedBolt(event.playerId, event.pos, event.at);
+            if (event.at) loosedBolt(event.playerId, event.pos, event.at, event.hit ?? null);
             if (event.skill === "powershot") shake(0.05);
           } else if (event.skill === "snare") {
             caster?.oneShot("cast", { timeScale: 1.5 });
@@ -2410,6 +2441,7 @@ export function createScene(
       }
     },
 
+    impactDelay,
     addDamageNumber(pos, text, color) {
       const at = worldToScreen(pos, 1.3);
       const el = document.createElement("div");

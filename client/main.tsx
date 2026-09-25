@@ -472,10 +472,19 @@ function Game({
           scene.handleEvent(e, game);
           if ("playerId" in e && e.playerId !== localId()) continue;
           switch (e.type) {
-            case "monster_hit":
-              scene.addDamageNumber(e.pos, String(e.amount), ELEMENT_COLORS[e.element]);
-              play("hit", undefined, weaponEdge(game));
+            case "monster_hit": {
+              // A bolt's hit waits for the bolt to land.
+              const at = scene;
+              const edge = weaponEdge(game);
+              const land = () => {
+                at.addDamageNumber(e.pos, String(e.amount), ELEMENT_COLORS[e.element]);
+                play("hit", undefined, edge);
+              };
+              const wait = scene.impactDelay(e.id);
+              if (wait > 0) setTimeout(land, wait);
+              else land();
               break;
+            }
             case "player_hit":
               scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
@@ -506,9 +515,12 @@ function Game({
             case "monster_aggro":
               play("aggro", e.typeId);
               break;
-            case "monster_died":
-              play("die", e.typeId);
+            case "monster_died": {
+              const wait = scene.impactDelay(e.id);
+              if (wait > 0) setTimeout(() => play("die", e.typeId), wait);
+              else play("die", e.typeId);
               break;
+            }
             case "breakable_broken":
               play("smash");
               break;

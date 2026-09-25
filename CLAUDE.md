@@ -115,7 +115,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   and corner posts on a hut dweller's wall ring (`hutRing` in `sim/npcs.ts`, shared with the
   zone carver), and `dressPalisade`, which walls each safe rect's ring the same way with
   torches on the gate posts, flags on the corners, and a sign and lit beacon outside the
-  gate; both hand the scene the cells to leave bare. `wildDressing.ts` holds the landmark
+  gate; both hand the scene the cells to leave bare. `lightDressing.ts` scatters standing
+  torches, braziers and small campfires over open ground and braziers, candle stands and
+  torch sticks through crypt rooms: at most one light per block of cells (`block`, `chance`),
+  by cell hash, clear of markers, raised walls and the camp. `wildDressing.ts` holds the landmark
   rows (stone circle, ruin, raider camp, cold camp, shrine) on the same markers the sim
   places, and the scene also bares each landmark's `solid` cells. The primitive campfire and
   dungeon-prop stall remain the fallback. `dressMarkers` is the general form: any row table on

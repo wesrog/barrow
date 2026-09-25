@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { gripInto, heldModel, wearPiece, wornPlacement } from "../render/gear";
+import { applyGripAdjust, gripInto, heldModel, NO_ADJUST, wearPiece, wornPlacement, type GripAdjust } from "../render/gear";
+import { weaponSeatFor } from "../render/modelRigs";
 import { findNode, loadAssets, type GameAssets } from "../render/models";
 import { display, mono } from "../ui/fonts";
 import { loadArtManifest, pieceFile, prettyName, setCounts, TINTS, VARIANTS, type ArtManifest, type Variant } from "./art";
@@ -49,14 +50,51 @@ interface Live {
   current: THREE.AnimationAction | null;
   label: HTMLDivElement;
   visible: boolean;
-  /** What each hand holds, by option id. */
-  held: { r: { id: string; obj: THREE.Object3D } | null; l: { id: string; obj: THREE.Object3D } | null };
+  /** What each hand holds, by option id, with the seat the game gives that piece. */
+  held: { r: Held | null; l: Held | null };
   /** Worn pieces by option id, each the objects it added. */
   worn: Map<string, THREE.Object3D[]>;
 }
 
 type Hand = "r" | "l";
 
+/** A held piece and the seat the game gives it (its tuned adjustments and scale), which the tuner starts from. */
+interface Held {
+  id: string;
+  obj: THREE.Object3D;
+  kit: string;
+  node: string;
+  scale: number;
+  seat: { rest?: GripAdjust; ranged?: GripAdjust } | undefined;
+}
+
+/** A tuned seat: one adjustment at rest, one while a ranged clip plays. */
+interface Seat {
+  rest: GripAdjust;
+  ranged: GripAdjust;
+}
+
+type Pose = keyof Seat;
+
+/** The pose a figure's current clip asks for: the ranged clips hold the fist palm down. */
+function poseOf(live: Live): Pose {
+  return live.current?.getClip().name.includes("Ranged") ? "ranged" : "rest";
+}
+
+const copyAdjust = (a: GripAdjust | undefined): GripAdjust => ({
+  rot: [...(a ?? NO_ADJUST).rot],
+  pos: [...(a ?? NO_ADJUST).pos],
+  scale: (a ?? NO_ADJUST).scale,
+});
+
+const round = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
+
+/** The seat as the line that goes in a weapon look (modelRigs.ts SYNTY_WEAPONS). */
+function seatText(node: string, seat: Seat): string {
+  const one = (a: GripAdjust) =>
+    `{ rot: [${a.rot.map((n) => round(n, 1)).join(", ")}], pos: [${a.pos.map((n) => round(n, 3)).join(", ")}], scale: ${round(a.scale, 2)} }`;
+  return `// ${node}\nadjust: {\n  rest: ${one(seat.rest)},\n  ranged: ${one(seat.ranged)},\n},`;
+}
 /** Put an option in a hand (or empty it), seated with the rig's grip. */
 function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption | null): void {
   if ((live.held[slot]?.id ?? null) === (option?.id ?? null)) return;
@@ -68,7 +106,8 @@ function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption
   const obj = heldModel(assets.kits, option.kit, option.node);
   if (!obj) return;
   gripInto(socket, live.entry.spec.grip[slot], obj);
-  live.held[slot] = { id: option.id, obj };
+  const seat = weaponSeatFor(option.kit, option.node);
+  live.held[slot] = { id: option.id, obj, kit: option.kit, node: option.node, scale: seat?.scale ?? 1, seat: seat?.adjust };
 }
 
 /** Put a worn piece on (or take it off) the bone its kind rides. */
@@ -101,6 +140,13 @@ export function Viewer() {
   const mountRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const livesRef = useRef<Map<string, Live>>(new Map());
+  // --- Grip tuner: seats edited here, keyed by figure, hand, and held piece ---
+  const [seats, setSeats] = useState<Record<string, Seat>>({});
+  const seatsRef = useRef(seats);
+  seatsRef.current = seats;
+  const [tuneSlot, setTuneSlot] = useState<Hand>("r");
+  const [tunePose, setTunePose] = useState<Pose>("ranged");
+  const [copied, setCopied] = useState(false);
   const cameraRef = useRef<{ camera: THREE.PerspectiveCamera; controls: OrbitControls; center: THREE.Vector3; width: number; depth: number } | null>(null);
   const ringRef = useRef<THREE.Mesh | null>(null);
 
@@ -246,7 +292,17 @@ export function Viewer() {
       const dt = Math.min(0.1, (now - last) / 1000);
       last = now;
       for (const live of livesRef.current.values()) {
-        if (live.visible) live.entry.inst.mixer.update(dt);
+        if (!live.visible) continue;
+        live.entry.inst.mixer.update(dt);
+        // Seat what the hands hold for the pose the clip asks for: a tuned seat
+        // if the tuner has one, else the seat the game gives the piece.
+        for (const slot of ["r", "l"] as const) {
+          const h = live.held[slot];
+          if (!h) continue;
+          const pose = poseOf(live);
+          const tuned = seatsRef.current[`${live.entry.id}|${slot}|${h.id}`];
+          applyGripAdjust(h.obj, live.entry.spec.grip[slot], tuned ? tuned[pose] : h.seat?.[pose], h.scale);
+        }
       }
       controls.update();
       renderer.render(scene, camera);
@@ -544,6 +600,87 @@ export function Viewer() {
                 </label>
               );
             })}
+            {selectedLive && (selectedLive.held.r || selectedLive.held.l) && (() => {
+              const slot: Hand = selectedLive.held[tuneSlot] ? tuneSlot : selectedLive.held.r ? "r" : "l";
+              const h = selectedLive.held[slot]!;
+              const key = `${selectedLive.entry.id}|${slot}|${h.id}`;
+              const seat: Seat = seats[key] ?? { rest: copyAdjust(h.seat?.rest), ranged: copyAdjust(h.seat?.ranged) };
+              const a = seat[tunePose];
+              const set = (next: GripAdjust) => {
+                setSeats((s) => ({ ...s, [key]: { ...seat, [tunePose]: next } }));
+                setCopied(false);
+              };
+              const text = seatText(h.node, seat);
+              (window as { __grip?: unknown }).__grip = { node: h.node, kit: h.kit, slot, seat };
+              const slider = (label: string, value: number, min: number, max: number, step: number, onChange: (n: number) => void) => (
+                <label key={label} style={{ display: "grid", gridTemplateColumns: "34px 1fr 58px", gap: 6, alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "#8c8578" }}>{label}</span>
+                  <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+                  <input
+                    type="number"
+                    step={step}
+                    value={value}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    style={{ width: 58, background: "#1a1a22", color: "#e8dcc0", border: "1px solid #2e2e3a", borderRadius: 4, font: "inherit", fontSize: 11 }}
+                  />
+                </label>
+              );
+              return (
+                <div className="field">
+                  <span>grip tuner · {h.node}</span>
+                  <div className="chips">
+                    {(["r", "l"] as const).filter((s) => selectedLive.held[s]).map((s) => (
+                      <button key={s} className={s === slot ? "chip on" : "chip"} onClick={() => setTuneSlot(s)}>
+                        {s === "r" ? "right hand" : "left hand"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="chips">
+                    {(["rest", "ranged"] as const).map((p) => (
+                      <button
+                        key={p}
+                        className={p === tunePose ? "chip on" : "chip"}
+                        title={p === "ranged" ? "plays 2H_Ranged_Aiming" : "plays the idle"}
+                        onClick={() => {
+                          setTunePose(p);
+                          setTarget("selected");
+                          setClip(p === "ranged" ? "2H_Ranged_Aiming" : IDLE);
+                        }}
+                      >
+                        {p === "ranged" ? "shooting" : "at rest"}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: poseOf(selectedLive) === tunePose ? "#7fc978" : "#d9b85c" }}>
+                    {poseOf(selectedLive) === tunePose ? "editing the pose on screen" : "the clip on screen uses the other pose"}
+                  </div>
+                  {slider("rot x", a.rot[0], -180, 180, 1, (n) => set({ ...a, rot: [n, a.rot[1], a.rot[2]] }))}
+                  {slider("rot y", a.rot[1], -180, 180, 1, (n) => set({ ...a, rot: [a.rot[0], n, a.rot[2]] }))}
+                  {slider("rot z", a.rot[2], -180, 180, 1, (n) => set({ ...a, rot: [a.rot[0], a.rot[1], n] }))}
+                  {slider("pos x", a.pos[0], -0.5, 0.5, 0.005, (n) => set({ ...a, pos: [n, a.pos[1], a.pos[2]] }))}
+                  {slider("pos y", a.pos[1], -0.5, 0.5, 0.005, (n) => set({ ...a, pos: [a.pos[0], n, a.pos[2]] }))}
+                  {slider("pos z", a.pos[2], -0.5, 0.5, 0.005, (n) => set({ ...a, pos: [a.pos[0], a.pos[1], n] }))}
+                  {slider("scale", a.scale, 0.3, 2, 0.01, (n) => set({ ...a, scale: n }))}
+                  <div className="chips">
+                    <button className="chip" onClick={() => set(copyAdjust(h.seat?.[tunePose]))}>
+                      reset to game
+                    </button>
+                    <button className="chip" onClick={() => set(copyAdjust(undefined))}>
+                      clear
+                    </button>
+                    <button
+                      className="chip"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(text).then(() => setCopied(true));
+                      }}
+                    >
+                      {copied ? "copied" : "copy"}
+                    </button>
+                  </div>
+                  <pre style={{ fontSize: 10.5, margin: 0, whiteSpace: "pre-wrap", color: "#c9bfa8", background: "#15151c", padding: 6, borderRadius: 4 }}>{text}</pre>
+                </div>
+              );
+            })()}
             <div className="field">
               <span>actions</span>
               <div className="chips">

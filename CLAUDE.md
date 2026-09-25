@@ -149,10 +149,13 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y
   (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
   a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
-  butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a bow in
-  the left fist, and `roll` turns a piece about the forearm only while a `*Ranged*` clip plays
-  (those clips hold the fist palm down): a quarter turn levels the ranger's crossbow at her chest
-  (a left-hand bow also takes a half turn about its length so its string faces the archer),
+  butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a piece in
+  the left fist, and `adjust` holds hand-tuned seats on top of the grip (`GripAdjust` in gear.ts:
+  a turn in degrees and a shift in the hand's frame, and a scale): `rest` for every clip, `ranged`
+  while a `*Ranged*` clip plays (those hold the fist palm down; the ranger's crossbow needs its own
+  seat there). Tune them in the viewer's grip tuner (select a figure, put the piece in a hand, pick
+  "at rest" or "shooting", drag the sliders, copy): it prints the `adjust` block for the look and
+  exposes it as `window.__grip`,
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in

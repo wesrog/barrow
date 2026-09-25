@@ -12,7 +12,7 @@ import {
   type KitName,
   type Kits,
 } from "./models";
-import { captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement } from "./gear";
+import { applyGripAdjust, captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement, type GripAdjust } from "./gear";
 import {
   SYNTY_DUNGEON_RIG,
   SYNTY_GOBLIN_RIG,
@@ -294,14 +294,20 @@ interface SyntyWeaponLook {
   swing?: "chop" | "slice" | "shoot";
   /** The hand that holds it: the right unless the row says left (a bow rides the left fist). */
   hand?: "l";
-  /** Extra turn about the forearm after the grip, in radians: the ranged clips hold the fist
-   * palm down, so a bow needs a quarter turn to stand upright (checked in the viewer). */
-  roll?: number;
+  /** Hand-tuned corrections on top of the grip (the viewer's grip tuner prints these):
+   * `rest` for every clip but the ranged ones, `ranged` while a `*Ranged*` clip plays
+   * (those hold the fist palm down, so a crossbow needs its own seat there). */
+  adjust?: { rest?: GripAdjust; ranged?: GripAdjust };
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
    * is held by its handle end (the wands are cut-down staves). */
   lift?: number;
 }
+
+/** The crossbow's seat, tuned in the viewer's grip tuner. */
+const CROSSBOW_ADJUST: SyntyWeaponLook["adjust"] = {
+  ranged: { rot: [90, 0, 0], pos: [0, 0, 0], scale: 1 },
+};
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false },
@@ -312,12 +318,12 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
   moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
-  // crossbows: the POLYGON Bow and Crossbow pack's, in the right fist; the ranged clips
-  // hold the fist palm down, so a quarter turn about the forearm levels it at the chest
-  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.8 },
-  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.85 },
-  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.9 },
-  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.95 },
+  // crossbows: the POLYGON Bow and Crossbow pack's, in the right fist; a quarter turn
+  // about the forearm levels it at the chest while the ranged clips play
+  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.8 },
+  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.85 },
+  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.9 },
+  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.95 },
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
@@ -327,6 +333,12 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   willow_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
   hexwood_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
 };
+
+/** The tuned seat and scale the game gives a kit piece, if a weapon look uses it (the viewer's tuner starts from these). */
+export function weaponSeatFor(kit: KitName, node: string): { adjust: SyntyWeaponLook["adjust"]; scale: number } | null {
+  const look = Object.values(SYNTY_WEAPONS).find((w) => w.kit === kit && w.node === node);
+  return look ? { adjust: look.adjust, scale: look.scale ?? 1 } : null;
+}
 
 /** Helm base id -> Viking attachment nodes stacked on the head. */
 const SYNTY_HELMS: Record<string, string[]> = {
@@ -375,8 +387,14 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   let twoHanded = false;
   let armed = false;
   let swing: "chop" | "slice" | "shoot" = "slice";
-  /** A held piece whose roll depends on the clip: its grip turn, and the extra roll for the ranged clips. */
-  let rolled: { model: THREE.Object3D; base: THREE.Quaternion; ranged: THREE.Quaternion } | null = null;
+  /** The held weapon and its seat: the grip, its tuned adjustments, and which pose it sits in now. */
+  let held: {
+    model: THREE.Object3D;
+    slot: "r" | "l";
+    scale: number;
+    adjust: SyntyWeaponLook["adjust"];
+    pose: "rest" | "ranged" | null;
+  } | null = null;
 
   // Bone rest frames in the character's own space, captured before the first
   // mixer update: pieces authored in place over the bind pose (fur mantles)
@@ -457,31 +475,17 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       swing = look.swing ?? "slice";
       const model = heldModel(kits, look.kit, look.node);
       if (model) {
-        if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
         // The wrapper holds one upright model; lifting it moves the grip down the shaft.
         if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
-      if (look.hand === "l") {
-        rig.attach("l", model);
-        rig.attach("r", null);
-      } else {
-        rig.attach("r", model);
-      }
-      // The grip set the wrapper's turn; the roll spins it about the forearm (hand X)
-      // from there, but only while a ranged clip holds the fist palm down. At rest the
-      // plain grip already stands a bow upright.
-      rolled = null;
-      if (model && look.roll) {
-        const base = model.quaternion.clone();
-        const ranged = base.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll));
-        // A bow in the left fist also turns half about its own length (the wrapper's Y), so the string faces the archer.
-        if (look.hand === "l") ranged.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
-        rolled = { model, base, ranged };
-      }
+      const slot = look.hand === "l" ? "l" : "r";
+      rig.attach(slot, model);
+      if (slot === "l") rig.attach("r", null);
+      held = model ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null } : null;
     } else {
       twoHanded = false;
-      rolled = null;
+      held = null;
       rig.attach("r", null);
     }
   };
@@ -494,7 +498,14 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const animate = rig.animate.bind(rig);
   hero.animate = (now, phase, speed) => {
     animate(now, phase, speed);
-    if (rolled) rolled.model.quaternion.copy(rig.currentClip()?.includes("Ranged") ? rolled.ranged : rolled.base);
+    if (held) {
+      // Re-seat only when the pose changes: the ranged clips get their own adjustment.
+      const pose = rig.currentClip()?.includes("Ranged") ? "ranged" : "rest";
+      if (pose !== held.pose) {
+        held.pose = pose;
+        applyGripAdjust(held.model, SYNTY_HUMAN_RIG.grip[held.slot], held.adjust?.[pose], held.scale);
+      }
+    }
   };
   return hero;
 }

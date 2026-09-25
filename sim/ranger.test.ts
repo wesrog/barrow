@@ -24,11 +24,11 @@ import type { SkillId } from "./skills";
 
 const open = () =>
   mapFromStrings([
-    "##############",
-    "#@...........#",
-    "#............#",
-    "#............#",
-    "##############",
+    "######################",
+    "#@...................#",
+    "#....................#",
+    "#....................#",
+    "######################",
   ]);
 
 /** A wall between the player's column and the far side, open only along the bottom row. */

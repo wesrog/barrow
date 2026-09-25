@@ -90,7 +90,7 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   the witch a bone wand and one rank of firebolt, the ranger a light crossbow and one rank of
   power shot. Three classes: warrior, witch, ranger (Archery, Hunting, Survival; Power Shot,
   Multishot, Eagle Eye, Snare, Evasion and Swiftness work, the rest are `pending` rows). Crossbows are
-  weapon bases with a `reach` (ids still `*_bow`: saves carry them) (8.5 to 9.5 cells, about half the screen); `computeStats` turns it
+  weapon bases with a `reach` (ids still `*_bow`: saves carry them) (11.5 to 12.5 cells); `computeStats` turns it
   into `range` (melee is `MELEE_RANGE`). Arrows fly directionally: a shot's strike carries its
   `aim`, and `traceArrow` walks the line from the archer to the first wall or the first monster
   body it passes (the first in line takes it), or the end of the reach, emitting an `arrow`

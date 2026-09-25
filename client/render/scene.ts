@@ -1365,7 +1365,7 @@ export function createScene(
     const streakMat = new THREE.MeshBasicMaterial({
       color: 0xfff0c8,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.4,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });

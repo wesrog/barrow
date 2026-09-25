@@ -473,7 +473,11 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rolled = null;
       if (model && look.roll) {
         const base = model.quaternion.clone();
-        const ranged = base.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll));
+        // A half turn about the bow's own length (the wrapper's Y) puts the string on the archer's side.
+        const ranged = base
+          .clone()
+          .premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll))
+          .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
         rolled = { model, base, ranged };
       }
     } else {

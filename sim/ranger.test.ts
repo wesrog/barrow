@@ -12,6 +12,7 @@ import {
   eagleEyeRange,
   evasionDefense,
   multishotCount,
+  multishotFan,
   powershotMultiplier,
   snareTicks,
 } from "./skills";
@@ -53,6 +54,18 @@ function ranger(state: GameState, points = 12): void {
   p.equipment.weapon = bow();
   recomputePlayerStats(state, p);
   p.mana = p.maxMana;
+}
+
+type ArrowEvent = Extract<GameState["events"][number], { type: "arrow" }>;
+
+/** Step with an input, then idle, and return every arrow loosed along the way (events clear each tick). */
+function shoot(state: GameState, input: Parameters<typeof stepSolo>[1], ticks = 12): ArrowEvent[] {
+  const arrows: ArrowEvent[] = [];
+  for (let i = 0; i < ticks; i++) {
+    stepSolo(state, i === 0 ? input : {});
+    for (const e of state.events) if (e.type === "arrow") arrows.push(e);
+  }
+  return arrows;
 }
 
 function learn(state: GameState, id: SkillId): void {
@@ -126,6 +139,45 @@ describe("shooting", () => {
     expect(Math.hypot(p.pos.x - start.x, p.pos.y - start.y)).toBeGreaterThan(0.1);
   });
 
+  test("a shot flies on past the point aimed at and strikes the monster beyond", () => {
+    const state = createGameOn(1, open());
+    ranger(state);
+    const p = player(state);
+    const m = spawnAt(state, "skitter", { x: p.pos.x + 7, y: p.pos.y });
+    m.life = m.maxLife = 500;
+    m.aggro = 0;
+    // shift-click a spot two cells out, on the line to the monster
+    const [arrow] = shoot(state, { swingAt: { x: p.pos.x + 2, y: p.pos.y } });
+    expect(arrow).toBeDefined();
+    expect(arrow!.hit).toBe(m.id);
+    expect(arrow!.to.x).toBeGreaterThan(p.pos.x + 6);
+  });
+
+  test("a shot that finds nothing flies its full reach, and stops at a wall", () => {
+    const state = createGameOn(1, open());
+    ranger(state);
+    const p = player(state);
+    const [free] = shoot(state, { swingAt: { x: p.pos.x + 1, y: p.pos.y + 1 } });
+    // down-right runs into the arena's bottom wall well before full reach
+    expect(free!.hit).toBeNull();
+    expect(Math.hypot(free!.to.x - free!.from.x, free!.to.y - free!.from.y)).toBeLessThan(p.range);
+    const [along] = shoot(state, { swingAt: { x: p.pos.x + 1, y: p.pos.y } });
+    expect(along!.hit).toBeNull();
+    expect(Math.hypot(along!.to.x - along!.from.x, along!.to.y - along!.from.y)).toBeCloseTo(p.range, 0);
+  });
+
+  test("the first monster in the line takes the arrow", () => {
+    const state = createGameOn(1, open());
+    ranger(state);
+    const p = player(state);
+    const near = spawnAt(state, "skitter", { x: p.pos.x + 3, y: p.pos.y });
+    const far = spawnAt(state, "skitter", { x: p.pos.x + 6, y: p.pos.y });
+    near.life = near.maxLife = far.life = far.maxLife = 500;
+    near.aggro = far.aggro = 0;
+    const [arrow] = shoot(state, { swingAt: { x: p.pos.x + 6, y: p.pos.y } });
+    expect(arrow!.hit).toBe(near.id);
+  });
+
   test("eagle eye lengthens the reach", () => {
     const state = createGameOn(1, open());
     ranger(state);
@@ -151,17 +203,21 @@ describe("ranger skills", () => {
     expect(powershotMultiplier(2)).toBeGreaterThan(powershotMultiplier(1));
   });
 
-  test("multishot looses an arrow at each of several monsters in reach", () => {
+  test("multishot fans its arrows out around the aimed line", () => {
     const state = createGameOn(3, open());
     ranger(state);
     learn(state, "multishot");
     const p = player(state);
-    const ms = [0, 1, 2].map((i) => {
-      const m = spawnAt(state, "skitter", { x: p.pos.x + 4 + i, y: p.pos.y + (i % 2) });
+    // the middle row, so the fan's outer arrows stay inside the arena
+    p.pos = { x: 1.5, y: 2.5 };
+    const fan = multishotFan(multishotCount(1));
+    expect(fan.length).toBe(multishotCount(1));
+    const ms = fan.slice(0, 3).map((a) => {
+      const m = spawnAt(state, "skitter", { x: p.pos.x + Math.cos(a) * 5, y: p.pos.y + Math.sin(a) * 5 });
       m.life = m.maxLife = 1000;
       return m;
     });
-    stepSolo(state, { cast: { skill: "multishot", target: ms[0]!.id } });
+    stepSolo(state, { cast: { skill: "multishot", target: ms[1]!.id, at: { ...ms[1]!.pos } } });
     expect(multishotCount(1)).toBeGreaterThanOrEqual(3);
     for (const m of ms) expect(m.life).toBeLessThan(1000);
   });

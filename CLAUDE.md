@@ -90,8 +90,13 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   the witch a bone wand and one rank of firebolt, the ranger a short bow and one rank of power
   shot. Three classes: warrior, witch, ranger (Archery, Hunting, Survival; Power Shot,
   Multishot, Eagle Eye, Snare, Evasion and Swiftness work, the rest are `pending` rows). Bows are
-  weapon bases with a `reach`; `computeStats` turns it into `range` (melee is `MELEE_RANGE`), and
-  a basic attack at bow reach needs line of sight (`basicReaches` in combat) or the ranger walks.
+  weapon bases with a `reach` (8.5 to 9.5 cells, about half the screen); `computeStats` turns it
+  into `range` (melee is `MELEE_RANGE`). Arrows fly directionally: a shot's strike carries its
+  `aim`, and `traceArrow` walks the line from the archer to the first wall or the first monster
+  body it passes (the first in line takes it), or the end of the reach, emitting an `arrow`
+  event the renderer draws. Power Shot flies the same way; Multishot fans `multishotFan` angles
+  around the aim. The camp gate keeps an open apron outside it (`GATE_APRON_DEPTH`/`_HALF` in
+  `sim/zone.ts`), where the palisade dressing stands a big torch either side of the way in.
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
@@ -146,7 +151,8 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
   butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a bow in
   the left fist, and `roll` turns it about the forearm only while a `*Ranged*` clip plays (those
-  clips hold the fist palm down; at rest the plain grip already stands the bow upright),
+  clips hold the fist palm down; at rest the plain grip already stands the bow upright), plus a
+  half turn about the bow's length so the string sits on the archer's side,
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in

@@ -126,7 +126,9 @@ export interface Player {
   /** Monster id currently being attacked, if any. */
   attackTarget: number | null;
   /** A swing in flight: damage resolves at this tick (contact frame). */
-  pendingStrike: { at: number; target: number | null } | null;
+  /** A swing in flight: lands at `at` on `target` (or the nearest in reach); a bow's
+   * shot flies from the archer toward `aim` instead, whatever it meets first. */
+  pendingStrike: { at: number; target: number | null; aim?: Vec } | null;
   /** A leap in flight: the player travels from→to and lands (stunning) at endTick. */
   leap: { from: Vec; to: Vec; startTick: number; endTick: number } | null;
   /** A charge underway: a ground rush from→to that rams the target monster at endTick. */
@@ -187,6 +189,8 @@ export interface GoldPile {
 
 export type SimEvent =
   | { type: "player_swing"; playerId: PlayerId; to: Vec; zone: ZoneId }
+  /** A loosed arrow: where it flew from and to (the monster it struck, a wall, or the end of its reach). */
+  | { type: "arrow"; playerId: PlayerId; from: Vec; to: Vec; hit: number | null; zone: ZoneId }
   | { type: "monster_swing"; id: number; from: Vec; to: Vec; ranged: boolean; zone: ZoneId }
   | { type: "monster_windup"; id: number; ticks: number; pos: Vec; zone: ZoneId }
   | { type: "monster_aggro"; id: number; typeId: string; pos: Vec; zone: ZoneId }

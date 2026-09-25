@@ -117,8 +117,6 @@ export const CHILL_POWER = 0.4;
 /** Snare: thrown within this range, it catches everything within the radius of where it lands. */
 export const SNARE_RANGE = 9;
 export const SNARE_RADIUS = 1.8;
-/** Multishot's extra arrows find monsters within this distance of the aimed one. */
-export const MULTISHOT_SPREAD = 4;
 
 // ── ranger rank math ──
 
@@ -129,6 +127,13 @@ export function powershotMultiplier(rank: number): number {
 /** Multishot: three arrows, one more every second rank. */
 export function multishotCount(rank: number): number {
   return 3 + Math.floor((rank - 1) / 2);
+}
+/** Multishot: the arrows' angles off the aimed line, in radians, spread evenly over about 20 degrees
+ * each side (wider as the count grows), the middle arrow on the line itself when the count is odd. */
+export function multishotFan(count: number): number[] {
+  const half = Math.min(0.5, 0.12 * (count - 1));
+  if (count <= 1) return [0];
+  return Array.from({ length: count }, (_, i) => -half + (2 * half * i) / (count - 1));
 }
 /** Multishot: each arrow at 60% weapon damage, +4% per extra rank. */
 export function multishotMultiplier(rank: number): number {
@@ -493,7 +498,7 @@ export const SKILLS: Record<SkillId, SkillDef> = {
     describe: (r) => `a drawn-out shot that never misses · ${pct(powershotMultiplier(r1(r)))} weapon damage` }),
   multishot: row({ id: "multishot", name: "Multishot", klass: "ranger", tree: "archery", tier: 4, targeting: "target", manaCost: 6, castTicks: 18,
     prereqs: ["powershot"],
-    describe: (r) => `${multishotCount(r1(r))} arrows at the mark and those near it · ${pct(multishotMultiplier(r1(r)))} weapon damage each` }),
+    describe: (r) => `a fan of ${multishotCount(r1(r))} arrows around the aimed line · ${pct(multishotMultiplier(r1(r)))} weapon damage each` }),
   eagleeye: passive({ id: "eagleeye", name: "Eagle Eye", klass: "ranger", tree: "archery", tier: 8,
     describe: (r) => `+${eagleEyeRange(r1(r)).toFixed(1)} reach · +${eagleEyeAttackRating(r1(r))} attack rating` }),
   piercingshot: pending({ id: "piercingshot", name: "Piercing Shot", klass: "ranger", tree: "archery", tier: 12, targeting: "target", manaCost: 8, castTicks: 16,

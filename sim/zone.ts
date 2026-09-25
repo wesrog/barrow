@@ -27,6 +27,10 @@ export const MARKER_TYPES: Record<string, string> = {
   n: "crown_sentinel",
 };
 
+/** The open ground outside the camp gate: this many cells out from the wall, and this many either side of the gate row. */
+export const GATE_APRON_DEPTH = 6;
+export const GATE_APRON_HALF = 4;
+
 /** Cells of quiet ground between the palisade and the nearest monster pack, and the nearest landmark. */
 export const PACK_MARGIN = 6;
 export const LANDMARK_MARGIN = 10;
@@ -171,6 +175,17 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
   for (const t of targets) {
     for (let x = Math.min(gate.x, t.x); x <= Math.max(gate.x, t.x); x++) cells[idx(x, gate.y)] = 1;
     for (let y = Math.min(gate.y, t.y); y <= Math.max(gate.y, t.y); y++) cells[idx(t.x, y)] = 1;
+  }
+
+  // An open apron outside the gate: no crags or copses crowd the way in, and
+  // the renderer stands its big torches on it. Floor only grows here, and no
+  // roll is drawn, so nothing downstream shifts.
+  if (safe) {
+    for (let y = gy - GATE_APRON_HALF; y <= gy + GATE_APRON_HALF; y++) {
+      for (let x = safe.x1 + 1; x <= Math.min(w - 3, safe.x1 + GATE_APRON_DEPTH); x++) {
+        if (y >= 2 && y < h - 2) cells[idx(x, y)] = 1;
+      }
+    }
   }
 
   // Stitch: the automaton grows the landmass in fragments, and only luck ties

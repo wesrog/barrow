@@ -2061,11 +2061,8 @@ export function createScene(
           if (dx * dx + dy * dy > 1e-6) entry.targetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
           if (holdsBow(swinger)) {
-            // A shot: draw and loose, the arrow leaving on the release frame.
+            // A shot: draw and loose; the arrow itself arrives as its own event on the release tick.
             entry.rig.oneShot("shoot", { timeScale: 1.6 });
-            const from = { ...swinger.pos };
-            const to = { ...event.to };
-            fx.tween(140, () => {}, () => arrowFlight(from, to));
             break;
           }
           entry.rig.oneShot(entry.rig.attackClip(), { timeScale: 1.6 });
@@ -2073,6 +2070,11 @@ export function createScene(
             const lunge = Math.sin(Math.min(t / 0.6, 1) * Math.PI) * 0.16;
             entry.fxOffset.set((dx / len) * lunge, 0, (dy / len) * lunge);
           }, () => entry.fxOffset.set(0, 0, 0));
+          break;
+        }
+        case "arrow": {
+          // The sim already flew it: from the archer to the monster it struck, a wall, or the end of its reach.
+          arrowFlight(event.from, event.to);
           break;
         }
         case "monster_swing": {

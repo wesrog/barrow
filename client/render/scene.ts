@@ -1341,6 +1341,38 @@ export function createScene(
       },
     );
   };
+  // --- Shots: the bolt waits for the crossbow. The shoot clip kicks at its
+  // release about 0.15 s in (measured off the clip's bone motion), after an
+  // 80 ms blend from whatever was playing; a bolt the sim resolves sooner (a
+  // skill fires on its cast tick) is held back to that frame, and a bolt with
+  // no shot playing (a remote hero, a cancelled clip) starts one first. ---
+  const SHOT_BLEND_MS = 80;
+  const SHOT_RELEASE_S = 0.15;
+  const shotAt = new Map<PlayerId, { at: number; timeScale: number }>();
+  const releaseMs = (timeScale: number) => SHOT_BLEND_MS + (SHOT_RELEASE_S / timeScale) * 1000;
+  /** Raise and loose: the shoot clip, which running never cancels. One per volley. */
+  const startShot = (playerId: PlayerId, timeScale: number): void => {
+    const last = shotAt.get(playerId);
+    const now = performance.now();
+    if (last && now - last.at < 60) return; // a multishot's arrows share one draw
+    heroOf(playerId)?.rig.oneShot("shoot", { timeScale, cancelOnMove: false });
+    shotAt.set(playerId, { at: now, timeScale });
+  };
+  /** Fly a bolt once the archer's shot reaches its release frame. */
+  const loosedBolt = (playerId: PlayerId, from: Vec, to: Vec): void => {
+    let shot = shotAt.get(playerId);
+    const now = performance.now();
+    if (!shot || now - shot.at > 700) {
+      startShot(playerId, 1.6);
+      shot = shotAt.get(playerId)!;
+    }
+    const wait = shot.at + releaseMs(shot.timeScale) - now;
+    const f = { ...from };
+    const t = { ...to };
+    if (wait <= 0) arrowFlight(f, t);
+    else fx.tween(wait, () => {}, () => arrowFlight(f, t));
+  };
+
   /** Does this player hold a bow? Their basic attack is then a shot. */
   const holdsBow = (p: { equipment: { weapon: { baseId: string } | null } } | undefined): boolean =>
     p?.equipment.weapon ? BASES[p.equipment.weapon.baseId]?.reach !== undefined : false;
@@ -2063,8 +2095,8 @@ export function createScene(
           if (dx * dx + dy * dy > 1e-6) entry.targetYaw = Math.atan2(dx, dy);
           const len = Math.hypot(dx, dy) || 1;
           if (holdsBow(swinger)) {
-            // A shot: draw and loose; the arrow itself arrives as its own event on the release tick.
-            entry.rig.oneShot("shoot", { timeScale: 1.6 });
+            // A shot: draw and loose; the bolt arrives as its own event and waits for the release.
+            startShot(event.playerId, 1.6);
             break;
           }
           entry.rig.oneShot(entry.rig.attackClip(), { timeScale: 1.6 });
@@ -2076,7 +2108,7 @@ export function createScene(
         }
         case "arrow": {
           // The sim already flew it: from the archer to the monster it struck, a wall, or the end of its reach.
-          arrowFlight(event.from, event.to);
+          loosedBolt(event.playerId, event.from, event.to);
           break;
         }
         case "monster_swing": {
@@ -2206,8 +2238,8 @@ export function createScene(
             if (event.playerId === localId()) fx.shake(amount);
           };
           if (event.skill === "powershot" || event.skill === "multishot") {
-            caster?.oneShot("shoot", { timeScale: event.skill === "powershot" ? 1.2 : 1.6 });
-            if (event.at) arrowFlight(event.pos, event.at);
+            startShot(event.playerId, event.skill === "powershot" ? 1.2 : 1.6);
+            if (event.at) loosedBolt(event.playerId, event.pos, event.at);
             if (event.skill === "powershot") shake(0.05);
           } else if (event.skill === "snare") {
             caster?.oneShot("cast", { timeScale: 1.5 });

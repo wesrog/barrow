@@ -163,10 +163,14 @@ export function createScene(
   scene.add(moon);
   scene.add(moon.target);
 
-  // Torso height, not overhead: right above the scalp the falloff term blows
-  // up and a bare head reads as a lamp. From the chest the crown faces away.
-  const heroLight = new THREE.PointLight(0xffb35c, 6, 9, 1.6);
-  heroLight.position.set(0, 1.05, 0);
+  // Out of the body, a unit toward the camera at shoulder height. Inside the torso
+  // (where it once sat) the falloff blew out whatever swung within a hand's width:
+  // the back while running, the hands and crossbow while aiming. Right above the
+  // scalp a bare head read as a lamp. Out here it lights the faces the camera
+  // sees; the intensity keeps the ground pool close to what it was from the chest.
+  const HERO_LIGHT_OFFSET = new THREE.Vector3(0.7, 1.3, 0.7);
+  const heroLight = new THREE.PointLight(0xffb35c, 10, 9, 1.6);
+  heroLight.position.copy(HERO_LIGHT_OFFSET);
   scene.add(heroLight);
 
   // --- Lamps: every torch, candle, brazier, pad and glow in the level is a
@@ -1648,7 +1652,7 @@ export function createScene(
           py = y;
         }
       }
-      heroLight.position.set(px, 1.05, py);
+      heroLight.position.set(px + HERO_LIGHT_OFFSET.x, HERO_LIGHT_OFFSET.y, py + HERO_LIGHT_OFFSET.z);
       if (outdoor) applyAtmosphere(px);
 
       // Sync monster rigs with sim state. Only the hero's neighborhood keeps a

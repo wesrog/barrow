@@ -55,6 +55,10 @@ export interface HeroModelRig extends ModelRig {
   setEquipment(eq: Equipment): void;
   /** World position of the held weapon's far end (a crossbow's prod), or null empty-handed. */
   muzzle(): THREE.Vector3 | null;
+  /** While a ranged clip plays: how far (radians, about the vertical) the held weapon's length
+   * points off the body's facing, so the scene can turn the body until the barrel lines up
+   * with the shot. Null otherwise. */
+  aimOffset(): number | null;
   /** Clip for a basic attack with the current weapon. */
   attackClip(): ClipId;
 }
@@ -548,6 +552,24 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   // clips.
   hero.attackClip = () =>
     !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  const axis = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  hero.aimOffset = () => {
+    if (!held || !rig.currentClip()?.includes("Ranged")) return null;
+    // gear.ts stands every piece along its wrapper's +Y: that axis, in the world, flattened.
+    held.model.updateWorldMatrix(true, false);
+    held.model.getWorldQuaternion(quat);
+    axis.set(0, 1, 0).applyQuaternion(quat);
+    axis.y = 0;
+    if (axis.lengthSq() < 1e-6) return null;
+    const body = rig.group.rotation.y;
+    // The length runs both ways: take the end that points forward of the body.
+    if (axis.x * Math.sin(body) + axis.z * Math.cos(body) < 0) axis.negate();
+    let off = Math.atan2(axis.x, axis.z) - body;
+    while (off > Math.PI) off -= Math.PI * 2;
+    while (off < -Math.PI) off += Math.PI * 2;
+    return off;
+  };
   hero.muzzle = () => {
     if (!held) return null;
     held.model.updateWorldMatrix(true, false);

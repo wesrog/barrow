@@ -1057,6 +1057,8 @@ export function createScene(
     lastPos: { x: number; y: number } | null;
     equipSignature: string;
     targetYaw: number;
+    /** The direction of the last shot while the archer stands to it: the body turns so the weapon, not the chest, points there. */
+    aimYaw: number | null;
     wasDead: boolean;
     /** Character name over the head — remote party members only. */
     nameplate: HTMLDivElement | null;
@@ -1095,6 +1097,7 @@ export function createScene(
       lastPos: null,
       equipSignature: "",
       targetYaw: 0,
+      aimYaw: null,
       wasDead: false,
       nameplate: plate,
     };
@@ -1562,6 +1565,12 @@ export function createScene(
         if (dx * dx + dy * dy > 1e-6) {
           facing.set(dx, 0, dy).normalize();
           entry.targetYaw = Math.atan2(facing.x, facing.z);
+          entry.aimYaw = null; // moving lowers the aim
+        } else if (entry.aimYaw !== null) {
+          // Standing to a shot: turn the body by however far the crossbow points off
+          // the chest in this pose, so the barrel, not the chest, lines up with the bolt.
+          const off = entry.rig.aimOffset();
+          entry.targetYaw = entry.aimYaw - (off ?? 0);
         }
         group.rotation.y = approachAngle(group.rotation.y, entry.targetYaw, frameDt * 14);
         // Death and revival play through animation clips, not a rotation hack.
@@ -2153,6 +2162,7 @@ export function createScene(
           const len = Math.hypot(dx, dy) || 1;
           if (holdsBow(swinger)) {
             // A shot: draw and loose; the bolt arrives as its own event and waits for the release.
+            entry.aimYaw = entry.targetYaw;
             startShot(event.playerId, 1.6);
             break;
           }
@@ -2295,6 +2305,7 @@ export function createScene(
             if (event.playerId === localId()) fx.shake(amount);
           };
           if (event.skill === "powershot" || event.skill === "multishot") {
+            if (casterEntry) casterEntry.aimYaw = casterEntry.targetYaw;
             startShot(event.playerId, event.skill === "powershot" ? 1.2 : 1.6);
             if (event.at) loosedBolt(event.playerId, event.pos, event.at);
             if (event.skill === "powershot") shake(0.05);

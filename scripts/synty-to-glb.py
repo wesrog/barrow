@@ -190,6 +190,29 @@ PACKS = {
             "weapons": {"include": ["FBX/Weapons/SM_Wep_*.fbx"], "emissive": False},
         },
     },
+    # The free POLYGON Bow and Crossbow pack: a crossbow and two bows authored
+    # rigged (for a drawable string) plus arrows and a bolt. The game holds them
+    # as static props, so they convert in their rest pose with no skin.
+    "bow_crossbow": {
+        "material_lists": ["MaterialList_PolygonBowCrossbow.txt"],
+        "static_scale": 1,
+        "albedo": "Texture_01.png",
+        "emissive": None,
+        "aliases": {"PolygonBowCrossbow_01.png": "Texture_01.png"},
+        "translucent": [],
+        "kits": {
+            "weapons": {
+                "include": ["FBX/*.fbx"],
+                "emissive": False,
+                # The rigged sources are named as test scenes; give them weapon names.
+                "rename": {
+                    "Rigged_CrossBow_Testing": "Wep_Crossbow_01",
+                    "Rigged_Bow_Testing": "Wep_Bow_Recurve_01",
+                    "Rigged_Bow_NativeAmerican_Testing": "Wep_Bow_Longbow_01",
+                },
+            },
+        },
+    },
     "alpine_mountain": {
         "material_lists": ["MaterialList_PNB_Alpine_Mountain.txt"],
         "static_scale": 1,
@@ -583,7 +606,7 @@ def import_piece(path: Path, ctx: dict) -> list[bpy.types.Object]:
     before = set(bpy.data.objects)
     bpy.ops.import_scene.fbx(filepath=str(path), use_anim=False)
     new = [o for o in bpy.data.objects if o not in before]
-    piece = node_name(path.stem)
+    piece = kit.get("rename", {}).get(path.stem, node_name(path.stem))
     ctx["piece"] = piece
     for o in new:
         o["fbx_name"] = o.name  # material lists key on the FBX mesh name

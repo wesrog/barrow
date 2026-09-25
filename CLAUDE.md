@@ -87,10 +87,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   with one door cell and a marker at the centre, `J` and `D`), stamped with the huts. Packs
   keep `PACK_MARGIN` cells off the palisade, landmarks `LANDMARK_MARGIN`. A new character's
   kit is `STARTING_WEAPON`/`STARTING_SKILL` in `sim/save.ts`: the warrior a rusted blade,
-  the witch a bone wand and one rank of firebolt, the ranger a short bow and one rank of power
-  shot. Three classes: warrior, witch, ranger (Archery, Hunting, Survival; Power Shot,
-  Multishot, Eagle Eye, Snare, Evasion and Swiftness work, the rest are `pending` rows). Bows are
-  weapon bases with a `reach` (8.5 to 9.5 cells, about half the screen); `computeStats` turns it
+  the witch a bone wand and one rank of firebolt, the ranger a light crossbow and one rank of
+  power shot. Three classes: warrior, witch, ranger (Archery, Hunting, Survival; Power Shot,
+  Multishot, Eagle Eye, Snare, Evasion and Swiftness work, the rest are `pending` rows). Crossbows are
+  weapon bases with a `reach` (ids still `*_bow`: saves carry them) (8.5 to 9.5 cells, about half the screen); `computeStats` turns it
   into `range` (melee is `MELEE_RANGE`). Arrows fly directionally: a shot's strike carries its
   `aim`, and `traceArrow` walks the line from the archer to the first wall or the first monster
   body it passes (the first in line takes it), or the end of the reach, emitting an `arrow`
@@ -150,9 +150,9 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
   a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
   butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a bow in
-  the left fist, and `roll` turns it about the forearm only while a `*Ranged*` clip plays (those
-  clips hold the fist palm down; at rest the plain grip already stands the bow upright), plus a
-  half turn about the bow's length so the string sits on the archer's side,
+  the left fist, and `roll` turns a piece about the forearm only while a `*Ranged*` clip plays
+  (those clips hold the fist palm down): a quarter turn levels the ranger's crossbow at her chest
+  (a left-hand bow also takes a half turn about its length so its string faces the archer),
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in
@@ -193,6 +193,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   script moves faces with blue > 0.5 to a leaf cutout material. Pines are 7 to 17 units tall.
   The Rock_Cliff pieces, snow mounds, moss lumps, and stalactites sit on triplanar or glacier
   shaders and are skipped; rocks, pebbles, bushes, grass, and props convert.
+- `bow_crossbow`: the free POLYGON Bow and Crossbow pack. Its crossbow and two bows are authored
+  rigged, as test scenes; the kit converts them static and `rename`s them `Wep_Crossbow_01`,
+  `Wep_Bow_Recurve_01`, `Wep_Bow_Longbow_01`, beside the arrows and `Wep_Crossbow_Bolt_01` (the
+  bolt the renderer flies). The game loads it as `crossbow_weapons`.
 - `viking_realm`: zip has a `SourceFiles/` level (the pack `root`). Ten humans plus 14 skinned
   attachments on the same 50-bone rig as the goblins, split per character like them. Its
   material list names textures on the slot line; 80 shield designs share one texture. Its

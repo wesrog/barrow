@@ -78,7 +78,7 @@ const KLASS_INFO: Record<Klass, { title: string; line: string; lore: string; col
     title: "Ranger",
     line: "a marksman — archery, hunting, and survival",
     lore:
-      "A bow and a patient eye. The ranger kills from across the room and is somewhere else when the pack arrives: shots that hit hard and find more than one mark, snares that hold a charge in place, and the knack of never being where the blow lands.",
+      "A crossbow and a patient eye. The ranger kills from across the room and is somewhere else when the pack arrives: shots that hit hard and find more than one mark, snares that hold a charge in place, and the knack of never being where the blow lands.",
     color: "#7fb85a",
   },
 };

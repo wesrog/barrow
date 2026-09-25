@@ -27,6 +27,8 @@ export const KIT_URLS = {
   viking_props: "/models/synty/viking_realm/props.glb",
   viking_nature: "/models/synty/viking_realm/nature.glb",
   viking_structures: "/models/synty/viking_realm/structures.glb",
+  // The free POLYGON Bow and Crossbow pack: the ranger's crossbows and bolts.
+  crossbow_weapons: "/models/synty/bow_crossbow/weapons.glb",
   // The KayKit clip suite retargeted onto each Synty rig (scripts/synty-to-glb.py).
   goblin_kaykit_clips: "/models/synty/kaykit_clips/goblin_rig.glb",
   dungeon_kaykit_clips: "/models/synty/kaykit_clips/dungeon_rig.glb",

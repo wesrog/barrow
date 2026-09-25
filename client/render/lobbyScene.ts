@@ -243,7 +243,7 @@ export function createLobbyScene(mount: HTMLElement, assets: GameAssets, hooks: 
   const ranger = makeHeroModelRig(assets, "ranger");
   {
     const eq = createEquipment();
-    eq.weapon = showpiece("horn_bow", "Horn Bow");
+    eq.weapon = showpiece("horn_bow", "Horn Arbalest");
     eq.helm = showpiece("cracked_helm", "Cracked Helm");
     ranger.setEquipment(eq);
   }

@@ -80,7 +80,7 @@ export const TREES: Record<TreeId, TreeDef> = {
   fire: { id: "fire", klass: "witch", name: "Fire", blurb: "raw burning damage, blast and burn" },
   frost: { id: "frost", klass: "witch", name: "Frost", blurb: "cold that slows, freezes, and shatters" },
   hexes: { id: "hexes", klass: "witch", name: "Hexes", blurb: "curses that soften a pack for whatever kills it" },
-  archery: { id: "archery", klass: "ranger", name: "Archery", blurb: "shots that hit harder, fly farther, and find more than one mark" },
+  archery: { id: "archery", klass: "ranger", name: "Archery", blurb: "bolts that hit harder, fly farther, and find more than one mark" },
   hunting: { id: "hunting", klass: "ranger", name: "Hunting", blurb: "snares, traps, and the hounds that run a pack down" },
   survival: { id: "survival", klass: "ranger", name: "Survival", blurb: "the knack of never being where the blow lands" },
 };

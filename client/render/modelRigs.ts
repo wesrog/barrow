@@ -312,11 +312,12 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
   moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
-  // bows: the Goblin War Camp's, in the left fist, loosed with the two-handed ranged shot
-  short_bow: { kit: "goblin_weapons", node: "Wep_Bow_01", twoHanded: true, swing: "shoot", hand: "l", roll: -Math.PI / 2 },
-  hunting_bow: { kit: "goblin_weapons", node: "Wep_Bow_01", twoHanded: true, swing: "shoot", hand: "l", scale: 1.1 , roll: -Math.PI / 2 },
-  yew_longbow: { kit: "goblin_weapons", node: "Wep_Bow_02", twoHanded: true, swing: "shoot", hand: "l", roll: -Math.PI / 2 },
-  horn_bow: { kit: "goblin_weapons", node: "Wep_Bow_02", twoHanded: true, swing: "shoot", hand: "l", scale: 1.1 , roll: -Math.PI / 2 },
+  // crossbows: the POLYGON Bow and Crossbow pack's, in the right fist; the ranged clips
+  // hold the fist palm down, so a quarter turn about the forearm levels it at the chest
+  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.8 },
+  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.85 },
+  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.9 },
+  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", roll: Math.PI / 2, scale: 0.95 },
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
@@ -473,11 +474,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rolled = null;
       if (model && look.roll) {
         const base = model.quaternion.clone();
-        // A half turn about the bow's own length (the wrapper's Y) puts the string on the archer's side.
-        const ranged = base
-          .clone()
-          .premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll))
-          .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
+        const ranged = base.clone().premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), look.roll));
+        // A bow in the left fist also turns half about its own length (the wrapper's Y), so the string faces the archer.
+        if (look.hand === "l") ranged.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI));
         rolled = { model, base, ranged };
       }
     } else {

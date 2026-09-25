@@ -1304,13 +1304,15 @@ export function createScene(
   // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
   const ARROW_SPEED = 28; // cells per second: a blur, not a lob
   const arrowFlight = (from: Vec, to: Vec): void => {
-    const src = kitNode(assets.kits, "viking_weapons", "Wep_Arrow_01");
+    // A crossbow bolt when that kit loaded (0.46 long, along Z), else the Viking arrow (1 long).
+    const bolt = kitNode(assets.kits, "crossbow_weapons", "Wep_Crossbow_Bolt_01");
+    const src = bolt ?? kitNode(assets.kits, "viking_weapons", "Wep_Arrow_01");
     const g = new THREE.Group();
     if (src) {
       const arrow = src.clone(true);
       arrow.position.set(0, 0, 0);
       g.add(arrow);
-      g.scale.setScalar(0.7);
+      g.scale.setScalar(bolt ? 1.1 : 0.7);
     } else {
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.7, 4), flatMat(0x8a6a3a));
       shaft.rotation.x = Math.PI / 2;

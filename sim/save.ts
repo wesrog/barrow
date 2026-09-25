@@ -78,7 +78,7 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
 export const STARTING_WEAPON: Record<Klass, { baseId: string; name: string }> = {
   warrior: { baseId: "rusted_blade", name: "Rusted Blade" },
   witch: { baseId: "bone_wand", name: "Bone Wand" },
-  ranger: { baseId: "short_bow", name: "Short Bow" },
+  ranger: { baseId: "short_bow", name: "Light Crossbow" },
 };
 
 /** What each class already knows on day one. The warrior's blade is her

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { applyGripAdjust, gripInto, heldModel, NO_ADJUST, wearPiece, wornPlacement, type GripAdjust } from "../render/gear";
-import { weaponSeatFor } from "../render/modelRigs";
+import { heldFarEnd, weaponSeatFor } from "../render/modelRigs";
 import { findNode, loadAssets, type GameAssets } from "../render/models";
 import { display, mono } from "../ui/fonts";
 import { loadArtManifest, pieceFile, prettyName, setCounts, TINTS, VARIANTS, type ArtManifest, type Variant } from "./art";
@@ -66,7 +66,14 @@ interface Held {
   node: string;
   scale: number;
   seat: { rest?: GripAdjust; ranged?: GripAdjust } | undefined;
+  /** Where shots leave the piece, in its own frame: the game's, else the far end of its length. */
+  muzzle: [number, number, number];
+  /** The tuner's marker for it: a bright dot drawn through the model. */
+  marker: THREE.Mesh;
 }
+
+const MARKER_GEO = new THREE.SphereGeometry(0.035, 12, 8);
+const MARKER_MAT = new THREE.MeshBasicMaterial({ color: 0xff3df0, depthTest: false, transparent: true });
 
 /** A tuned seat: one adjustment at rest, one while a ranged clip plays. */
 interface Seat {
@@ -90,10 +97,10 @@ const copyAdjust = (a: GripAdjust | undefined): GripAdjust => ({
 const round = (n: number, d: number) => Math.round(n * 10 ** d) / 10 ** d;
 
 /** The seat as the line that goes in a weapon look (modelRigs.ts SYNTY_WEAPONS). */
-function seatText(node: string, seat: Seat): string {
+function seatText(node: string, seat: Seat, muzzle: [number, number, number]): string {
   const one = (a: GripAdjust) =>
     `{ rot: [${a.rot.map((n) => round(n, 1)).join(", ")}], pos: [${a.pos.map((n) => round(n, 3)).join(", ")}], scale: ${round(a.scale, 2)} }`;
-  return `// ${node}\nadjust: {\n  rest: ${one(seat.rest)},\n  ranged: ${one(seat.ranged)},\n},`;
+  return `// ${node}\nadjust: {\n  rest: ${one(seat.rest)},\n  ranged: ${one(seat.ranged)},\n},\nmuzzle: [${muzzle.map((n) => round(n, 3)).join(", ")}],`;
 }
 /** Put an option in a hand (or empty it), seated with the rig's grip. */
 function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption | null): void {
@@ -107,7 +114,21 @@ function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption
   if (!obj) return;
   gripInto(socket, live.entry.spec.grip[slot], obj);
   const seat = weaponSeatFor(option.kit, option.node);
-  live.held[slot] = { id: option.id, obj, kit: option.kit, node: option.node, scale: seat?.scale ?? 1, seat: seat?.adjust };
+  const far = heldFarEnd(obj);
+  const marker = new THREE.Mesh(MARKER_GEO, MARKER_MAT);
+  marker.renderOrder = 10;
+  marker.visible = false;
+  obj.add(marker);
+  live.held[slot] = {
+    id: option.id,
+    obj,
+    kit: option.kit,
+    node: option.node,
+    scale: seat?.scale ?? 1,
+    seat: seat?.adjust,
+    muzzle: seat?.muzzle ?? [round(far.x, 3), round(far.y, 3), round(far.z, 3)],
+    marker,
+  };
 }
 
 /** Put a worn piece on (or take it off) the bone its kind rides. */
@@ -144,6 +165,11 @@ export function Viewer() {
   const [seats, setSeats] = useState<Record<string, Seat>>({});
   const seatsRef = useRef(seats);
   seatsRef.current = seats;
+  const [muzzles, setMuzzles] = useState<Record<string, [number, number, number]>>({});
+  const muzzlesRef = useRef(muzzles);
+  muzzlesRef.current = muzzles;
+  /** The held piece the tuner is editing, so the loop shows its muzzle marker and no other. */
+  const tunedKeyRef = useRef<string | null>(null);
   const [tuneSlot, setTuneSlot] = useState<Hand>("r");
   const [tunePose, setTunePose] = useState<Pose>("ranged");
   const [copied, setCopied] = useState(false);
@@ -300,8 +326,13 @@ export function Viewer() {
           const h = live.held[slot];
           if (!h) continue;
           const pose = poseOf(live);
-          const tuned = seatsRef.current[`${live.entry.id}|${slot}|${h.id}`];
+          const key = `${live.entry.id}|${slot}|${h.id}`;
+          const tuned = seatsRef.current[key];
           applyGripAdjust(h.obj, live.entry.spec.grip[slot], tuned ? tuned[pose] : h.seat?.[pose], h.scale);
+          // The muzzle marker rides the piece at its muzzle point, kept a fixed size whatever the piece's scale.
+          h.marker.visible = key === tunedKeyRef.current;
+          h.marker.position.set(...(muzzlesRef.current[key] ?? h.muzzle));
+          h.marker.scale.setScalar(1 / Math.max(0.01, h.obj.scale.x));
         }
       }
       controls.update();
@@ -610,8 +641,14 @@ export function Viewer() {
                 setSeats((s) => ({ ...s, [key]: { ...seat, [tunePose]: next } }));
                 setCopied(false);
               };
-              const text = seatText(h.node, seat);
-              (window as { __grip?: unknown }).__grip = { node: h.node, kit: h.kit, slot, seat };
+              const muzzle = muzzles[key] ?? h.muzzle;
+              const setMuzzle = (next: [number, number, number]) => {
+                setMuzzles((m) => ({ ...m, [key]: next }));
+                setCopied(false);
+              };
+              tunedKeyRef.current = key;
+              const text = seatText(h.node, seat, muzzle);
+              (window as { __grip?: unknown }).__grip = { node: h.node, kit: h.kit, slot, seat, muzzle };
               const slider = (label: string, value: number, min: number, max: number, step: number, onChange: (n: number) => void) => (
                 <label key={label} style={{ display: "grid", gridTemplateColumns: "34px 1fr 58px", gap: 6, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "#8c8578" }}>{label}</span>
@@ -661,6 +698,10 @@ export function Viewer() {
                   {slider("pos y", a.pos[1], -0.5, 0.5, 0.005, (n) => set({ ...a, pos: [a.pos[0], n, a.pos[2]] }))}
                   {slider("pos z", a.pos[2], -0.5, 0.5, 0.005, (n) => set({ ...a, pos: [a.pos[0], a.pos[1], n] }))}
                   {slider("scale", a.scale, 0.3, 2, 0.01, (n) => set({ ...a, scale: n }))}
+                  <span style={{ fontSize: 11, color: "#8c8578", marginTop: 4 }}>muzzle · the pink dot, where shots flash and leave (both poses)</span>
+                  {slider("mz x", muzzle[0], -1.5, 1.5, 0.005, (n) => setMuzzle([n, muzzle[1], muzzle[2]]))}
+                  {slider("mz y", muzzle[1], -1.5, 1.5, 0.005, (n) => setMuzzle([muzzle[0], n, muzzle[2]]))}
+                  {slider("mz z", muzzle[2], -1.5, 1.5, 0.005, (n) => setMuzzle([muzzle[0], muzzle[1], n]))}
                   <div className="chips">
                     <button className="chip" onClick={() => set(copyAdjust(h.seat?.[tunePose]))}>
                       reset to game

@@ -155,7 +155,8 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   while a `*Ranged*` clip plays (those hold the fist palm down; the ranger's crossbow needs its own
   seat there). Tune them in the viewer's grip tuner (select a figure, put the piece in a hand, pick
   "at rest" or "shooting", drag the sliders, copy): it prints the `adjust` block for the look and
-  exposes it as `window.__grip`,
+  exposes it as `window.__grip`. A look's `muzzle` (piece frame, placed with the tuner's pink dot)
+  is where shots flash and bolts leave; without one the far end of the piece stands in,
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in

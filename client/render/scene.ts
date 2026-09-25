@@ -1303,6 +1303,25 @@ export function createScene(
   // --- Arrows: the Viking kit's arrow (centred, 1 unit along Z) flies from the
   // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
   const ARROW_SPEED = 28; // cells per second: a blur, not a lob
+  /** The release: a small hot flash that swells and fades in a blink at the weapon's muzzle. */
+  const flashGeo = new THREE.IcosahedronGeometry(0.07, 1);
+  const releaseFlash = (at: THREE.Vector3): void => {
+    const mat = new THREE.MeshBasicMaterial({ color: 0xfff1c8, transparent: true, opacity: 0.95, depthWrite: false });
+    const flash = new THREE.Mesh(flashGeo, mat);
+    flash.position.copy(at);
+    scene.add(flash);
+    fx.tween(
+      110,
+      (t) => {
+        flash.scale.setScalar(0.6 + t * 1.4);
+        mat.opacity = 0.95 * (1 - t);
+      },
+      () => {
+        scene.remove(flash);
+        mat.dispose();
+      },
+    );
+  };
   const arrowFlight = (from: Vec, to: Vec, muzzle?: THREE.Vector3): void => {
     // A crossbow bolt when that kit loaded (0.46 long, along Z), else the Viking arrow (1 long).
     const bolt = kitNode(assets.kits, "crossbow_weapons", "Wep_Crossbow_Bolt_01");
@@ -1328,7 +1347,7 @@ export function createScene(
     const flight = Math.max(0.3, Math.hypot(to.x - sx, to.y - sz));
     const dur = Math.max(60, (flight / ARROW_SPEED) * 1000);
     const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, sy + (0.7 - sy) * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
-    if (muzzle) fx.burst(sx, sy, sz, 0xffd9a0, 5, 0.9); // the release flash at the tip
+    if (muzzle) releaseFlash(muzzle);
     g.position.copy(at(0));
     g.lookAt(at(0.05));
     scene.add(g);

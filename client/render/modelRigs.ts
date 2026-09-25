@@ -300,6 +300,9 @@ interface SyntyWeaponLook {
    * `rest` for every clip but the ranged ones, `ranged` while a `*Ranged*` clip plays
    * (those hold the fist palm down, so a crossbow needs its own seat there). */
   adjust?: { rest?: GripAdjust; ranged?: GripAdjust };
+  /** Where shots leave the piece, in the held wrapper's own frame (the viewer's grip tuner places it);
+   * without one the far end of its length stands in. */
+  muzzle?: [number, number, number];
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
    * is held by its handle end (the wands are cut-down staves). */
@@ -343,7 +346,9 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
  * origin, so the tip is whichever Y end of its bounds lies farther out.
  */
 function farEnd(wrapper: THREE.Object3D): THREE.Vector3 {
+  // Measure detached: the bounds come out in world space, so the hand it hangs from must not count.
   const saved = { p: wrapper.position.clone(), q: wrapper.quaternion.clone(), s: wrapper.scale.clone(), parent: wrapper.parent };
+  saved.parent?.remove(wrapper);
   wrapper.position.set(0, 0, 0);
   wrapper.quaternion.identity();
   wrapper.scale.set(1, 1, 1);
@@ -352,16 +357,23 @@ function farEnd(wrapper: THREE.Object3D): THREE.Vector3 {
   wrapper.position.copy(saved.p);
   wrapper.quaternion.copy(saved.q);
   wrapper.scale.copy(saved.s);
+  saved.parent?.add(wrapper);
   wrapper.updateMatrixWorld(true);
   const y = Math.abs(box.max.y) >= Math.abs(box.min.y) ? box.max.y : box.min.y;
   return new THREE.Vector3((box.min.x + box.max.x) / 2, y, (box.min.z + box.max.z) / 2);
 }
 
 /** The tuned seat and scale the game gives a kit piece, if a weapon look uses it (the viewer's tuner starts from these). */
-export function weaponSeatFor(kit: KitName, node: string): { adjust: SyntyWeaponLook["adjust"]; scale: number } | null {
+export function weaponSeatFor(
+  kit: KitName,
+  node: string,
+): { adjust: SyntyWeaponLook["adjust"]; scale: number; muzzle?: [number, number, number] } | null {
   const look = Object.values(SYNTY_WEAPONS).find((w) => w.kit === kit && w.node === node);
-  return look ? { adjust: look.adjust, scale: look.scale ?? 1 } : null;
+  return look ? { adjust: look.adjust, scale: look.scale ?? 1, muzzle: look.muzzle } : null;
 }
+
+/** The far end of a held wrapper's piece in its own frame: where the tuner's muzzle marker starts. */
+export { farEnd as heldFarEnd };
 
 /** Helm base id -> Viking attachment nodes stacked on the head. */
 const SYNTY_HELMS: Record<string, string[]> = {
@@ -507,7 +519,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       const slot = look.hand === "l" ? "l" : "r";
       rig.attach(slot, model);
       if (slot === "l") rig.attach("r", null);
-      held = model ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null, tip: farEnd(model) } : null;
+      held = model
+        ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null, tip: look.muzzle ? new THREE.Vector3(...look.muzzle) : farEnd(model) }
+        : null;
     } else {
       twoHanded = false;
       held = null;

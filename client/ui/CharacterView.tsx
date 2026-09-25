@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { Equipment } from "../../sim/character";
+import type { Klass } from "../../sim/skills";
 import { makeHeroModelRig, type HeroModelRig } from "../render/modelRigs";
 import type { GameAssets } from "../render/models";
 
@@ -13,11 +14,13 @@ import type { GameAssets } from "../render/models";
 export function CharacterView({
   assets,
   equipment,
+  klass,
   width,
   height = 190,
 }: {
   assets: GameAssets;
   equipment: Equipment;
+  klass: Klass;
   width: number;
   height?: number;
 }) {
@@ -41,14 +44,20 @@ export function CharacterView({
     rim.position.set(-2, 2, -2);
     scene.add(rim);
 
-    const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 20);
-    camera.position.set(0, 1.15, 2.9);
-    camera.lookAt(0, 0.72, 0);
-
-    const hero = makeHeroModelRig(assets);
+    const hero = makeHeroModelRig(assets, klass);
     hero.setEquipment(equipment);
     scene.add(hero.group);
     heroRef.current = hero;
+
+    // Frame the whole figure from its bind-pose bounds, helmet to boots with a
+    // little air: at a 30 degree field of view the visible half-height at
+    // distance d is 0.27 d, so about two heights back fits the figure with air above and below.
+    const bounds = new THREE.Box3().setFromObject(hero.group);
+    const tall = bounds.max.y - bounds.min.y || 2.4;
+    const middle = (bounds.max.y + bounds.min.y) / 2 || tall / 2;
+    const camera = new THREE.PerspectiveCamera(30, width / height, 0.1, 20);
+    camera.position.set(0, middle + tall * 0.05, tall * 2.05);
+    camera.lookAt(0, middle, 0);
 
     let raf = 0;
     const frame = (now: number) => {
@@ -64,7 +73,7 @@ export function CharacterView({
       heroRef.current = null;
       renderer.dispose();
     };
-  }, [assets, width, height]);
+  }, [assets, klass, width, height]);
 
   // Re-dress the standing hero when gear changes; the mount effect handles
   // the first outfit.

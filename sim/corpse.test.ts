@@ -105,7 +105,7 @@ describe("corpse runs", () => {
   test("relocated corpses land on walkable camp cells, one per cell", () => {
     const g = soloGame(1);
     const p0 = g.players.get(0)!;
-    const p1 = joinPlayer(g, { id: 1 });
+    const p1 = joinPlayer(g, { id: 1, start: "surface" });
     travel(g, p0, "dungeon:barrow:1");
     travel(g, p1, "dungeon:barrow:1");
     p0.life = 0;
@@ -181,7 +181,7 @@ describe("corpse runs", () => {
   test("restored corpses of two players land on distinct camp cells", () => {
     const g = soloGame(1);
     const p0 = g.players.get(0)!;
-    const p1 = joinPlayer(g, { id: 1 });
+    const p1 = joinPlayer(g, { id: 1, start: "surface" });
     travel(g, p0, "dungeon:barrow:1");
     travel(g, p1, "dungeon:barrow:1");
     p0.life = 0;
@@ -191,7 +191,7 @@ describe("corpse runs", () => {
     const raw1 = serializeCharacter(g, 1);
 
     const g2 = soloGame(1);
-    joinPlayer(g2, { id: 1 });
+    joinPlayer(g2, { id: 1, start: "surface" });
     expect(applyCharacter(g2, 0, raw0)).toBe(true);
     expect(applyCharacter(g2, 1, raw1)).toBe(true);
     const corpses = [...getZone(g2, "surface").playerCorpses.values()];
@@ -208,7 +208,7 @@ describe("corpse runs", () => {
     stepSolo(g, {});
     const corpse = [...getZone(g, "dungeon:barrow:1").playerCorpses.values()][0]!;
 
-    const p1 = joinPlayer(g, { id: 1 });
+    const p1 = joinPlayer(g, { id: 1, start: "surface" });
     travel(g, p1, "dungeon:barrow:1");
     p1.pos = { ...corpse.pos };
     const p1WeaponBefore = p1.equipment.weapon?.baseId;

@@ -36,8 +36,8 @@ test("recasting replaces the old pair; casting in camp does nothing", () => {
 
 test("any player can ride any portal, both directions", () => {
   const g = createGame(5);
-  joinPlayer(g, { id: 0 });
-  joinPlayer(g, { id: 1 });
+  joinPlayer(g, { id: 0, start: "surface" });
+  joinPlayer(g, { id: 1, start: "surface" });
   const p0 = g.players.get(0)!,
     p1 = g.players.get(1)!;
   travel(g, p0, "dungeon:barrow:1");

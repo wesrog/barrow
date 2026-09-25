@@ -6,7 +6,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "bun test sim client net signal",
-    "signal": "bun signal/server.ts"
+    "signal": "bun signal/server.ts",
+    "assets:ui": "bun scripts/ui-icons.ts",
+    "assets:ground": "bun scripts/ground-textures.ts",
+    "assets:synty": "${BLENDER:-/Applications/Blender.app/Contents/MacOS/Blender} --background --python scripts/synty-to-glb.py"
   },
   "dependencies": {
     "react": "^19.1.0",

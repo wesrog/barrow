@@ -67,6 +67,12 @@ export function ensureSurface(state: GameState): ZoneState {
   if (existing) return existing;
   const { map, monsters } = stitchSurface(state.rng);
   const zone = makeZone(state, "surface", map);
+  // Landmark chests: the ruin's hoard, the raiders' plunder, the cold camp's pack.
+  for (const marker of map.markers) {
+    if (marker.ch !== "$") continue;
+    const bid = state.nextId++;
+    zone.breakables.set(bid, { id: bid, kind: "chest", pos: { x: marker.x, y: marker.y } });
+  }
   // Champion rolls draw from the world rng in spawn order — a stable sequence,
   // so every peer promotes the identical monsters (the determinism contract).
   for (const s of monsters) {

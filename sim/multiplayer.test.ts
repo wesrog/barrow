@@ -1,11 +1,12 @@
+import { isWalkable } from "./map";
 import { expect, test } from "bun:test";
 import { createGame, joinPlayer, step, travel } from "./tick";
 import { getZone } from "./state";
 
 const join2 = () => {
   const g = createGame(42);
-  joinPlayer(g, { id: 0 });
-  joinPlayer(g, { id: 1 });
+  joinPlayer(g, { id: 0, start: "surface" });
+  joinPlayer(g, { id: 1, start: "surface" });
   return g;
 };
 
@@ -44,12 +45,22 @@ test("monsters target the nearest living player in their zone", () => {
     p1 = g.players.get(1)!;
   travel(g, p0, "dungeon:barrow:1");
   travel(g, p1, "dungeon:barrow:1");
-  const m = [...getZone(g, "dungeon:barrow:1").monsters.values()][0]!;
+  const zone = getZone(g, "dungeon:barrow:1");
+  // A monster with open floor to its east, so both players stand on walkable cells.
+  const m = [...zone.monsters.values()].find(
+    (c) => isWalkable(zone.map, Math.floor(c.pos.x + 1.5), Math.floor(c.pos.y)) && isWalkable(zone.map, Math.floor(c.pos.x + 5), Math.floor(c.pos.y)),
+  )!;
   p0.pos = { x: m.pos.x + 1.5, y: m.pos.y }; // p0 closest
   p1.pos = { x: m.pos.x + 5, y: m.pos.y };
+  // Stop at the first hit: a hall crowd can kill and respawn p0 at full life
+  // well inside 300 ticks.
   const life0 = p0.life;
-  for (let i = 0; i < 300; i++) step(g, { tick: g.tick, inputs: {} });
-  expect(p0.life).toBeLessThan(life0);
+  let hurt = false;
+  for (let i = 0; i < 300 && !hurt; i++) {
+    step(g, { tick: g.tick, inputs: {} });
+    hurt = p0.life < life0;
+  }
+  expect(hurt).toBe(true);
 });
 
 test("contested pickup: lower id wins deterministically", () => {

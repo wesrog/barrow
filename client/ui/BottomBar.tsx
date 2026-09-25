@@ -5,6 +5,8 @@ import { SKILLS, type SkillId } from "../../sim/skills";
 import { zoneFloor, type GameState } from "../../sim/state";
 import { locationTitle, inRect, worldCampRect } from "../../sim/surface";
 import { HOTBAR_KEYS, SLOT_LABELS, type Hotbar } from "../hotbar";
+import { ItemIcon } from "./ItemIcon";
+import { POTION_CSS } from "./ItemSlot";
 
 const mono = "ui-monospace, monospace";
 
@@ -149,21 +151,21 @@ const barStyle: CSSProperties = {
   fontFamily: mono,
 };
 
-/** One belt row: its drink key, four charge slots, click to drink. */
+/** One belt row: its drink key and four charge slots, each drawn as the
+ * potion itself (the inventory's small bottle icon); spent charges stay as
+ * dim grey outlines so the row keeps its shape. Click to drink. */
 function BeltRow({
   count,
   keyLabel,
-  full,
-  empty,
-  glow,
+  baseId,
+  color,
   title,
   onDrink,
 }: {
   count: number;
   keyLabel: string;
-  full: string;
-  empty: string;
-  glow: string;
+  baseId: string;
+  color: string;
   title: string;
   onDrink: () => void;
 }) {
@@ -171,21 +173,23 @@ function BeltRow({
     <div
       onClick={onDrink}
       title={title}
-      style={{ display: "flex", gap: 4, alignItems: "center", pointerEvents: "auto", cursor: "pointer" }}
+      style={{ display: "flex", gap: 3, alignItems: "flex-end", pointerEvents: "auto", cursor: "pointer" }}
     >
-      <span style={{ color: "#6b6455", fontSize: 10, width: 8 }}>{keyLabel}</span>
+      <span style={{ color: "#6b6455", fontSize: 10, width: 8, alignSelf: "center" }}>{keyLabel}</span>
       {Array.from({ length: BELT_SIZE }, (_, i) => (
         <div
           key={i}
           style={{
-            width: 24,
-            height: 13,
-            border: "1px solid #3a3442",
-            borderRadius: "3px 3px 5px 5px",
-            background: i < count ? full : empty,
-            boxShadow: i < count ? `0 0 6px ${glow}` : "none",
+            width: 18,
+            height: 22,
+            display: "grid",
+            placeItems: "center",
+            opacity: i < count ? 1 : 0.22,
+            filter: i < count ? "none" : "grayscale(1)",
           }}
-        />
+        >
+          <ItemIcon baseId={baseId} color={color} size={16} height={22} />
+        </div>
       ))}
     </div>
   );
@@ -248,18 +252,16 @@ export function BottomBar({
             <BeltRow
               count={p.belt}
               keyLabel="1"
-              full="linear-gradient(to top, #a32222 70%, #4a1010 70%)"
-              empty="rgba(12,11,15,.8)"
-              glow="rgba(163,34,34,.5)"
+              baseId="minor_potion"
+              color={POTION_CSS.health}
               title={`healing potions ${p.belt}/${BELT_SIZE} — click or press 1`}
               onDrink={() => onAction("drinkHealth")}
             />
             <BeltRow
               count={p.manaBelt}
               keyLabel="2"
-              full="linear-gradient(to top, #22409a 70%, #101c4a 70%)"
-              empty="rgba(12,11,15,.8)"
-              glow="rgba(34,64,154,.55)"
+              baseId="minor_mana_potion"
+              color={POTION_CSS.mana}
               title={`mana potions ${p.manaBelt}/${BELT_SIZE} — click or press 2`}
               onDrink={() => onAction("drinkMana")}
             />

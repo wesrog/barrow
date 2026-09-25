@@ -4,6 +4,24 @@ import type { QuestId } from "./quests";
 
 export type NpcId = "maren" | "sera" | "betha" | "corvin" | "aldous";
 
+/** Radius, in cells, of the wall ring a hut dweller gets around home. */
+export const HUT_RADIUS = 2;
+
+/** The cells of a hut's wall ring: Chebyshev distance HUT_RADIUS from the home
+ * cell, row by row. The zone carver walls them (bar a doorway) and the renderer
+ * raises log walls on them, so both read one shape. */
+export function hutRing(home: Vec): Vec[] {
+  const nx = Math.floor(home.x);
+  const ny = Math.floor(home.y);
+  const cells: Vec[] = [];
+  for (let dy = -HUT_RADIUS; dy <= HUT_RADIUS; dy++) {
+    for (let dx = -HUT_RADIUS; dx <= HUT_RADIUS; dx++) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) === HUT_RADIUS) cells.push({ x: nx + dx, y: ny + dy });
+    }
+  }
+  return cells;
+}
+
 /** One NPC as data: content growth is new rows here, not new code. `pos` is
  * area-local (like AreaDef.markers); spawning translates to world coords. */
 export interface NpcDef {

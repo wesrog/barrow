@@ -85,6 +85,8 @@ export interface PlayerJoin {
   id: PlayerId;
   /** CharacterSave JSON, when the joiner brings an existing hero. */
   character?: string;
+  /** Where to stand on arrival; the world's START_ZONE unless a test says otherwise. */
+  start?: ZoneId;
 }
 
 /** One tick's worth of the world's input: what every player did, plus roster churn. */
@@ -212,6 +214,7 @@ export type SimEvent =
   | { type: "exploded"; pos: Vec; radius: number; zone: ZoneId }
   | { type: "potion_drunk"; playerId: PlayerId; healed: number; kind: "health" | "mana" }
   | { type: "traveled"; playerId: PlayerId; to: ZoneId }
+  | { type: "secret_found"; playerId: PlayerId; cells: Vec[]; zone: ZoneId }
   | { type: "breakable_broken"; id: number; kind: BreakableKind; pos: Vec; zone: ZoneId }
   | { type: "gold_dropped"; id: number; amount: number; pos: Vec; zone: ZoneId }
   | { type: "gold_picked"; playerId: PlayerId; amount: number }

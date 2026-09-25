@@ -24,6 +24,7 @@ type SoundName =
   | "swing"
   | "hit"
   | "hurt"
+  | "smash"
   | "aggro"
   | "die"
   | "drop"
@@ -651,13 +652,19 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     const at = rnd(0, 0.05);
     const loud = rnd(0.6, 1.15); // some swings are half-hearted
     if (edge === "sharp") {
-      swingSharp(c, p, at, loud);
+      // a bright recorded whoosh: steel through nothing, the synth air under it
+      playSample("swing_sharp", { gain: 0.45 * loud, at, jitterCents: 90 });
+      swingSharp(c, p, at, loud * 0.45);
       return;
     }
     if (edge === "blunt") {
-      swingBlunt(c, p, at, loud);
+      // a darker, longer whoosh for a haft hauled through air
+      playSample("swing_blunt", { gain: 0.42 * loud, at, jitterCents: 90 });
+      swingBlunt(c, p, at, loud * 0.5);
       return;
     }
+    // bare hands: sleeve and cloth over the synth air
+    playSample("swing_bare", { gain: 0.35 * loud, at, jitterCents: 150 });
     const kind = Math.random();
     if (kind < 0.4) {
       // full arc — long displaced air
@@ -708,11 +715,29 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     }
   },
   hit: (c, _v, edge) => {
-    if (edge === "sharp") slash(c, rnd(0.85, 1.2));
-    else impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
+    // The recorded blade or punch carries the hit; the synth keeps the low
+    // body and the flesh under it.
+    // Every armed blow is a plate strike, heavy or light by the draw; bare
+    // fists land a punch instead. A blade keeps the synth cut over it, a haft
+    // the heavier body under it.
+    playSample(edge === undefined ? "hit_blunt" : "hit_plate", { gain: 0.85, sat: true });
+    if (edge === "sharp") {
+      slash(c, rnd(0.85, 1.2));
+    } else {
+      playSample("body_heavy", { gain: 0.4, at: 0.01 });
+      impact(c, { p: rnd(0.85, 1.2), flesh: true, edge });
+    }
   },
   hurt: (c, v) => {
+    // the blow that lands on you: a punch into a body, then the grunt
+    playSample("hurt", { gain: 0.6, sat: true });
+    playSample("body_soft", { gain: 0.35, at: 0.01 });
     growl(c, { v: v ?? NEUTRAL_VOICE, dur: rnd(0.16, 0.24), gain: rnd(0.3, 0.4), fall: 0.6 });
+  },
+  smash: (c) => {
+    // a barrel or crate giving way: splintering wood over a thump
+    playSample("smash", { gain: 0.9, sat: true });
+    impact(c, { size: 0.9, p: rnd(0.9, 1.1) });
   },
   aggro: (c, v) => {
     // "I've seen you": a sharp rising challenge in the family's throat,
@@ -723,23 +748,30 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
   die: (c, v) => {
     const voice = v ?? NEUTRAL_VOICE;
     growl(c, { v: voice, dur: rnd(0.45, 0.6), gain: 0.42, fall: 0.35 });
-    // body hitting the ground under the last breath
+    // body hitting the ground under the last breath, cloth settling after
+    playSample("body_heavy", { gain: 0.6, at: 0.18 });
+    playSample("cloth", { gain: 0.4, at: 0.26 });
     impact(c, { size: 0.6, p: 0.8, at: 0.18 });
   },
-  // treasure hitting stone: one dull low strike
-  drop: (c) => metal(c, { freq: 131, dur: 0.5, gain: 0.14, partials: 5 }),
+  // treasure hitting stone: leather and wood on the flags over one dull low strike
+  drop: (c) => {
+    playSample("drop", { gain: 0.7 });
+    metal(c, { freq: 131, dur: 0.5, gain: 0.1, partials: 5 });
+  },
   drop_rare: (c) => {
     // a slow dark toll, left to ring into the vault
-    metal(c, { freq: 98, dur: 1.6, gain: 0.2 });
-    metal(c, { freq: 147, dur: 1.3, gain: 0.12, at: 0.16 });
+    playSample("drop_rare", { gain: 0.45, jitterCents: 20 });
+    metal(c, { freq: 98, dur: 1.6, gain: 0.16 });
+    metal(c, { freq: 147, dur: 1.3, gain: 0.1, at: 0.16 });
   },
   pickup: (c) => {
     // leather and a faint clink — handling gear, not collecting a powerup
-    noise(c, { dur: 0.05, gain: 0.14, filterFrom: 900, filterTo: 350, q: 1.5 });
-    metal(c, { freq: 520, dur: 0.09, gain: 0.05, partials: 3, at: 0.01 });
+    playSample("pickup", { gain: 0.8 });
+    metal(c, { freq: 520, dur: 0.09, gain: 0.04, partials: 3, at: 0.01 });
   },
   potion: (c) => {
-    // two wet gulps, then a low warm settle
+    // glass to the lips, two wet gulps, then a low warm settle
+    playSample("potion", { gain: 0.35 });
     for (const at of [0, 0.11]) {
       noise(c, { dur: 0.07, gain: 0.2, filterFrom: 700, filterTo: 180, q: 5, at, sat: true });
       sub(c, { from: 260, to: 130, dur: 0.07, gain: 0.15, at });
@@ -748,6 +780,7 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
   },
   levelup: (c) => {
     // a deep toll and a dark swell — power granted, not points scored
+    playSample("levelup", { gain: 0.5, jitterCents: 0 });
     metal(c, { freq: 65, dur: 2.2, gain: 0.24 });
     noise(c, { dur: 1.2, gain: 0.12, filterFrom: 150, filterTo: 600, q: 1.5, attack: 0.5 });
     sub(c, { from: 65, to: 42, dur: 0.9, gain: 0.3 });
@@ -755,12 +788,14 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
   skillup: (c) => {
     // a point committed: a chisel striking a rune — one bright metallic tick
     // over a stone tap, then a short dark ring. Kin to levelup, a fraction its size.
+    playSample("skillup", { gain: 0.35, jitterCents: 0 });
     impact(c, { size: 0.5, p: 1.3, at: 0 });
     metal(c, { freq: 392, dur: 0.45, gain: 0.09, partials: 5, at: 0.02 });
     metal(c, { freq: 131, dur: 0.7, gain: 0.08, partials: 4, at: 0.05 });
     noise(c, { dur: 0.25, gain: 0.06, filterFrom: 300, filterTo: 900, q: 2, attack: 0.05, at: 0.05 });
   },
   explode: (c) => {
+    playSample("crush", { gain: 0.6, sat: true });
     impact(c, { size: 1.6, p: 0.7, rumble: true });
     noise(c, { dur: 0.7, gain: 0.4, filterFrom: 1100, filterTo: 50, filterType: "lowpass", sat: true });
   },
@@ -770,18 +805,22 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     sub(c, { from: 150, to: 70, dur: 0.2, gain: 0.3 });
   },
   leap: (c) => {
+    playSample("cloth", { gain: 0.5 });
     noise(c, { dur: 0.3, gain: 0.18, filterFrom: 400, filterTo: 1600, q: 0.7 });
   },
   leapland: (c) => {
+    playSample("body_heavy", { gain: 0.8, sat: true });
     impact(c, { size: 1.2, p: 0.9, rumble: true });
   },
   cleave: (c) => {
     const p = rnd(0.85, 1.15);
     // wider arc of air before a bigger hit
     noise(c, { dur: 0.1, gain: 0.18, filterFrom: 2400 * p, filterTo: 400 * p, q: 0.7 });
+    playSample("hit_plate", { gain: 0.9, at: 0.04, sat: true });
     impact(c, { size: 1.2, p, flesh: true, at: 0.04 });
   },
   crush: (c) => {
+    playSample("crush", { gain: 0.9, sat: true });
     impact(c, { size: 1.5, p: rnd(0.75, 0.95), rumble: true });
   },
   spit: (c, v) => {
@@ -796,23 +835,26 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
     growl(c, { v: { pitch: 0.8, rough: 24, formants: 0.8 }, dur: 0.7, gain: 0.16, base: 60, fall: 1.6 });
   },
   coin: (c) => {
-    metal(c, { freq: 740, dur: 0.22, gain: 0.06, partials: 4 });
-    metal(c, { freq: 990, dur: 0.15, gain: 0.035, partials: 3, at: 0.05 });
+    playSample("coin", { gain: 0.7 });
+    metal(c, { freq: 740, dur: 0.22, gain: 0.03, partials: 4 });
   },
   nomana: (c) => {
     // the spell dies in the hand: a damp fizzle and a dull thud
+    playSample("nomana", { gain: 0.3, jitterCents: 0 });
     noise(c, { dur: 0.12, gain: 0.12, filterFrom: 1400, filterTo: 250, q: 3 });
     sub(c, { from: 120, to: 55, dur: 0.14, gain: 0.2 });
   },
   equip: (c) => {
     // leather shifts, then metal seats home on the armor stand of your body
-    noise(c, { dur: 0.08, gain: 0.16, filterFrom: 1100, filterTo: 400, q: 1.2 });
+    playSample("equip", { gain: 0.8 });
+    noise(c, { dur: 0.08, gain: 0.1, filterFrom: 1100, filterTo: 400, q: 1.2 });
     noise(c, { dur: 0.05, gain: 0.2, filterFrom: 500, filterTo: 200, q: 1, at: 0.06, sat: true });
     metal(c, { freq: 310, dur: 0.14, gain: 0.06, partials: 4, at: 0.07 });
     sub(c, { from: 170, to: 90, dur: 0.09, gain: 0.16, at: 0.06 });
   },
   unequip: (c) => {
     // the reverse: metal lifts off, cloth slides away upward
+    playSample("unequip", { gain: 0.7 });
     metal(c, { freq: 260, dur: 0.1, gain: 0.045, partials: 3 });
     noise(c, { dur: 0.1, gain: 0.14, filterFrom: 500, filterTo: 900, q: 1.2, at: 0.03 });
   },
@@ -827,6 +869,18 @@ const RECIPES: Record<SoundName, (c: AudioContext, v?: Voice, edge?: WeaponEdge)
 /** Sounds that hold their own longer silence window; everything else uses 60ms.
  * Aggro barks throttle hard: one voice speaks for the whole alerted pack. */
 const THROTTLE_MS: Partial<Record<SoundName, number>> = { aggro: 900 };
+
+let lastStepAt = -1000;
+
+/** One footstep of the hero: the soft carpet step, quiet, no synth under
+ * it. Steps come from the movement loop by distance walked, so the throttle
+ * only guards against two arriving in the same frame. */
+export function playStep(): void {
+  const now = performance.now();
+  if (now - lastStepAt < 120) return;
+  lastStepAt = now;
+  playSample("step", { gain: 0.3, jitterCents: 120 });
+}
 
 /** Play a named sound; same-name calls within its throttle window collapse into one.
  * Pass the monster's typeId to voice hurt/aggro/die/spit in its family's timbre,

@@ -309,10 +309,11 @@ interface SyntyWeaponLook {
   lift?: number;
 }
 
-/** The crossbow's seat, tuned in the viewer's grip tuner. */
+/** The crossbow's seat and muzzle, tuned in the viewer's grip tuner. */
+const CROSSBOW_MUZZLE: [number, number, number] = [0, -0.04, -0.015];
 const CROSSBOW_ADJUST: SyntyWeaponLook["adjust"] = {
   rest: { rot: [0, -180, 0], pos: [-0.01, 0.055, -0.5], scale: 1.58 },
-  ranged: { rot: [90, -109, -180], pos: [-0.825, 0.37, 0.13], scale: 1.58 },
+  ranged: { rot: [90, -109, -180], pos: [-0.825, 0.37, 0.07], scale: 1.58 },
 };
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
@@ -326,10 +327,10 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
   // crossbows: the POLYGON Bow and Crossbow pack's, in the right fist; a quarter turn
   // about the forearm levels it at the chest while the ranged clips play
-  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.8 },
-  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.85 },
-  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.9 },
-  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, scale: 0.95 },
+  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.8 },
+  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.85 },
+  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.9 },
+  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.95 },
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },

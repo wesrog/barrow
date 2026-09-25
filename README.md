@@ -4,14 +4,19 @@ A browser action RPG in the shape of Diablo 2: kill, loot, equip, go deeper. Fla
 
 ## Running it
 
-You need [bun](https://bun.sh), and for the art, Blender 5 plus the licensed packs described under [Assets](#assets).
+You need [bun](https://bun.sh), and the built art: either fetched from the project's private bucket (see [Assets](#assets)) or built yourself with Blender 5 from the licensed packs.
 
 ```
 bun install
+bun run dev             # fetches the locked asset pack if yours is stale, then http://localhost:5197
+```
+
+Building the art from the source packs instead:
+
+```
 bun run assets:synty    # convert the Synty packs to GLB kits (Blender)
 bun run assets:ui       # copy the UI icon packs
 bun run assets:ground   # copy the ground textures
-bun run dev             # http://localhost:5197
 ```
 
 Other commands:
@@ -21,6 +26,8 @@ Other commands:
 | `bun test sim client` | The unit tests. `bun test` adds the net and signal suites. |
 | `bun run build` | Typecheck and production build into `dist/`. |
 | `bun run signal` | The multiplayer signalling server on `ws://localhost:5200`. |
+| `bun run assets:pull` | Fetch the asset pack `assets.lock.json` names, if yours differs. `bun run dev` does this first. |
+| `bun run assets:push` | Pack your built assets, upload them, and update `assets.lock.json` to commit. |
 | `/viewer.html` on the dev server | The asset viewer: every character with its idle, weapons and attachments to try on, a clip picker, and a tab over all the 2D art. Its grip tuner seats a held weapon by hand (at rest and while shooting), places a weapon's muzzle point, and prints the numbers to paste into the game. |
 
 Without the model kits the game refuses to start and names the missing kit. Without the icon packs and ground textures it falls back to built-in SVG icons and flat ground colours.
@@ -74,5 +81,10 @@ Without the model kits the game refuses to start and names the missing kit. With
 ## Assets
 
 The 3D art is Synty Studios' POLYGON packs (Dungeon Pack, Goblin War Camp, Viking Realm, Alpine Mountain, Goblin Locomotion, and the free Bow and Crossbow pack) and the item icons are Synty's INTERFACE Fantasy Screens and Fantasy Warrior HUD plus AssetSmithy's 608 Fantasy Icons. Their licences forbid redistribution, so neither the sources nor anything converted from them is in this repository: unzip each pack under `assets-src/`, run the three asset commands, and the outputs land in gitignored folders. Only the converter scripts are tracked.
+
+Within the project, the built folders travel through a private S3 bucket instead of git. `assets.lock.json` in git names the current pack by a hash of its contents. `bun run dev` compares it with the pack you have and downloads the new one when the lock moves, so pulling the code brings matching art. If the download fails (no AWS CLI, no credentials), the dev server still starts on whatever art is already there.
+
+- **Fetching:** install the AWS CLI (`brew install awscli`) and store the read-only key you were given as a profile with `aws configure --profile barrow`. Then run the game with that profile, for example `AWS_PROFILE=barrow bun run dev`, or export it in your shell.
+- **Publishing new art:** rebuild the folders, run `bun run assets:push`, and commit the updated `assets.lock.json` with the code that needs it.
 
 In the repository: the CC0 KayKit animation suite that the converter retargets onto the Synty skeletons (the Synty packs ship no combat animation), Kenney's CC0 sound packs, and a Pixabay whoosh set, each with its licence beside it.

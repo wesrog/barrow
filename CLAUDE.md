@@ -47,6 +47,13 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   wood (`smash`), and the hero's footsteps the carpet set, fired by the rig on each footfall of
   the walk clip (a shin's world height turning from falling to rising, `AnimRig.trackFootfalls`),
   so they follow the animation at any speed; the scene hands them out as `onFootstep`. The music (`client/music.ts`) and ambience beds stay synthesized.
+- **Shared asset packs:** `bun run assets:push` tars `public/models/synty`, `public/icons/packs`
+  and `public/textures/ground`, uploads the pack to the private bucket `barrow-assets-716001413835`
+  (us-west-2, all public access blocked) under its content hash, and rewrites `assets.lock.json`
+  (commit it). `predev` runs `assets:pull --quiet`: when `public/.assets-version` differs from the
+  lock it downloads, checks the checksum, and replaces those three folders; any failure only warns.
+  IAM user `barrow-assets-reader` may only `s3:GetObject` under `packs/`; its keys go to collaborators.
+  Push after regenerating assets that a commit depends on; never make the bucket public (Synty EULA).
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders

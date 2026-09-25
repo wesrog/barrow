@@ -1303,7 +1303,7 @@ export function createScene(
   // --- Arrows: the Viking kit's arrow (centred, 1 unit along Z) flies from the
   // bow hand to the mark in a flat, fast arc and snaps out on arrival ---
   const ARROW_SPEED = 28; // cells per second: a blur, not a lob
-  const arrowFlight = (from: Vec, to: Vec): void => {
+  const arrowFlight = (from: Vec, to: Vec, muzzle?: THREE.Vector3): void => {
     // A crossbow bolt when that kit loaded (0.46 long, along Z), else the Viking arrow (1 long).
     const bolt = kitNode(assets.kits, "crossbow_weapons", "Wep_Crossbow_Bolt_01");
     const src = bolt ?? kitNode(assets.kits, "viking_weapons", "Wep_Arrow_01");
@@ -1321,11 +1321,14 @@ export function createScene(
     const dx = to.x - from.x;
     const dz = to.y - from.y;
     const dist = Math.hypot(dx, dz) || 1;
-    const sx = from.x + (dx / dist) * 0.4;
-    const sz = from.y + (dz / dist) * 0.4;
-    const flight = Math.max(0.3, dist - 0.4);
+    // Out of the weapon's tip when the archer's crossbow gives one, else a step ahead at chest height.
+    const sx = muzzle ? muzzle.x : from.x + (dx / dist) * 0.4;
+    const sz = muzzle ? muzzle.z : from.y + (dz / dist) * 0.4;
+    const sy = muzzle ? muzzle.y : 1.15;
+    const flight = Math.max(0.3, Math.hypot(to.x - sx, to.y - sz));
     const dur = Math.max(60, (flight / ARROW_SPEED) * 1000);
-    const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, 1.15 - 0.45 * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
+    const at = (t: number) => new THREE.Vector3(sx + (to.x - sx) * t, sy + (0.7 - sy) * t + Math.sin(t * Math.PI) * 0.12, sz + (to.y - sz) * t);
+    if (muzzle) fx.burst(sx, sy, sz, 0xffd9a0, 5, 0.9); // the release flash at the tip
     g.position.copy(at(0));
     g.lookAt(at(0.05));
     scene.add(g);
@@ -1369,8 +1372,10 @@ export function createScene(
     const wait = shot.at + releaseMs(shot.timeScale) - now;
     const f = { ...from };
     const t = { ...to };
-    if (wait <= 0) arrowFlight(f, t);
-    else fx.tween(wait, () => {}, () => arrowFlight(f, t));
+    // The tip is read at the release frame, where the pose has the crossbow up.
+    const fly = () => arrowFlight(f, t, heroOf(playerId)?.rig.muzzle() ?? undefined);
+    if (wait <= 0) fly();
+    else fx.tween(wait, () => {}, fly);
   };
 
   /** Does this player hold a bow? Their basic attack is then a shot. */

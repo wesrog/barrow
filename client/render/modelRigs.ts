@@ -50,6 +50,8 @@ export interface ModelRig extends Rig {
 
 export interface HeroModelRig extends ModelRig {
   setEquipment(eq: Equipment): void;
+  /** World position of the held weapon's far end (a crossbow's prod), or null empty-handed. */
+  muzzle(): THREE.Vector3 | null;
   /** Clip for a basic attack with the current weapon. */
   attackClip(): ClipId;
 }
@@ -335,6 +337,26 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   hexwood_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
 };
 
+/**
+ * The far end of a held wrapper's piece in the wrapper's own frame. gear.ts
+ * stands every piece along +Y with its authored pivot (the grip) at the
+ * origin, so the tip is whichever Y end of its bounds lies farther out.
+ */
+function farEnd(wrapper: THREE.Object3D): THREE.Vector3 {
+  const saved = { p: wrapper.position.clone(), q: wrapper.quaternion.clone(), s: wrapper.scale.clone(), parent: wrapper.parent };
+  wrapper.position.set(0, 0, 0);
+  wrapper.quaternion.identity();
+  wrapper.scale.set(1, 1, 1);
+  wrapper.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(wrapper);
+  wrapper.position.copy(saved.p);
+  wrapper.quaternion.copy(saved.q);
+  wrapper.scale.copy(saved.s);
+  wrapper.updateMatrixWorld(true);
+  const y = Math.abs(box.max.y) >= Math.abs(box.min.y) ? box.max.y : box.min.y;
+  return new THREE.Vector3((box.min.x + box.max.x) / 2, y, (box.min.z + box.max.z) / 2);
+}
+
 /** The tuned seat and scale the game gives a kit piece, if a weapon look uses it (the viewer's tuner starts from these). */
 export function weaponSeatFor(kit: KitName, node: string): { adjust: SyntyWeaponLook["adjust"]; scale: number } | null {
   const look = Object.values(SYNTY_WEAPONS).find((w) => w.kit === kit && w.node === node);
@@ -395,6 +417,8 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
     scale: number;
     adjust: SyntyWeaponLook["adjust"];
     pose: "rest" | "ranged" | null;
+    /** The far end of the piece in the wrapper's own frame: the length end farthest from the grip. */
+    tip: THREE.Vector3;
   } | null = null;
 
   // Bone rest frames in the character's own space, captured before the first
@@ -483,7 +507,7 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       const slot = look.hand === "l" ? "l" : "r";
       rig.attach(slot, model);
       if (slot === "l") rig.attach("r", null);
-      held = model ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null } : null;
+      held = model ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null, tip: farEnd(model) } : null;
     } else {
       twoHanded = false;
       held = null;
@@ -496,6 +520,11 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   // clips.
   hero.attackClip = () =>
     !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  hero.muzzle = () => {
+    if (!held) return null;
+    held.model.updateWorldMatrix(true, false);
+    return held.model.localToWorld(held.tip.clone());
+  };
   const animate = rig.animate.bind(rig);
   hero.animate = (now, phase, speed) => {
     animate(now, phase, speed);

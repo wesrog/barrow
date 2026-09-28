@@ -12,7 +12,7 @@ import {
   type KitName,
   type Kits,
 } from "./models";
-import { captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement } from "./gear";
+import { applyGripAdjust, captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement, type GripAdjust } from "./gear";
 import {
   SYNTY_DUNGEON_RIG,
   SYNTY_GOBLIN_RIG,
@@ -35,7 +35,7 @@ import { makeMonsterRig as makeProceduralRig, type Rig } from "./rigs";
 export interface ModelRig extends Rig {
   readonly family: RigFamily;
   /** Play a one-shot clip (attack, death, taunt), then return to locomotion. */
-  oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean }): void;
+  oneShot(clip: ClipId, opts?: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean; startAt?: number; endAt?: number }): void;
   /** Cancel a held one-shot (revive after a held death pose). */
   release(): void;
   /** The named bone for a role, if this rig has it. */
@@ -46,21 +46,31 @@ export interface ModelRig extends Rig {
   clipNames(): string[];
   /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
   footfall?: () => void;
+  /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms),
+   * playing it from `from` seconds on and never looping back before that; moving drops it at once. */
+  holdStance(clip: ClipId, until: number, from?: number): void;
 }
 
 export interface HeroModelRig extends ModelRig {
   setEquipment(eq: Equipment): void;
+  /** World position of the held weapon's far end (a crossbow's prod), or null empty-handed. */
+  muzzle(): THREE.Vector3 | null;
+  /** While a ranged clip plays: how far (radians, about the vertical) the held weapon's length
+   * points off the body's facing, so the scene can turn the body until the barrel lines up
+   * with the shot. Null otherwise. */
+  aimOffset(): number | null;
   /** Clip for a basic attack with the current weapon. */
   attackClip(): ClipId;
 }
 
+/** Rarity shows as a faint wash of its colour over the piece's own texture, not a glow. */
 const RARITY_GLOW: Record<string, number> = {
-  magic: 0x2a3ea0,
-  rare: 0x8a7420,
-  unique: 0x8a5010,
+  magic: 0x5a78ff,
+  rare: 0xe0c040,
+  unique: 0xe08a30,
 };
 
-function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.35): void {
+function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.07): void {
   const glow = RARITY_GLOW[item.rarity];
   if (glow === undefined) return;
   obj.traverse((child) => {
@@ -79,6 +89,7 @@ class AnimRig implements ModelRig {
   private lastNow: number | null = null;
   private current: THREE.AnimationAction | null = null;
   private oneShotUntil = 0;
+  private stance: { name: string; until: number; from: number } | null = null;
   private idleName: string | undefined;
   private walkName: string | undefined;
   footfall?: () => void;
@@ -131,7 +142,7 @@ class AnimRig implements ModelRig {
 
   private moveCancels = true;
 
-  oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean } = {}): void {
+  oneShot(clip: ClipId, opts: { hold?: boolean; timeScale?: number; cancelOnMove?: boolean; startAt?: number; endAt?: number } = {}): void {
     const name = this.clipName(clip);
     if (!name) return;
     // Force a restart so back-to-back identical attacks replay from the top.
@@ -139,12 +150,22 @@ class AnimRig implements ModelRig {
     if (!action) return;
     action.timeScale = opts.timeScale ?? 1;
     this.moveCancels = !opts.hold && (opts.cancelOnMove ?? true);
-    const dur = (action.getClip().duration / action.timeScale) * 1000;
-    this.oneShotUntil = opts.hold ? Number.POSITIVE_INFINITY : performance.now() + dur * 0.85;
+    // `startAt` and `endAt` (seconds into the clip) trim a one-shot: KayKit's ranged
+    // clips open by raising the weapon from a neutral pose and close by lowering it,
+    // which a held stance would only undo again.
+    const start = Math.min(opts.startAt ?? 0, action.getClip().duration);
+    action.time = start;
+    const end = opts.endAt !== undefined ? Math.min(opts.endAt, action.getClip().duration) : action.getClip().duration * 0.85;
+    this.oneShotUntil = opts.hold ? Number.POSITIVE_INFINITY : performance.now() + (Math.max(0, end - start) / action.timeScale) * 1000;
   }
 
   release(): void {
     this.oneShotUntil = 0;
+  }
+
+  holdStance(clip: ClipId, until: number, from = 0): void {
+    const name = this.clipName(clip);
+    if (name) this.stance = { name, until, from };
   }
 
   bone(role: BoneRole): THREE.Object3D | null {
@@ -158,9 +179,17 @@ class AnimRig implements ModelRig {
     if (this.oneShotUntil > 0 && this.oneShotUntil !== Number.POSITIVE_INFINITY && this.moveCancels && speed > 1.0) {
       this.oneShotUntil = 0;
     }
+    // Walking or running lowers a held stance; so does waiting it out.
+    if (this.stance && (speed > 0.4 || now >= this.stance.until)) this.stance = null;
     if (now >= this.oneShotUntil) {
       this.oneShotUntil = 0;
-      if (speed > 0.4 && this.walkName) {
+      if (this.stance) {
+        // Played once and held on its last frame: looping would wrap back through the
+        // clip's opening raise (a lowered pose) and flick the weapon down mid-hold.
+        const action = this.play(this.stance.name, 0.12, false);
+        // Skip the opening raise.
+        if (action && action.time < this.stance.from) action.time = this.stance.from;
+      } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
         if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));
       } else if (this.idleName) {
@@ -230,20 +259,10 @@ function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
 
-/** Shared by both hero families: rarity glow on held weapons is stronger than on armor. */
-const WEAPON_GLOW = 0.5;
+/** Shared by both hero families: rarity glow on held weapons is a touch stronger than on armor. */
+const WEAPON_GLOW = 0.08;
 
 // ---------------------------------------------------------------------------
-const CHEST_LOOKS: Record<string, { color: number; metal: boolean; big: boolean }> = {
-  rag_tunic: { color: 0x6a5a44, metal: false, big: false },
-  studded_jerkin: { color: 0x4a3a2c, metal: false, big: false },
-  grave_plate: { color: 0x8a94a4, metal: true, big: true },
-};
-
-function chestLook(baseId: string) {
-  return CHEST_LOOKS[baseId] ?? CHEST_LOOKS.rag_tunic!;
-}
-
 /** Whether an off-hand item is a caster orb (a shield-slot item that deals damage). */
 function isOrb(item: Item): boolean {
   return BASES[item.baseId]!.dmgMin !== undefined;
@@ -263,6 +282,7 @@ function visibleOffhand(eq: Equipment): Item | null {
 const SYNTY_HERO_NODES: Record<Klass, string> = {
   warrior: "Warrior_Male_01",
   witch: "Leader_Female_01",
+  ranger: "Warrior_Female_01",
 };
 
 /** Heroes stand 1.56 units in the scene (2.17 x 0.72, the height everything was
@@ -289,13 +309,29 @@ interface SyntyWeaponLook {
   kit: KitName;
   node: string;
   twoHanded: boolean;
-  /** The basic swing: the flat one-handed slice unless a row asks for the chop. */
-  swing?: "chop" | "slice";
+  /** The basic swing: the flat one-handed slice unless a row asks for the chop; bows shoot. */
+  swing?: "chop" | "slice" | "shoot";
+  /** The hand that holds it: the right unless the row says left (a bow rides the left fist). */
+  hand?: "l";
+  /** Hand-tuned corrections on top of the grip (the viewer's grip tuner prints these):
+   * `rest` for every clip but the ranged ones, `ranged` while a `*Ranged*` clip plays
+   * (those hold the fist palm down, so a crossbow needs its own seat there). */
+  adjust?: { rest?: GripAdjust; ranged?: GripAdjust };
+  /** Where shots leave the piece, in the held wrapper's own frame (the viewer's grip tuner places it);
+   * without one the far end of its length stands in. */
+  muzzle?: [number, number, number];
   scale?: number;
   /** Shift along the upright axis, in hand units, so a piece pivoted mid-shaft
    * is held by its handle end (the wands are cut-down staves). */
   lift?: number;
 }
+
+/** The crossbow's seat and muzzle, tuned in the viewer's grip tuner. */
+const CROSSBOW_MUZZLE: [number, number, number] = [0, -0.04, -0.015];
+const CROSSBOW_ADJUST: SyntyWeaponLook["adjust"] = {
+  rest: { rot: [0, -180, 0], pos: [-0.01, 0.055, -0.5], scale: 1.58 },
+  ranged: { rot: [90, -109, -180], pos: [-0.825, 0.37, 0.07], scale: 1.58 },
+};
 
 const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   rusted_blade: { kit: "viking_weapons", node: "Wep_Sword_02", twoHanded: false },
@@ -306,6 +342,12 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   grave_scythe: { kit: "viking_weapons", node: "Wep_Axe_04", twoHanded: true },
   dire_flail: { kit: "viking_weapons", node: "Wep_Axe_02", twoHanded: true },
   moon_glaive: { kit: "viking_weapons", node: "Wep_Spear_02", twoHanded: true },
+  // crossbows: the POLYGON Bow and Crossbow pack's, in the right fist; a quarter turn
+  // about the forearm levels it at the chest while the ranged clips play
+  short_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.8 },
+  hunting_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.85 },
+  yew_longbow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.9 },
+  horn_bow: { kit: "crossbow_weapons", node: "Wep_Crossbow_01", twoHanded: true, swing: "shoot", adjust: CROSSBOW_ADJUST, muzzle: CROSSBOW_MUZZLE, scale: 0.95 },
   gnarled_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   ember_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
   wyrmwood_staff: { kit: "goblin_weapons", node: "Wep_Staff_02", twoHanded: true },
@@ -315,6 +357,41 @@ const SYNTY_WEAPONS: Record<string, SyntyWeaponLook> = {
   willow_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
   hexwood_wand: { kit: "dungeon_weapons", node: "Wep_Staff_Gem_01", twoHanded: false, scale: 0.4, lift: 0.2 },
 };
+
+/**
+ * The far end of a held wrapper's piece in the wrapper's own frame. gear.ts
+ * stands every piece along +Y with its authored pivot (the grip) at the
+ * origin, so the tip is whichever Y end of its bounds lies farther out.
+ */
+function farEnd(wrapper: THREE.Object3D): THREE.Vector3 {
+  // Measure detached: the bounds come out in world space, so the hand it hangs from must not count.
+  const saved = { p: wrapper.position.clone(), q: wrapper.quaternion.clone(), s: wrapper.scale.clone(), parent: wrapper.parent };
+  saved.parent?.remove(wrapper);
+  wrapper.position.set(0, 0, 0);
+  wrapper.quaternion.identity();
+  wrapper.scale.set(1, 1, 1);
+  wrapper.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(wrapper);
+  wrapper.position.copy(saved.p);
+  wrapper.quaternion.copy(saved.q);
+  wrapper.scale.copy(saved.s);
+  saved.parent?.add(wrapper);
+  wrapper.updateMatrixWorld(true);
+  const y = Math.abs(box.max.y) >= Math.abs(box.min.y) ? box.max.y : box.min.y;
+  return new THREE.Vector3((box.min.x + box.max.x) / 2, y, (box.min.z + box.max.z) / 2);
+}
+
+/** The tuned seat and scale the game gives a kit piece, if a weapon look uses it (the viewer's tuner starts from these). */
+export function weaponSeatFor(
+  kit: KitName,
+  node: string,
+): { adjust: SyntyWeaponLook["adjust"]; scale: number; muzzle?: [number, number, number] } | null {
+  const look = Object.values(SYNTY_WEAPONS).find((w) => w.kit === kit && w.node === node);
+  return look ? { adjust: look.adjust, scale: look.scale ?? 1, muzzle: look.muzzle } : null;
+}
+
+/** The far end of a held wrapper's piece in its own frame: where the tuner's muzzle marker starts. */
+export { farEnd as heldFarEnd };
 
 /** Helm base id -> Viking attachment nodes stacked on the head. */
 const SYNTY_HELMS: Record<string, string[]> = {
@@ -347,22 +424,22 @@ const SYNTY_SHIELDS: Record<string, string> = {
 };
 const SYNTY_SHIELD_DEFAULT = "Wep_Shield_Set_01";
 
-/**
- * Box overlays for the chest in the Synty rig's bone frames, where X
- * runs along the bone, Y points backward, and Z sideways (measured on the
- * rig). Sizes are in the model's 1.8-unit-tall space.
- */
-const SYNTY_OVERLAYS = {
-  pauldron: { size: [0.16, 0.16, 0.16] as const, big: [0.2, 0.2, 0.2] as const, offset: [0.03, 0, 0] as const },
-  plate: { size: [0.3, 0.18, 0.36] as const, offset: [0.05, -0.04, 0] as const },
-};
-
 function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const rig = new AnimRig(inst, SYNTY_HUMAN_RIG, "idle", "run");
   rig.group.scale.setScalar(SYNTY_HERO_SCALE);
   let twoHanded = false;
   let armed = false;
-  let swing: "chop" | "slice" = "slice";
+  let swing: "chop" | "slice" | "shoot" = "slice";
+  /** The held weapon and its seat: the grip, its tuned adjustments, and which pose it sits in now. */
+  let held: {
+    model: THREE.Object3D;
+    slot: "r" | "l";
+    scale: number;
+    adjust: SyntyWeaponLook["adjust"];
+    pose: "rest" | "ranged" | null;
+    /** The far end of the piece in the wrapper's own frame: the length end farthest from the grip. */
+    tip: THREE.Vector3;
+  } | null = null;
 
   // Bone rest frames in the character's own space, captured before the first
   // mixer update: pieces authored in place over the bind pose (fur mantles)
@@ -371,19 +448,6 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   const restInverses = captureRestInverses(rig.group);
 
   const gear: THREE.Object3D[] = [];
-  const addGear = (role: BoneRole, mesh: THREE.Object3D, item: Item) => {
-    const bone = rig.bone(role);
-    if (!bone) return;
-    applyRarityGlow(mesh, item);
-    bone.add(mesh);
-    gear.push(mesh);
-  };
-  const box = (size: readonly [number, number, number], offset: readonly [number, number, number], mat: THREE.Material) => {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), mat);
-    mesh.position.set(...offset);
-    mesh.castShadow = true;
-    return mesh;
-  };
   /** Wear a Viking attachment on the bone its kind rides; false when the kit or bone is missing. */
   const wear = (name: string, item: Item): boolean => {
     const placement = wornPlacement(kits, "viking_attachments", name);
@@ -407,17 +471,11 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       for (const name of SYNTY_HELMS[eq.helm.baseId] ?? SYNTY_HELM_DEFAULT) wear(name, eq.helm);
     }
 
+    // Chest armour shows as its fur mantle (the rag tunic wears none). The flat box
+    // plate and pauldrons it used to add read as coloured boxes once rarity tinted them.
     if (eq.chest) {
-      const look = chestLook(eq.chest.baseId);
-      const mat = flatMat(look.color, look.metal ? 0.45 : 0.75);
       const mantle = SYNTY_MANTLES[eq.chest.baseId];
-      const furred = mantle ? wear(mantle, eq.chest) : false;
-      if (!furred && mantle !== null) {
-        const size = look.big ? SYNTY_OVERLAYS.pauldron.big : SYNTY_OVERLAYS.pauldron.size;
-        addGear("upperArmL", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
-        addGear("upperArmR", box(size, SYNTY_OVERLAYS.pauldron.offset, mat), eq.chest);
-      }
-      addGear("chest", box(SYNTY_OVERLAYS.plate.size, SYNTY_OVERLAYS.plate.offset, mat), eq.chest);
+      if (mantle) wear(mantle, eq.chest);
     }
 
     // Boots draw nothing on the model for now: the box greaves hung off the
@@ -443,14 +501,19 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       swing = look.swing ?? "slice";
       const model = heldModel(kits, look.kit, look.node);
       if (model) {
-        if (look.scale !== undefined) model.scale.multiplyScalar(look.scale);
         // The wrapper holds one upright model; lifting it moves the grip down the shaft.
         if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
-      rig.attach("r", model);
+      const slot = look.hand === "l" ? "l" : "r";
+      rig.attach(slot, model);
+      if (slot === "l") rig.attach("r", null);
+      held = model
+        ? { model, slot, scale: look.scale ?? 1, adjust: look.adjust, pose: null, tip: look.muzzle ? new THREE.Vector3(...look.muzzle) : farEnd(model) }
+        : null;
     } else {
       twoHanded = false;
+      held = null;
       rig.attach("r", null);
     }
   };
@@ -458,7 +521,45 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   // (the two-handed chop read as a windmill on the Viking), unless a weapon's
   // row asks for the chop; bare hands throw a punch. Skills pick their own
   // clips.
-  hero.attackClip = () => (!armed ? "attackUnarmed" : swing === "chop" ? "attackChop1h" : "attack1h");
+  hero.attackClip = () =>
+    !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  const axis = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  hero.aimOffset = () => {
+    if (!held || !rig.currentClip()?.includes("Ranged")) return null;
+    // gear.ts stands every piece along its wrapper's +Y: that axis, in the world, flattened.
+    held.model.updateWorldMatrix(true, false);
+    held.model.getWorldQuaternion(quat);
+    axis.set(0, 1, 0).applyQuaternion(quat);
+    axis.y = 0;
+    if (axis.lengthSq() < 1e-6) return null;
+    const body = rig.group.rotation.y;
+    // The length runs both ways: take the end that points forward of the body.
+    if (axis.x * Math.sin(body) + axis.z * Math.cos(body) < 0) axis.negate();
+    let off = Math.atan2(axis.x, axis.z) - body;
+    while (off > Math.PI) off -= Math.PI * 2;
+    while (off < -Math.PI) off += Math.PI * 2;
+    return off;
+  };
+  hero.muzzle = () => {
+    // Only while the crossbow is raised: a bolt loosed from the resting seat (a frame
+    // hitch, a remote hero) would flash wherever the lowered weapon happens to point.
+    if (!held || held.pose !== "ranged") return null;
+    held.model.updateWorldMatrix(true, false);
+    return held.model.localToWorld(held.tip.clone());
+  };
+  const animate = rig.animate.bind(rig);
+  hero.animate = (now, phase, speed) => {
+    animate(now, phase, speed);
+    if (held) {
+      // Re-seat only when the pose changes: the ranged clips get their own adjustment.
+      const pose = rig.currentClip()?.includes("Ranged") ? "ranged" : "rest";
+      if (pose !== held.pose) {
+        held.pose = pose;
+        applyGripAdjust(held.model, SYNTY_HUMAN_RIG.grip[held.slot], held.adjust?.[pose], held.scale);
+      }
+    }
+  };
   return hero;
 }
 

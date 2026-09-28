@@ -311,7 +311,7 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
     dmgMax: stats.dmgMax,
     attackRating: stats.attackRating,
     defense: stats.defense,
-    range: 1.2,
+    range: stats.range,
     swingEvery: BASE_STATS.swingEvery,
     swingCooldown: 0,
     attackTarget: null,

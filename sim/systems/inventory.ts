@@ -32,6 +32,7 @@ export function recomputePlayerStats(state: GameState, p: Player): void {
   p.swingEvery = s.swingEvery;
   p.magicFind = s.magicFind;
   p.lifeRegen = s.lifeRegen;
+  p.range = s.range;
   p.speed = (4.5 / 25) * (1 + s.moveSpeedPct / 100);
   if (p.life > p.maxLife) p.life = p.maxLife;
   if (p.mana > p.maxMana) p.mana = p.maxMana;

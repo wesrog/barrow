@@ -1,5 +1,5 @@
 import { buildingRing } from "./buildings";
-import { PACK_MARGIN } from "./zone";
+import { GATE_APRON_DEPTH, GATE_APRON_HALF, PACK_MARGIN } from "./zone";
 import { describe, expect, test } from "bun:test";
 import { AREAS, isAreaId } from "./areas";
 import { areaZone } from "./zone";
@@ -138,6 +138,18 @@ describe("organic landmass", () => {
           const fraction = floor / map.cells.length;
           expect(fraction).toBeGreaterThan(0.3);
           expect(fraction).toBeLessThan(0.75);
+        });
+
+        test(`seed ${seed}: the ground outside the camp gate is open`, () => {
+          const safe = def.safe;
+          if (!safe) return;
+          const map = areaZone(createRng(seed), def);
+          const gy = Math.floor(def.spawn.y);
+          for (let y = gy - GATE_APRON_HALF; y <= gy + GATE_APRON_HALF; y++) {
+            for (let x = safe.x1 + 1; x <= safe.x1 + GATE_APRON_DEPTH; x++) {
+              expect(map.cells[y * map.width + x]).toBe(1);
+            }
+          }
         });
 
         test(`seed ${seed}: safe ground interior is all floor but building walls, monster packs outside it`, () => {

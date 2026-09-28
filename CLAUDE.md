@@ -47,6 +47,13 @@ from Blizzard). Flat-shaded low-poly isometric WebGL, kill → loot → equip co
   wood (`smash`), and the hero's footsteps the carpet set, fired by the rig on each footfall of
   the walk clip (a shin's world height turning from falling to rising, `AnimRig.trackFootfalls`),
   so they follow the animation at any speed; the scene hands them out as `onFootstep`. The music (`client/music.ts`) and ambience beds stay synthesized.
+- **Shared asset packs:** `bun run assets:push` tars `public/models/synty`, `public/icons/packs`
+  and `public/textures/ground`, uploads the pack to the private bucket `barrow-assets-716001413835`
+  (us-west-2, all public access blocked) under its content hash, and rewrites `assets.lock.json`
+  (commit it). `predev` runs `assets:pull --quiet`: when `public/.assets-version` differs from the
+  lock it downloads, checks the checksum, and replaces those three folders; any failure only warns.
+  IAM user `barrow-assets-reader` may only `s3:GetObject` under `packs/`; its keys go to collaborators.
+  Push after regenerating assets that a commit depends on; never make the bucket public (Synty EULA).
 - **Synty assets:** `bun run assets:synty` (`PACKS=goblin_war_camp KITS=characters` to filter;
   needs Blender 5 at `/Applications/Blender.app`, or set `BLENDER`). Converts
   `assets-src/synty/<pack>/` FBX into GLB kits under `public/models/synty/<pack>/`. Both folders
@@ -87,7 +94,16 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   with one door cell and a marker at the centre, `J` and `D`), stamped with the huts. Packs
   keep `PACK_MARGIN` cells off the palisade, landmarks `LANDMARK_MARGIN`. A new character's
   kit is `STARTING_WEAPON`/`STARTING_SKILL` in `sim/save.ts`: the warrior a rusted blade,
-  the witch a bone wand and one rank of firebolt.
+  the witch a bone wand and one rank of firebolt, the ranger a light crossbow and one rank of
+  power shot. Three classes: warrior, witch, ranger (Archery, Hunting, Survival; Power Shot,
+  Multishot, Eagle Eye, Snare, Evasion and Swiftness work, the rest are `pending` rows). Crossbows are
+  weapon bases with a `reach` (ids still `*_bow`: saves carry them) (11.5 to 12.5 cells); `computeStats` turns it
+  into `range` (melee is `MELEE_RANGE`). Arrows fly directionally: a shot's strike carries its
+  `aim`, and `traceArrow` walks the line from the archer to the first wall or the first monster
+  body it passes (the first in line takes it), or the end of the reach, emitting an `arrow`
+  event the renderer draws. Power Shot flies the same way; Multishot fans `multishotFan` angles
+  around the aim. The camp gate keeps an open apron outside it (`GATE_APRON_DEPTH`/`_HALF` in
+  `sim/zone.ts`), where the palisade dressing stands a big torch either side of the way in.
 - `client/render/` — Three.js scene, meshes, input raycast, damage numbers.
   `rigSpec.ts` is the seam between the scene and any model set: the scene asks rigs for
   semantic clips (`death`, `cast`, `attack2h`...) and bone roles (`handR`, `head`...), and each
@@ -115,7 +131,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   and corner posts on a hut dweller's wall ring (`hutRing` in `sim/npcs.ts`, shared with the
   zone carver), and `dressPalisade`, which walls each safe rect's ring the same way with
   torches on the gate posts, flags on the corners, and a sign and lit beacon outside the
-  gate; both hand the scene the cells to leave bare. `wildDressing.ts` holds the landmark
+  gate; both hand the scene the cells to leave bare. `lightDressing.ts` scatters standing
+  torches, braziers and small campfires over open ground and braziers, candle stands and
+  torch sticks through crypt rooms: at most one light per block of cells (`block`, `chance`),
+  by cell hash, clear of markers, raised walls and the camp. `wildDressing.ts` holds the landmark
   rows (stone circle, ruin, raider camp, cold camp, shrine) on the same markers the sim
   places, and the scene also bares each landmark's `solid` cells. The primitive campfire and
   dungeon-prop stall remain the fallback. `dressMarkers` is the general form: any row table on
@@ -137,7 +156,14 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y
   (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
   a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
-  butt end (the wands are the Dungeon Pack's gem staff at two fifths),
+  butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a piece in
+  the left fist, and `adjust` holds hand-tuned seats on top of the grip (`GripAdjust` in gear.ts:
+  a turn in degrees and a shift in the hand's frame, and a scale): `rest` for every clip, `ranged`
+  while a `*Ranged*` clip plays (those hold the fist palm down; the ranger's crossbow needs its own
+  seat there). Tune them in the viewer's grip tuner (select a figure, put the piece in a hand, pick
+  "at rest" or "shooting", drag the sliders, copy): it prints the `adjust` block for the look and
+  exposes it as `window.__grip`. A look's `muzzle` (piece frame, placed with the tuner's pink dot)
+  is where shots flash and bolts leave; without one the far end of the piece stands in,
   and `gripInto` seats the wrapper with the rig's grip; `wornPlacement`/`wearPiece` put
   attachments on the bone their name implies, in the bone's frame when authored near the
   origin (helmets, hats, beards, pouches) or through the bone's rest frame when authored in
@@ -178,6 +204,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   script moves faces with blue > 0.5 to a leaf cutout material. Pines are 7 to 17 units tall.
   The Rock_Cliff pieces, snow mounds, moss lumps, and stalactites sit on triplanar or glacier
   shaders and are skipped; rocks, pebbles, bushes, grass, and props convert.
+- `bow_crossbow`: the free POLYGON Bow and Crossbow pack. Its crossbow and two bows are authored
+  rigged, as test scenes; the kit converts them static and `rename`s them `Wep_Crossbow_01`,
+  `Wep_Bow_Recurve_01`, `Wep_Bow_Longbow_01`, beside the arrows and `Wep_Crossbow_Bolt_01` (the
+  bolt the renderer flies). The game loads it as `crossbow_weapons`.
 - `viking_realm`: zip has a `SourceFiles/` level (the pack `root`). Ten humans plus 14 skinned
   attachments on the same 50-bone rig as the goblins, split per character like them. Its
   material list names textures on the slot line; 80 shield designs share one texture. Its
@@ -193,7 +223,7 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   frame offset between the two T-poses (character bind pose vs clip joint orients) and keys
   world rotations through it; hips carry translation in metres.
 - `kaykit_clips` (source `assets-src/kaykit/`): the CC0 KayKit suite (Idle, walks, runs, every 1H/2H/unarmed
-  swing, spellcasts, Cheer, Taunt, dodges, jumps, hits, deaths) retargeted onto `goblin_rig`
+  swing, the 2H ranged aim, shoot and reload (a crossbow pose, used for bows), spellcasts, Cheer, Taunt, dodges, jumps, hits, deaths) retargeted onto `goblin_rig`
   and `dungeon_rig` through an explicit bone map (`SYNTY_FROM_KAYKIT`, `UE_FROM_KAYKIT`) with
   rest-direction alignment and hip motion scaled by hip height. KayKit's chibi idle holds the
   arms out, so calm clips get an extra `ARM_RELAX_DEGREES` turn on the upper arms; swings keep

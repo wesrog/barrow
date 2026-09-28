@@ -94,6 +94,38 @@ export function gripInto(socket: THREE.Object3D, grip: Grip, obj: THREE.Object3D
   socket.add(obj);
 }
 
+/**
+ * A hand-tuned correction on top of a rig's grip, for a piece the measured
+ * grip does not seat well: a turn (degrees, XYZ Euler) and a shift, both in
+ * the hand bone's frame, and a scale. Tuned in the asset viewer's grip tuner,
+ * which prints these numbers; the game applies them with `applyGripAdjust`.
+ */
+export interface GripAdjust {
+  rot: [number, number, number];
+  pos: [number, number, number];
+  scale: number;
+}
+
+export const NO_ADJUST: GripAdjust = { rot: [0, 0, 0], pos: [0, 0, 0], scale: 1 };
+
+const DEG = Math.PI / 180;
+const adjustQuat = new THREE.Quaternion();
+const adjustEuler = new THREE.Euler();
+
+/**
+ * Set a held wrapper to the rig's grip, then the adjustment: the turn applied
+ * in the hand's frame (premultiplied), the shift added to the grip's offset,
+ * and the scale on top of `baseScale` (the weapon look's own scale).
+ */
+export function applyGripAdjust(obj: THREE.Object3D, grip: Grip, adjust: GripAdjust | undefined, baseScale = 1): void {
+  const a = adjust ?? NO_ADJUST;
+  obj.rotation.set(...grip.rotation);
+  adjustQuat.setFromEuler(adjustEuler.set(a.rot[0] * DEG, a.rot[1] * DEG, a.rot[2] * DEG));
+  obj.quaternion.premultiply(adjustQuat);
+  obj.position.set(grip.position[0] + a.pos[0], grip.position[1] + a.pos[1], grip.position[2] + a.pos[2]);
+  obj.scale.setScalar(baseScale * a.scale);
+}
+
 // ---------------------------------------------------------------------------
 // Worn pieces
 

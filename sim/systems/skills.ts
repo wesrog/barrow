@@ -56,10 +56,18 @@ import {
   STOMP_RADIUS,
   stompMultiplier,
   stompStunTicks,
+  SNARE_RADIUS,
+  SNARE_RANGE,
+  multishotCount,
+  multishotFan,
+  multishotMultiplier,
+  powershotMultiplier,
+  snarePower,
+  snareTicks,
   type SkillId,
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
-import { computeHitChance, hitMonster, rollDamage } from "./combat";
+import { computeHitChance, hitMonster, rollDamage, traceArrow } from "./combat";
 import { recomputePlayerStats } from "./inventory";
 import { applyDebuff, pruneDebuffs, type DebuffKind } from "../debuffs";
 import { breakProp, type Breakable } from "../breakables";
@@ -244,6 +252,30 @@ function rollSkillDamage(state: GameState, p: Player, multiplier: number): numbe
 }
 
 type Cast = NonNullable<PlayerInput["cast"]>;
+
+/** A bow skill reaches what the bow reaches: the player's range, along a clear line. */
+function arrowReaches(zone: ZoneState, p: Player, c: { pos: { x: number; y: number } }): boolean {
+  return Math.hypot(c.pos.x - p.pos.x, c.pos.y - p.pos.y) <= p.range && hasLineOfSight(zone.map, p.pos, c.pos);
+}
+
+/** Where a shot is aimed: the hovered monster, else the clicked spot, else the nearest monster an arrow reaches. */
+function arrowAim(zone: ZoneState, p: Player, cast: Cast): { x: number; y: number } | undefined {
+  const hint = cast.target !== undefined ? zone.monsters.get(cast.target) : undefined;
+  if (hint) return { ...hint.pos };
+  if (cast.at) return { ...cast.at };
+  return nearestTo(p.pos, [...zone.monsters.values()].filter((c) => arrowReaches(zone, p, c)))?.pos;
+}
+
+/** Loose one skill arrow along an angle off the aim: it takes whatever it meets first, never missing. */
+function loose(state: GameState, zone: ZoneState, p: Player, skill: SkillId, angle: number, dir: { x: number; y: number }, mult: number): void {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const d = { x: dir.x * cos - dir.y * sin, y: dir.x * sin + dir.y * cos };
+  const { to, hit } = traceArrow(zone, p.pos, d, p.range);
+  // The cast goes out before the hit it causes: the renderer holds the hit back until the bolt lands.
+  state.events.push({ type: "skill_cast", playerId: p.id, skill, pos: { ...p.pos }, at: to, hit: hit?.id ?? null, zone: zone.id });
+  if (hit) hitMonster(state, zone, hit, p, rollSkillDamage(state, p, mult), "physical");
+}
 
 /** Hover-targeted bolt: the pick is a hint, reach decides, out-of-reach queues a walk-in. */
 function castBolt(state: GameState, zone: ZoneState, p: Player, cast: Cast, skill: BoltSkill): void {
@@ -560,6 +592,41 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         at: { ...targets[0]!.pos },
         zone: zone.id,
       });
+      break;
+    }
+    case "powershot": {
+      // A drawn-out shot along the aim: never misses whatever it meets first.
+      const aim = arrowAim(zone, p, cast);
+      if (!aim) return;
+      const dir = { x: aim.x - p.pos.x, y: aim.y - p.pos.y };
+      if (Math.hypot(dir.x, dir.y) < 1e-6) return;
+      if (!spendMana(state, p, "powershot")) return;
+      loose(state, zone, p, "powershot", 0, dir, powershotMultiplier(p.skills.powershot));
+      break;
+    }
+    case "multishot": {
+      // A fan of arrows around the aimed line, each taking the first thing it meets.
+      const aim = arrowAim(zone, p, cast);
+      if (!aim) return;
+      const dir = { x: aim.x - p.pos.x, y: aim.y - p.pos.y };
+      if (Math.hypot(dir.x, dir.y) < 1e-6) return;
+      if (!spendMana(state, p, "multishot")) return;
+      const mult = multishotMultiplier(p.skills.multishot);
+      for (const angle of multishotFan(multishotCount(p.skills.multishot))) loose(state, zone, p, "multishot", angle, dir, mult);
+      break;
+    }
+    case "snare": {
+      if (!cast.at) return;
+      const at = cast.at;
+      if (Math.hypot(at.x - p.pos.x, at.y - p.pos.y) > SNARE_RANGE) return;
+      if (!hasLineOfSight(zone.map, p.pos, at)) return;
+      if (!spendMana(state, p, "snare")) return;
+      const power = snarePower(p.skills.snare);
+      const until = state.tick + snareTicks(p.skills.snare);
+      for (const m of zone.monsters.values()) {
+        if (Math.hypot(m.pos.x - at.x, m.pos.y - at.y) <= SNARE_RADIUS) applyDebuff(m, { kind: "slow", power, until });
+      }
+      state.events.push({ type: "skill_cast", playerId: p.id, skill: "snare", pos: { ...p.pos }, at: { x: at.x, y: at.y }, zone: zone.id });
       break;
     }
     case "firebolt":

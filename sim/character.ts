@@ -1,7 +1,7 @@
 import { BASES, type Slot } from "./items/bases";
 import type { Item, Rarity } from "./items/generate";
 import type { Klass, SkillId } from "./skills";
-import { fleetfootSpeed, ironSkinDefense, weaponMasteryAttackRating, weaponMasteryDamage } from "./skills";
+import { eagleEyeAttackRating, eagleEyeRange, evasionDefense, fleetfootSpeed, ironSkinDefense, swiftnessSpeed, weaponMasteryAttackRating, weaponMasteryDamage } from "./skills";
 
 export const INV_W = 10;
 export const INV_H = 4;
@@ -171,7 +171,12 @@ export interface DerivedStats {
   moveSpeedPct: number;
   magicFind: number;
   lifeRegen: number;
+  /** How far the basic attack reaches: arm's length, or a bow's reach. */
+  range: number;
 }
+
+/** Arm's length: the reach of every weapon that is not a bow. */
+export const MELEE_RANGE = 1.2;
 
 /** Naked lvl-1 bruiser. Gear is meant to matter: unarmed hits are feeble. */
 export const BASE_STATS = {
@@ -194,6 +199,7 @@ export const CLASS_STATS: Record<
 > = {
   warrior: { maxLife: 100, maxMana: 30, lifePerLevel: LIFE_PER_LEVEL, manaPerLevel: 0 },
   witch: { maxLife: 75, maxMana: 60, lifePerLevel: 5, manaPerLevel: 4 },
+  ranger: { maxLife: 85, maxMana: 45, lifePerLevel: 6, manaPerLevel: 2 },
 };
 
 /** Each level's price grows this much over the last — the slope that makes
@@ -279,6 +285,11 @@ export function computeStats(
   attackRating += weaponMasteryAttackRating(rank("weaponmastery"));
   moveSpeedPct += fleetfootSpeed(rank("fleetfoot")) * 100;
   defense = Math.floor(defense * (1 + ironSkinDefense(rank("ironskin"))));
+  attackRating += eagleEyeAttackRating(rank("eagleeye"));
+  moveSpeedPct += swiftnessSpeed(rank("swiftness")) * 100;
+  defense = Math.floor(defense * (1 + evasionDefense(rank("evasion"))));
+  const reach = weaponBase?.reach;
+  const range = reach !== undefined ? reach + eagleEyeRange(rank("eagleeye")) : MELEE_RANGE;
 
   dmgMin = Math.floor(dmgMin * (1 + dmgPct / 100));
   dmgMax = Math.floor(dmgMax * (1 + dmgPct / 100));
@@ -296,5 +307,6 @@ export function computeStats(
     moveSpeedPct,
     magicFind,
     lifeRegen,
+    range,
   };
 }

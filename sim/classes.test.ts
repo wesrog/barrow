@@ -270,7 +270,7 @@ describe("character saves with identity", () => {
 
   test("skill ids in SKILLS all carry their class", () => {
     for (const def of Object.values(SKILLS)) {
-      expect(def.klass === "warrior" || def.klass === "witch").toBe(true);
+      expect(["warrior", "witch", "ranger"]).toContain(def.klass);
     }
   });
 });

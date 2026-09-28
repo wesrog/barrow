@@ -74,6 +74,13 @@ const KLASS_INFO: Record<Klass, { title: string; line: string; lore: string; col
       "Fire, frost, and old words. The witch keeps her distance and ends fights before they arrive: flame that burns through packs, cold that holds them still, hexes that soften whatever her spells don't finish.",
     color: "#a47cf0",
   },
+  ranger: {
+    title: "Ranger",
+    line: "a marksman — archery, hunting, and survival",
+    lore:
+      "A crossbow and a patient eye. The ranger kills from across the room and is somewhere else when the pack arrives: shots that hit hard and find more than one mark, snares that hold a charge in place, and the knack of never being where the blow lands.",
+    color: "#7fb85a",
+  },
 };
 
 /** Pre-game overlay: a night camp with one hero of each class at the fire.

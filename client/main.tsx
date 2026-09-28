@@ -472,17 +472,40 @@ function Game({
           scene.handleEvent(e, game);
           if ("playerId" in e && e.playerId !== localId()) continue;
           switch (e.type) {
-            case "monster_hit":
-              scene.addDamageNumber(e.pos, String(e.amount), ELEMENT_COLORS[e.element]);
-              play("hit", undefined, weaponEdge(game));
+            case "monster_hit": {
+              // A bolt's hit waits for the bolt to land.
+              const at = scene;
+              const edge = weaponEdge(game);
+              const land = () => {
+                at.addDamageNumber(e.pos, String(e.amount), ELEMENT_COLORS[e.element]);
+                play("hit", undefined, edge);
+              };
+              const wait = scene.impactDelay(e.id);
+              if (wait > 0) setTimeout(land, wait);
+              else land();
               break;
+            }
             case "player_hit":
               scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
               break;
-            case "player_swing":
-              play("swing", undefined, weaponEdge(game));
+            case "player_swing": {
+              // A bow's basic attack is a shot: the release, never a whoosh.
+              const weapon = localPlayer(game).equipment.weapon;
+              if (weapon && BASES[weapon.baseId]?.reach !== undefined) {
+                play("shoot");
+                break;
+              }
+              // The whoosh is for blows that meet only air. A swing with a
+              // monster in reach will land (the sim strikes whatever is
+              // nearest within reach), so the hit sound speaks for it.
+              const hero = localPlayer(game);
+              const inReach = [...zoneOf(game, hero).monsters.values()].some(
+                (m) => m.life > 0 && Math.hypot(m.pos.x - hero.pos.x, m.pos.y - hero.pos.y) <= hero.range * 1.35,
+              );
+              if (!inReach) play("swing", undefined, weaponEdge(game));
               break;
+            }
             case "monster_swing":
               if (e.ranged) play("spit", zoneOf(game, localPlayer(game)).monsters.get(e.id)?.typeId);
               break;
@@ -492,9 +515,12 @@ function Game({
             case "monster_aggro":
               play("aggro", e.typeId);
               break;
-            case "monster_died":
-              play("die", e.typeId);
+            case "monster_died": {
+              const wait = scene.impactDelay(e.id);
+              if (wait > 0) setTimeout(() => play("die", e.typeId), wait);
+              else play("die", e.typeId);
               break;
+            }
             case "breakable_broken":
               play("smash");
               break;
@@ -673,6 +699,8 @@ function Game({
               else if (e.skill === "soulchain") play("spit");
               else if (e.skill === "frostnova") play("cleave");
               else if (e.skill === "blink") play("leap");
+              else if (e.skill === "powershot" || e.skill === "multishot") play("shoot");
+              else if (e.skill === "snare") play("equip");
               else if (e.skill === "focus") {
                 scene.addDamageNumber(localPlayer(game).pos, "focus!", "#b08ad1");
                 play("warcry");

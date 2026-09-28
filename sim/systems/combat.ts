@@ -45,21 +45,92 @@ export const PLAYER_STRIKE_TICKS = 5;
 export const MONSTER_STRIKE_TICKS = 4;
 
 /** Resolve the player's in-flight swing at its contact frame. */
+/** A basic attack at this reach or beyond is a shot, and a shot needs a clear line. */
+export const SHOT_REACH = 2;
+
+/** How finely a shot is walked along its line when it looks for walls and bodies. */
+const ARROW_STEP = 0.1;
+/** Extra slack on a monster's body radius when an arrow passes it. */
+const ARROW_GRAZE = 0.15;
+
+/**
+ * Fly an arrow from `from` along `dir` (need not be unit) for up to `reach`
+ * cells: it stops at the first wall cell, or at the first monster whose body
+ * the line passes through, whichever comes first. Pure geometry, no rolls.
+ */
+export function traceArrow(
+  zone: ZoneState,
+  from: Vec,
+  dir: Vec,
+  reach: number,
+): { to: Vec; hit: Monster | null } {
+  const len = Math.hypot(dir.x, dir.y);
+  if (len < 1e-6) return { to: { ...from }, hit: null };
+  const ux = dir.x / len;
+  const uy = dir.y / len;
+  // The nearest body along the line, by how far along it the arrow meets it.
+  let hit: Monster | null = null;
+  let hitAt = Infinity;
+  for (const m of zone.monsters.values()) {
+    if (m.life <= 0) continue;
+    const rx = m.pos.x - from.x;
+    const ry = m.pos.y - from.y;
+    const along = rx * ux + ry * uy;
+    if (along <= 0 || along > reach) continue;
+    const off = Math.abs(rx * uy - ry * ux);
+    if (off <= m.radius + ARROW_GRAZE && along < hitAt) {
+      hit = m;
+      hitAt = along;
+    }
+  }
+  // Walk the line to the first wall; a wall before the body stops the arrow.
+  const limit = Math.min(reach, hitAt);
+  let d = 0;
+  while (d + ARROW_STEP <= limit) {
+    const nx = from.x + ux * (d + ARROW_STEP);
+    const ny = from.y + uy * (d + ARROW_STEP);
+    if (!isWalkable(zone.map, Math.floor(nx), Math.floor(ny))) {
+      return { to: { x: from.x + ux * d, y: from.y + uy * d }, hit: null };
+    }
+    d += ARROW_STEP;
+  }
+  const end = hit ? hitAt : reach;
+  return { to: { x: from.x + ux * end, y: from.y + uy * end }, hit };
+}
+
+/** Can the player's basic attack reach this spot: in range, and for a bow, in sight. */
+function basicReaches(zone: ZoneState, p: Player, pos: Vec, slack = 1): boolean {
+  if (dist(p.pos, pos) > p.range * slack) return false;
+  return p.range < SHOT_REACH || hasLineOfSight(zone.map, p.pos, pos);
+}
+
 function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void {
   if (!p.pendingStrike || state.tick < p.pendingStrike.at) return;
   const strike = p.pendingStrike;
   p.pendingStrike = null;
   if (p.dead) return;
+  if (p.range >= SHOT_REACH) {
+    // A shot: it flies from the archer toward the aim and takes whatever it meets.
+    const aimAt = strike.aim ?? (strike.target !== null ? zone.monsters.get(strike.target)?.pos : undefined);
+    if (!aimAt) return;
+    const { to, hit } = traceArrow(zone, p.pos, { x: aimAt.x - p.pos.x, y: aimAt.y - p.pos.y }, p.range);
+    state.events.push({ type: "arrow", playerId: p.id, from: { ...p.pos }, to, hit: hit?.id ?? null, zone: zone.id });
+    if (hit && state.rng.next() < computeHitChance(p.attackRating, hit.defense)) {
+      const amount = Math.max(1, Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)));
+      hitMonster(state, zone, hit, p, amount, "physical");
+    }
+    return;
+  }
   let target: Monster | null = null;
   if (strike.target !== null) {
     const m = zone.monsters.get(strike.target);
-    if (m && dist(p.pos, m.pos) <= p.range * 1.35) target = m;
+    if (m && basicReaches(zone, p, m.pos, 1.35)) target = m;
   } else {
     // Swing-in-place: whatever is nearest within reach when the blade lands.
     let bestD = Infinity;
     for (const m of zone.monsters.values()) {
       const d = dist(m.pos, p.pos);
-      if (d <= p.range && d < bestD) {
+      if (d < bestD && basicReaches(zone, p, m.pos)) {
         target = m;
         bestD = d;
       }
@@ -172,7 +243,7 @@ export function applySwingInPlaceInput(state: GameState, p: Player, input: Playe
     to: { ...input.swingAt },
     zone: p.zoneId,
   });
-  p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: null };
+  p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: null, aim: { ...input.swingAt } };
 }
 
 export function playerCombatSystem(state: GameState, zone: ZoneState, players: Player[]): void {
@@ -185,7 +256,7 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
       p.attackTarget = null;
       continue;
     }
-    if (dist(p.pos, target.pos) <= p.range) {
+    if (basicReaches(zone, p, target.pos)) {
       p.path = [];
       if (p.swingCooldown === 0) {
         p.swingCooldown = p.swingEvery;
@@ -195,7 +266,7 @@ export function playerCombatSystem(state: GameState, zone: ZoneState, players: P
           to: { ...target.pos },
           zone: zone.id,
         });
-        p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id };
+        p.pendingStrike = { at: state.tick + PLAYER_STRIKE_TICKS, target: target.id, aim: { ...target.pos } };
         // One input buys one swing. Holding the button re-sends the attack
         // every tick, which re-arms the target before the next cooldown ends —
         // that's what makes click-and-hold auto-attack while a single click

@@ -17,6 +17,8 @@ const HIGH_WEAPONS = ["dire_flail", "moon_glaive", "kingsbane"];
 const CASTER_LOW = ["gnarled_staff", "bone_wand", "ashen_orb"];
 const CASTER_MID = ["ember_staff", "willow_wand", "fen_pearl"];
 const CASTER_HIGH = ["wyrmwood_staff", "hexwood_wand", "grave_star"];
+const BOWS_LOW = ["short_bow", "hunting_bow"];
+const BOWS_HIGH = ["yew_longbow", "horn_bow"];
 const LOW_ARMOR = ["cracked_helm", "rag_tunic", "worn_boots", "plank_buckler"];
 const MID_ARMOR = ["bone_visage", "studded_jerkin", "grave_plate", "chain_greaves", "bone_targe"];
 const HIGH_ARMOR = ["iron_barbute", "wyrm_skull", "lamellar_coat", "bogsteel_plate", "marsh_striders", "cragwalkers", "rimed_kite", "barrow_bulwark"];
@@ -30,6 +32,7 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
     entries: [
       { baseIds: LOW_WEAPONS, weight: 12 },
       { baseIds: CASTER_LOW, weight: 6 },
+      { baseIds: BOWS_LOW, weight: 5 },
       { baseIds: LOW_ARMOR, weight: 14 },
       { baseIds: JEWELRY, weight: 4 },
       { baseIds: [...HIGH_WEAPONS, ...HIGH_ARMOR], weight: 4 },
@@ -48,6 +51,8 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
       { baseIds: CASTER_LOW, weight: 5 },
       { baseIds: CASTER_MID, weight: 4 },
       { baseIds: CASTER_HIGH, weight: 3 },
+      { baseIds: BOWS_LOW, weight: 4 },
+      { baseIds: BOWS_HIGH, weight: 3 },
       { baseIds: LOW_ARMOR, weight: 10 },
       { baseIds: MID_ARMOR, weight: 8 },
       { baseIds: HIGH_ARMOR, weight: 6 },
@@ -68,6 +73,7 @@ export const TREASURE_CLASSES: Record<string, TreasureClass> = {
       { baseIds: HIGH_ARMOR, weight: 10 },
       { baseIds: CASTER_MID, weight: 6 },
       { baseIds: CASTER_HIGH, weight: 5 },
+      { baseIds: BOWS_HIGH, weight: 5 },
       { baseIds: LOW_WEAPONS, weight: 6 },
       { baseIds: LOW_ARMOR, weight: 6 },
       { baseIds: JEWELRY, weight: 8 },
@@ -104,7 +110,7 @@ export interface DropOpts {
   /** Floor for the rarity roll (boss packs drop magic or better). */
   minRarity?: Rarity;
   /** Killer's class: their class-restricted gear drops a bit more often. */
-  biasClass?: "warrior" | "witch";
+  biasClass?: "warrior" | "witch" | "ranger";
 }
 
 /** Slight nudge toward the bias class's restricted gear; off-class still drops. */

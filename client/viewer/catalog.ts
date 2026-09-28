@@ -130,11 +130,12 @@ const KIT_SHORT: Partial<Record<KitName, string>> = {
   viking_weapons: "viking",
   goblin_weapons: "goblin",
   dungeon_weapons: "dungeon",
+  crossbow_weapons: "crossbow",
 };
 
 /** Weapon kits a Synty rig may draw from, its own pack first; grips are per rig, so any pack's piece fits. */
 const HELD_KITS: Record<string, KitName[]> = {
-  human: ["viking_weapons", "goblin_weapons", "dungeon_weapons"],
+  human: ["viking_weapons", "goblin_weapons", "dungeon_weapons", "crossbow_weapons"],
   goblin: ["goblin_weapons", "viking_weapons", "dungeon_weapons"],
   dungeon: ["dungeon_weapons", "viking_weapons", "goblin_weapons"],
 };

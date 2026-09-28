@@ -25,6 +25,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - run: bun test sim client net signal
+      # The licensed art isn't in git: fetch the pack assets.lock.json names from the
+      # private bucket into public/ so the build ships it. The runner's AWS CLI reads
+      # the keys from the environment; the pull fails the job rather than deploy without art.
+      - name: Fetch the asset pack
+        if: hashFiles('assets.lock.json') != ''
+        run: bun run assets:pull
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       - run: bun run build
         env:
           GITHUB_PAGES: "true"

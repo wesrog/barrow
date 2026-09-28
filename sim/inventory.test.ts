@@ -312,8 +312,8 @@ describe("sorting", () => {
     inv.entries.push({ id: 4, item: plain("minor_potion"), x: 0, y: 3 });
     expect(sortInventory(inv)).toBe(true);
     const at = (id: number) => inv.entries.find((e) => e.id === id)!;
-    expect({ x: at(3).x, y: at(3).y }).toEqual({ x: 0, y: 0 }); // 1x3 blade leads
-    expect({ x: at(2).x, y: at(2).y }).toEqual({ x: 1, y: 0 }); // 2x2 helm beside it
+    expect({ x: at(3).x, y: at(3).y }).toEqual({ x: 0, y: 0 }); // 2x2 blade leads
+    expect({ x: at(2).x, y: at(2).y }).toEqual({ x: 2, y: 0 }); // 2x2 helm beside it
     expect(inv.entries.length).toBe(4);
     // Every entry keeps its id and item; nothing overlaps or leaves the grid.
     const cells = new Set<string>();
@@ -364,7 +364,7 @@ describe("sorting", () => {
     p.stash.entries.push({ id: 3, item: plain("bone_ring"), x: 9, y: 7 });
     stepSolo(state, { sortPack: true });
     expect(p.inventory.entries.find((e) => e.id === 2)).toMatchObject({ x: 0, y: 0 });
-    expect(p.inventory.entries.find((e) => e.id === 1)).toMatchObject({ x: 1, y: 0 });
+    expect(p.inventory.entries.find((e) => e.id === 1)).toMatchObject({ x: 2, y: 0 });
     expect(p.stash.entries[0]).toMatchObject({ x: 9, y: 7 });
     stepSolo(state, { sortStash: true });
     expect(p.stash.entries[0]).toMatchObject({ x: 0, y: 0 });

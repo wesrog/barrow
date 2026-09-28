@@ -9,11 +9,16 @@ export interface MapMarker {
   y: number;
 }
 
+/** Cell value of a hidden passage: wall until a player brushes it, then floor. */
+export const SECRET = 2;
+
 export interface ZoneMap {
   width: number;
   height: number;
-  /** 1 = walkable floor, 0 = wall. Row-major, y * width + x. */
+  /** 1 = walkable floor, 0 = wall, SECRET = a hidden passage. Row-major, y * width + x. */
   cells: Uint8Array;
+  /** Bumped whenever cells change after generation (a secret opening), so caches redraw. */
+  revision?: number;
   spawn: Vec;
   /** Non-floor marker characters (monster spawns etc.), at cell centers. */
   markers: MapMarker[];
@@ -66,6 +71,36 @@ export function hasLineOfSight(map: ZoneMap, a: Vec, b: Vec): boolean {
 export function isWalkable(map: ZoneMap, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
   return map.cells[y * map.width + x] === 1;
+}
+
+export function isSecret(map: ZoneMap, x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= map.width || y >= map.height) return false;
+  return map.cells[y * map.width + x] === SECRET;
+}
+
+/** Every secret cell joined (4-way) to the one at x,y: the whole hidden run. */
+export function secretRunAt(map: ZoneMap, x: number, y: number): Vec[] {
+  if (!isSecret(map, x, y)) return [];
+  const seen = new Set<number>([y * map.width + x]);
+  const out: Vec[] = [{ x, y }];
+  for (let i = 0; i < out.length; i++) {
+    const c = out[i]!;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = c.x + dx;
+      const ny = c.y + dy;
+      const key = ny * map.width + nx;
+      if (seen.has(key) || !isSecret(map, nx, ny)) continue;
+      seen.add(key);
+      out.push({ x: nx, y: ny });
+    }
+  }
+  return out;
+}
+
+/** Turn secret cells into floor; renderers watch `revision` to redraw. */
+export function revealSecrets(map: ZoneMap, cells: readonly Vec[]): void {
+  for (const c of cells) map.cells[c.y * map.width + c.x] = 1;
+  map.revision = (map.revision ?? 0) + 1;
 }
 
 /**

@@ -1,6 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { applyCharacter, serializeCharacter } from "./save";
+import { applyCharacter, newCharacterRaw, serializeCharacter, STARTING_SKILL, STARTING_WEAPON, type CharacterSave } from "./save";
 import { player, soloGame } from "./test-helpers";
+
+describe("a new character's kit", () => {
+  test("the witch starts with a bone wand and one rank of firebolt, the warrior with a blade and nothing learned", () => {
+    const witch = JSON.parse(newCharacterRaw("Hexudis", "witch")) as CharacterSave;
+    expect(witch.equipment.weapon?.baseId).toBe("bone_wand");
+    expect(witch.skills.firebolt).toBe(1);
+    expect(Object.entries(witch.skills).filter(([, r]) => r > 0)).toEqual([["firebolt", 1]]);
+    const warrior = JSON.parse(newCharacterRaw("Kelorgar", "warrior")) as CharacterSave;
+    expect(warrior.equipment.weapon?.baseId).toBe(STARTING_WEAPON.warrior.baseId);
+    expect(Object.values(warrior.skills).every((r) => r === 0)).toBe(true);
+    expect(STARTING_SKILL.warrior).toBeUndefined();
+  });
+
+  test("a fresh witch can cast her bolt as soon as she joins", () => {
+    const state = soloGame(4);
+    expect(applyCharacter(state, player(state).id, newCharacterRaw("Hexudis", "witch"))).toBe(true);
+    expect(player(state).klass).toBe("witch");
+    expect(player(state).skills.firebolt).toBe(1);
+    expect(player(state).equipment.weapon?.baseId).toBe("bone_wand");
+  });
+});
 
 describe("save migration", () => {
   test("a v1 save loads with every point refunded", () => {

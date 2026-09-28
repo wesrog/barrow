@@ -1,5 +1,7 @@
 import type { BiomeId } from "../../sim/areas";
 import type { DungeonStyleId } from "../../sim/dungeons";
+import type { DressingFamily } from "./cryptDressing";
+import type { GroundTexture } from "./models";
 
 /** Everything the outdoor scene tints per region: sky, fog, ground, flora. */
 export interface BiomePalette {
@@ -9,25 +11,47 @@ export interface BiomePalette {
   ambient: number;
   ambientIntensity: number;
   ground: number;
+  /** The Alpine pack's tiling texture under this biome and the colour it is multiplied by.
+   * The tint is solved so the textured ground averages the flat `ground` colour (a little
+   * brighter, since detail reads darker than a fill): tint = ground / texture mean, in linear
+   * light, clamped per channel. The painted grounds carry almost no blue, so a cool biome
+   * takes a faceted stone texture instead. */
+  groundTexture: GroundTexture;
+  groundTint: number;
+  /** Cells per texture repeat and normal-map strength; defaults in ground.ts. */
+  groundTile?: number;
+  groundRelief?: number;
   rock: number;
   pine: number;
   trunk: number;
-  tuft: number;
+  /**
+   * Multiplied into the Viking nature kit's textures when it stands in for the
+   * primitives: foliage covers pines and bushes; stone the standing
+   * stones. The albedo is a daylit palette, so these run well under white to
+   * keep the night.
+   */
+  foliageTint: number;
+  stoneTint: number;
 }
 
 export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
-  // The moors' original night-heath look, lifted verbatim from the scene.
+  // The moors: plain faceted dirt under a cold sky, a tuft here and there, pines in the copses.
   moor: {
     bg: 0x0c1310,
     fogNear: 24,
     fogFar: 52,
     ambient: 0x70806e,
     ambientIntensity: 0.65,
-    ground: 0x1f2a1b,
+    ground: 0x2a241d,
+    groundTexture: "dirt",
+    groundTint: 0x696967,
+    groundTile: 4,
+    groundRelief: 0.8,
     rock: 0x3c4046,
     pine: 0x17231a,
     trunk: 0x2c2018,
-    tuft: 0x2a381f,
+    foliageTint: 0x9cb49a,
+    stoneTint: 0x868a94,
   },
   // Rust-red marshland under a closer, warmer murk.
   fen: {
@@ -37,10 +61,13 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x8a7258,
     ambientIntensity: 0.6,
     ground: 0x2b2014,
+    groundTexture: "needles",
+    groundTint: 0xb6ddff,
     rock: 0x4a3e34,
     pine: 0x321c11,
     trunk: 0x241a10,
-    tuft: 0x44301a,
+    foliageTint: 0xb8906a,
+    stoneTint: 0x92806c,
   },
   // Grey-green strangled channels, cold and drowned.
   mire: {
@@ -50,10 +77,13 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x6e7f78,
     ambientIntensity: 0.6,
     ground: 0x212a26,
+    groundTexture: "mud",
+    groundTint: 0xadfdff,
     rock: 0x39423e,
     pine: 0x16201c,
     trunk: 0x22201c,
-    tuft: 0x2c3a2c,
+    foliageTint: 0x8ea69c,
+    stoneTint: 0x7c8884,
   },
   // Burnt grey-red waste, ember light under a smoke-choked sky.
   ash: {
@@ -63,10 +93,13 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x9a6a52,
     ambientIntensity: 0.62,
     ground: 0x2a201c,
+    groundTexture: "dirt",
+    groundTint: 0x695e63,
     rock: 0x4a3c34,
     pine: 0x2c1a12,
     trunk: 0x261a14,
-    tuft: 0x4a2c1a,
+    foliageTint: 0x9c7462,
+    stoneTint: 0x887870,
   },
   // Cold violet-black summit ruin, starlit and silent.
   hollow: {
@@ -76,10 +109,13 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x7a6e94,
     ambientIntensity: 0.58,
     ground: 0x201c2a,
+    groundTexture: "rock",
+    groundTint: 0x46477f,
     rock: 0x3c3648,
     pine: 0x181424,
     trunk: 0x221c28,
-    tuft: 0x322a44,
+    foliageTint: 0x8c82ac,
+    stoneTint: 0x7e7692,
   },
   // Slate and ochre steps, thin dry air.
   crag: {
@@ -89,10 +125,13 @@ export const BIOME_PALETTES: Record<BiomeId, BiomePalette> = {
     ambient: 0x83796a,
     ambientIntensity: 0.7,
     ground: 0x2a2622,
+    groundTexture: "rock_moss",
+    groundTint: 0x7a9cff,
     rock: 0x4e463a,
     pine: 0x201c14,
     trunk: 0x282018,
-    tuft: 0x3a3120,
+    foliageTint: 0xa89e80,
+    stoneTint: 0x948a78,
   },
 };
 
@@ -106,8 +145,8 @@ export interface DungeonPalette {
   /** Multiplied into the wall/floor piece materials; white leaves them as authored. */
   wallTint: number;
   floorTint: number;
-  /** Relative dressing weights; 0 disables that prop family. */
-  dressing: { coffins: number; bones: number; columns: number };
+  /** Relative weights of the loose-prop families (cryptDressing.ts) scattered along the walls. */
+  dressing: Partial<Record<DressingFamily, number>>;
 }
 
 export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
@@ -120,7 +159,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.5,
     wallTint: 0xffffff,
     floorTint: 0xffffff,
-    dressing: { coffins: 3, bones: 2, columns: 2 },
+    dressing: { coffins: 3, bones: 2, columns: 2, vases: 2, rubble: 1, remains: 2, candles: 2, chains: 1, banners: 1, cages: 1, furniture: 1, lanterns: 1 },
   },
   // Warm rot-brown warrens, close air, root-choked: no coffins down here.
   root_warren: {
@@ -131,7 +170,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.6,
     wallTint: 0xd8b48e,
     floorTint: 0xc9b493,
-    dressing: { coffins: 0, bones: 2, columns: 0 },
+    dressing: { bones: 2, rubble: 3, vases: 1, remains: 1, candles: 1, mushrooms: 4 },
   },
   // Cold grey-green ossuary light, bone everywhere, ranks of columns.
   gallow_ossuary: {
@@ -142,7 +181,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.55,
     wallTint: 0xd2e0cc,
     floorTint: 0xc4d2be,
-    dressing: { coffins: 1, bones: 5, columns: 3 },
+    dressing: { coffins: 1, bones: 5, columns: 3, remains: 3, chains: 2, cages: 2, candles: 1 },
   },
   // Raw slate gouges, thin ochre light, bare rock.
   cragmaw_gouge: {
@@ -153,7 +192,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.62,
     wallTint: 0xd9cbb4,
     floorTint: 0xccbfa8,
-    dressing: { coffins: 0, bones: 1, columns: 1 },
+    dressing: { bones: 1, columns: 1, rubble: 3, mushrooms: 2 },
   },
   // Ember-lit scorched vaults, warm dark, cracked columns.
   ember_catacomb: {
@@ -164,7 +203,7 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.58,
     wallTint: 0xe0b294,
     floorTint: 0xd0a488,
-    dressing: { coffins: 1, bones: 2, columns: 3 },
+    dressing: { coffins: 1, bones: 2, columns: 3, candles: 3, banners: 2, remains: 1, rubble: 1 },
   },
   // Violet-black cold halls, starlight seeping down.
   violet_undercroft: {
@@ -175,6 +214,6 @@ export const DUNGEON_PALETTES: Record<DungeonStyleId, DungeonPalette> = {
     ambientIntensity: 0.56,
     wallTint: 0xd0c4ec,
     floorTint: 0xbfb4da,
-    dressing: { coffins: 2, bones: 1, columns: 4 },
+    dressing: { coffins: 2, bones: 1, columns: 4, candles: 2, banners: 2, furniture: 2, vases: 1, lanterns: 2 },
   },
 };

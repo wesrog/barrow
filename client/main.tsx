@@ -11,11 +11,13 @@ import type { EquipSlot } from "../sim/character";
 import { SKILLS, type SkillId } from "../sim/skills";
 import type { Element } from "../sim/elements";
 import { HOTBAR_SIZE, assignHotbar, loadHotbar, resetHotbar, slotForKey, type Hotbar } from "./hotbar";
-import { play, unlock } from "./audio";
+import { play, playStep, preloadSamples, registerSamples, unlock } from "./audio";
+import { SAMPLES } from "./sfx";
 import { BASES, type WeaponEdge } from "../sim/items/bases";
 import { setAmbience } from "./ambience";
 import { updateMusic } from "./music";
 import { loadAssets, type GameAssets } from "./render/models";
+import { loadItemIcons } from "./ui/itemIcons";
 import { createScene } from "./render/scene";
 import { saveToStorage, wipeStorage } from "./save";
 import { BottomBar } from "./ui/BottomBar";
@@ -38,6 +40,9 @@ import { WaypointPanel } from "./ui/WaypointPanel";
 import { ZoneBanner } from "./ui/ZoneBanner";
 import { ZoneIntro, type ZoneIntroMsg } from "./ui/ZoneIntro";
 import { Reveal } from "./ui/Reveal";
+
+// The clip manifest is registered at load; the clips decode once the audio context exists.
+registerSamples(SAMPLES);
 
 const TICK_MS = 1000 / TICK_RATE;
 
@@ -145,7 +150,15 @@ function Game({
       setReady(true);
       // Dev console hook: poke the sim from the browser console while testing.
       if (import.meta.env.DEV) {
-        (window as { __barrow?: unknown }).__barrow = { game, driver, input: uiInputRef };
+        (window as { __barrow?: unknown }).__barrow = {
+          game,
+          driver,
+          input: uiInputRef,
+          assets,
+          get scene() {
+            return scene;
+          },
+        };
       }
       const onItemClick = (itemId: number) => {
         uiInputRef.current.pickup = itemId;
@@ -159,6 +172,7 @@ function Game({
         localPlayer(game).zoneId === "surface",
         dungeonStyleOf(localPlayer(game).zoneId),
       );
+      scene.onFootstep = () => playStep();
       let sceneMap = zoneOf(game, localPlayer(game)).map;
 
       // A black veil the zone crossing fades out from, so the world swap under
@@ -267,6 +281,7 @@ function Game({
     };
     const onPointerDown = (e: PointerEvent) => {
       unlock(); // first gesture wakes the audio engine
+      preloadSamples(); // the clips decode now that the context exists
       // Only clicks on the scene canvas (the lone canvas mounted directly on
       // the game root) are world clicks — HUD panels, including canvases like
       // the inventory paperdoll, handle their own.
@@ -481,7 +496,7 @@ function Game({
               play("die", e.typeId);
               break;
             case "breakable_broken":
-              play("hit", undefined, weaponEdge(game));
+              play("smash");
               break;
             case "item_dropped":
               play(e.rarity === "normal" ? "drop" : "drop_rare");
@@ -572,6 +587,9 @@ function Game({
                 );
                 save(); // a border crossing is a moment worth keeping
               }
+              break;
+            case "secret_found":
+              if (e.playerId === localId()) pushToast("a hidden passage opens");
               break;
             case "waypoint_found":
               if (e.playerId === localId()) {
@@ -727,6 +745,7 @@ function Game({
           localPlayer(game).zoneId === "surface",
           dungeonStyleOf(localPlayer(game).zoneId),
         );
+        scene.onFootstep = () => playStep();
         sceneMap = currentMap;
         prevPositions = snapshotPositions();
         mount.appendChild(fadeEl); // stay above the fresh canvas
@@ -1060,19 +1079,38 @@ function Game({
  * driver and the assets exist — whichever finishes last gates the start. */
 function App() {
   const [assets, setAssets] = useState<GameAssets | null>(null);
+  const [assetError, setAssetError] = useState<string | null>(null);
   const [driver, setDriver] = useState<NetDriver | null>(null);
   const [roomCode, setRoomCode] = useState<string | null>(null);
 
   useEffect(() => {
     let disposed = false;
     void (async () => {
-      const loaded = await loadAssets();
-      if (!disposed) setAssets(loaded);
+      try {
+        const [loaded] = await Promise.all([loadAssets(), loadItemIcons()]);
+        if (!disposed) setAssets(loaded);
+      } catch (err) {
+        console.error(err);
+        if (!disposed) setAssetError(err instanceof Error ? err.message : String(err));
+      }
     })();
     return () => {
       disposed = true;
     };
   }, []);
+
+  if (assetError) {
+    return (
+      <div style={{ padding: 40, maxWidth: 560, color: "#d8d2c4", fontFamily: "ui-monospace, monospace", lineHeight: 1.6 }}>
+        <div style={{ color: "#e8dcc0", fontSize: 18, marginBottom: 12 }}>The models are not here.</div>
+        <div>{assetError}</div>
+        <div style={{ color: "#8c8578", marginTop: 12 }}>
+          The game draws everything from the converted Synty kits under public/models/synty (gitignored).
+          Unzip the source packs into assets-src/synty and run <code>bun run assets:synty</code>.
+        </div>
+      </div>
+    );
+  }
 
   if (!driver) {
     return (

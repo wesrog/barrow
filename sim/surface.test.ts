@@ -83,10 +83,10 @@ describe("world helpers", () => {
     // The town pad is fixed registry data; wild pads are wherever this seed hid them.
     expect(worldWaypointPos(map, "overworld")).toEqual({ x: 10.5, y: 48.5 });
     expect(areaAt(worldWaypointPos(map, "redfen"))).toBe("redfen");
-    expect(worldCampRect("overworld")).toEqual({ x0: 2, y0: 39, x1: 13, y1: 52 });
+    expect(worldCampRect("overworld")).toEqual({ x0: 2, y0: 37, x1: 20, y1: 53 });
     expect(worldAreaSpawn("overworld")).toEqual({ x: 7.5, y: 45.5 });
     expect(inRect(worldCampRect("overworld"), { x: 7.5, y: 45.5 })).toBe(true);
-    expect(inRect(worldCampRect("overworld"), { x: 20, y: 45.5 })).toBe(false);
+    expect(inRect(worldCampRect("overworld"), { x: 24, y: 45.5 })).toBe(false);
   });
 });
 

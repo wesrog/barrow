@@ -75,9 +75,15 @@ export function serializeCharacter(state: GameState, playerId: PlayerId): string
 }
 
 /** Each class's starting weapon — bare fists are for corpses. */
-const STARTING_WEAPON: Record<Klass, { baseId: string; name: string }> = {
+export const STARTING_WEAPON: Record<Klass, { baseId: string; name: string }> = {
   warrior: { baseId: "rusted_blade", name: "Rusted Blade" },
-  witch: { baseId: "gnarled_staff", name: "Gnarled Staff" },
+  witch: { baseId: "bone_wand", name: "Bone Wand" },
+};
+
+/** What each class already knows on day one. The warrior's blade is her
+ * skill; the witch's wand is a poor club, so she brings one bolt of fire. */
+export const STARTING_SKILL: Partial<Record<Klass, SkillId>> = {
+  witch: "firebolt",
 };
 
 /** A brand-new level-1 character of the given class, as a save payload. */
@@ -100,7 +106,7 @@ export function newCharacterRaw(name: string, klass: Klass): string {
     level: 1,
     xp: 0,
     skillPoints: 0,
-    skills: Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>,
+    skills: Object.fromEntries(SKILL_IDS.map((id) => [id, id === STARTING_SKILL[klass] ? 1 : 0])) as Record<SkillId, number>,
     belt: 0,
     gold: 0,
     inventory: createInventory(),

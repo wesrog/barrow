@@ -5,10 +5,11 @@ import { spawnMonster, type Monster } from "./monsters";
 import { MARKER_TYPES } from "./zone";
 import { spawnBreakables } from "./breakables";
 
-/** Test-only: a game with a single player (id 0) standing in the camp. */
+/** Test-only: a game with a single player (id 0) standing in the camp,
+ * whatever the world's START_ZONE is, so mechanics tests keep their footing. */
 export function soloGame(seed: number): GameState {
   const state = createGame(seed);
-  joinPlayer(state, { id: 0 });
+  joinPlayer(state, { id: 0, start: "surface" });
   return state;
 }
 

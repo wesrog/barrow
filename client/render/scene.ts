@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { isWalkable, type Vec, type ZoneMap } from "../../sim/map";
+import type { Klass } from "../../sim/skills";
+import { isSecret, isWalkable, type Vec, type ZoneMap } from "../../sim/map";
 import {
   allPlayers,
   zoneOf,
@@ -20,9 +21,16 @@ import { potionKind } from "../../sim/items/bases";
 import { NPCS, type Npc, type NpcId } from "../../sim/npcs";
 import { npcIndicator } from "../../sim/quests";
 import { AREAS } from "../../sim/areas";
-import { AREA_ORDER, areaAt, areaRect, locationTitle } from "../../sim/surface";
+import { AREA_ORDER, areaAt, areaRect, locationTitle, surfaceLayout } from "../../sim/surface";
 import { localId, localPlayer } from "../local";
 import { BIOME_PALETTES, DUNGEON_PALETTES } from "./biomes";
+import { againstWall, dressBuildings, dressCamp, dressHuts, dressMarkers, dressPalisade, HUT_MARKER, type PlaceOpts, type PlaceProp, type WallHit, type WallToward } from "./campDressing";
+import type { BuildingDef } from "../../sim/buildings";
+import { CRYPT_SET_PIECES, DUNGEON_DRESSING, type DressingFamily } from "./cryptDressing";
+import { WILD_SET_PIECES } from "./wildDressing";
+import { LANDMARKS } from "../../sim/landmarks";
+import { bakeScatter, ScatterBatch } from "./scatter";
+import { groundGeometry, groundMaterial } from "./ground";
 import type { DungeonStyleId } from "../../sim/dungeons";
 import { Effects } from "./fx";
 import type { Rig } from "./rigs";
@@ -33,11 +41,11 @@ import {
   type HeroModelRig,
   type ModelRig,
 } from "./modelRigs";
-import type { GameAssets } from "./models";
+import { cloneProp, kitNode, type GameAssets } from "./models";
 import { playerCss, playerTint } from "./tints";
 import { groundVerdict, type UpgradeVerdict } from "../ui/itemCompare";
 
-const VIEW_HEIGHT = 16; // world units visible vertically
+const VIEW_HEIGHT = 12; // world units visible vertically: close enough to read faces and gear
 
 export type PickResult =
   | { kind: "monster"; id: number }
@@ -69,11 +77,16 @@ export interface SceneHandle {
   /** Highlight whatever is under the cursor and set an appropriate cursor. */
   updateHover(state: GameState, clientX: number, clientY: number): void;
   dispose(): void;
+  /** The Three scene itself, for poking at from the dev console. */
+  three: THREE.Scene;
+  /** Fired on each of the local hero's footfalls, read off the walk animation. */
+  onFootstep?: () => void;
 }
 
 function flatMat(color: number, roughness = 0.85): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
+
 
 export function createScene(
   mount: HTMLElement,
@@ -153,6 +166,43 @@ export function createScene(
   heroLight.position.set(0, 1.05, 0);
   scene.add(heroLight);
 
+  // --- Lamps: every torch, candle, brazier, pad and glow in the level is a
+  // point light, and a level now carries dozens, but every point light in
+  // the scene costs every lit pixel every frame. So lamps never join the
+  // scene: they register here, and a fixed pool of lights takes on the
+  // nearest few each frame, fading each over its last cells of reach so
+  // nothing pops. The shader compiles once, for the pool's count. ---
+  const LAMP_POOL = 8;
+  const LAMP_REACH = 15; // cells; past this a lamp is off screen at VIEW_HEIGHT 12
+  const lamps: THREE.PointLight[] = [];
+  const registerLamp = (light: THREE.PointLight): void => {
+    lamps.push(light);
+  };
+  const lampPool = Array.from({ length: LAMP_POOL }, () => {
+    const light = new THREE.PointLight(0xffffff, 0, 1, 2);
+    scene.add(light);
+    return light;
+  });
+  const updateLamps = (px: number, py: number): void => {
+    const near = lamps
+      .map((l) => ({ l, d: Math.hypot(l.position.x - px, l.position.z - py) }))
+      .filter((x) => x.d < LAMP_REACH)
+      .sort((a, b) => a.d - b.d);
+    for (let i = 0; i < LAMP_POOL; i++) {
+      const light = lampPool[i]!;
+      const src = near[i];
+      if (!src) {
+        light.intensity = 0;
+        continue;
+      }
+      light.position.copy(src.l.position);
+      light.color.copy(src.l.color);
+      light.distance = src.l.distance;
+      light.decay = src.l.decay;
+      light.intensity = src.l.intensity * Math.min(1, (LAMP_REACH - src.d) / 4);
+    }
+  };
+
   // --- Atmosphere: the surface is one scene, so sky, fog and ambient follow
   // the hero across region borders instead of snapping at a zone change ---
   const BLEND = 10; // cells on each side of a border that participate in the mix
@@ -190,11 +240,64 @@ export function createScene(
       cur.pal.ambientIntensity + (other.pal.ambientIntensity - cur.pal.ambientIntensity) * t;
   };
 
-  // --- Environment from the KayKit dungeon set: brick facades over dark cores ---
+  // --- Environment from the dungeon piece set (Synty kit pieces normalized to
+  // the footprints the layout was tuned on): brick facades over dark cores ---
   const hash = (x: number, y: number) => (x * 73856093 ^ y * 19349663) >>> 0;
   const torchSpots: { x: number; y: number; fx: number; fy: number }[] = [];
+  // Every flame in the level flickers from one list: the wall torches, the
+  // campfire, and whatever candles and braziers the dressing tables ask for.
+  const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number; base: number }[] = [];
+  const makeFlame = (color: number, size: number): THREE.Mesh =>
+    new THREE.Mesh(
+      new THREE.IcosahedronGeometry(size, 0),
+      new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: color, emissiveIntensity: 2.2 }),
+    );
+  const DIRS: readonly [number, number][] = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ];
+  /** The nearest far wall from a floor cell, up to ten cells out. Only the
+   * walls on a room's -x and -z sides show the camera their faces; anything
+   * set against the near walls hides behind their blocks. A ray that would
+   * leave the room through a doorway stops there, and the rays one cell to
+   * either side try instead, so a marker in line with a door still finds
+   * the wall beside it. */
+  const wallToward: WallToward = (x, y) => {
+    let best: WallHit | null = null;
+    for (const [dx, dy] of DIRS) {
+      if (dx > 0 || dy > 0) continue;
+      // Sideways is the direction `along` runs in againstWall.
+      const px = -dy;
+      const py = dx;
+      for (const s of [0, -1, 1]) {
+        const sx = x + px * s;
+        const sy = y + py * s;
+        if (!isWalkable(map, sx, sy)) continue;
+        for (let d = 1; d <= 10; d++) {
+          const ax = sx + dx * d;
+          const ay = sy + dy * d;
+          if (!isWalkable(map, ax, ay)) {
+            if (!best || d < best.dist || (d === best.dist && Math.abs(s) < Math.abs(best.along ?? 0))) {
+              best = { dx, dy, dist: d, along: s };
+            }
+            break;
+          }
+          // Open ahead but walled either side: a corridor mouth, not the room.
+          if (!isWalkable(map, ax + px, ay + py) && !isWalkable(map, ax - px, ay - py)) break;
+        }
+      }
+    }
+    return best;
+  };
 
-  // Dark cores fill wall regions (occlusion + silhouette); facades add the brick.
+  // Dark cores fill wall regions (occlusion + silhouette); facades add the
+  // brick. Both are kept per cell so a hidden passage can open later: its
+  // cores shrink away, its facades go, and the walls beside it grow a face
+  // toward the new floor.
+  let coreMesh: THREE.InstancedMesh | null = null;
+  const coreIndex = new Map<string, number>();
   if (!outdoor) {
     const coreGeo = new THREE.BoxGeometry(1, 1.5, 1);
     const cores: THREE.Matrix4[] = [];
@@ -202,17 +305,20 @@ export function createScene(
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
         if (!isWalkable(map, x, y)) {
+          coreIndex.set(`${x},${y}`, cores.length);
           cores.push(m.makeTranslation(x + 0.5, 0.72, y + 0.5).clone());
-          if (isWalkable(map, x, y + 1) && hash(x, y) % 17 === 0) {
+          // No torch on a hidden passage: it would hang in the air once the wall opens.
+          if (isWalkable(map, x, y + 1) && !isSecret(map, x, y) && hash(x, y) % 17 === 0) {
             torchSpots.push({ x: x + 0.5, y: 0.72, fx: x + 0.5, fy: y + 1 });
           }
         }
       }
     }
-    const coreMesh = new THREE.InstancedMesh(coreGeo, flatMat(0x191722, 1), cores.length);
-    cores.forEach((mat, i) => coreMesh.setMatrixAt(i, mat));
-    coreMesh.receiveShadow = true;
-    scene.add(coreMesh);
+    const mesh = new THREE.InstancedMesh(coreGeo, flatMat(0x191722, 1), cores.length);
+    cores.forEach((mat, i) => mesh.setMatrixAt(i, mat));
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    coreMesh = mesh;
   }
 
   const env = new THREE.Group();
@@ -238,8 +344,8 @@ export function createScene(
     return clone;
   };
   /** Multiply a piece's materials by the style tint; white is a no-op. */
-  const tintPiece = (clone: THREE.Group, tint: number): void => {
-    if (tint === 0xffffff) return;
+  const tintPiece = (clone: THREE.Group, tint: number): THREE.Group => {
+    if (tint === 0xffffff) return clone;
     const t = new THREE.Color(tint);
     clone.traverse((obj) => {
       if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
@@ -247,7 +353,83 @@ export function createScene(
         obj.material.color.multiply(t);
       }
     });
+    return clone;
   };
+
+  /** Kit props go inside a wrapper group, so a node's own authored offset
+   * (Prop_Chest_01 is centred by one) survives placement. `offset` shifts the
+   * piece within it, for end-pivoted walls; `center` puts a corner-pivoted
+   * tile's footprint on the point; a flame or light rides above the piece
+   * at the height the row gives, in world units. */
+  const placeProp: PlaceProp = (node, x, z, ry, scale, opts) => {
+    const wrap = new THREE.Group();
+    const clone = node.clone(true);
+    if (opts?.offset) clone.position.add(new THREE.Vector3(...opts.offset));
+    if (opts?.center) {
+      const box = new THREE.Box3().setFromObject(clone);
+      clone.position.x -= (box.min.x + box.max.x) / 2;
+      clone.position.z -= (box.min.z + box.max.z) / 2;
+    }
+    wrap.add(clone);
+    wrap.position.set(x, opts?.y ?? 0, z);
+    wrap.rotation.y = ry;
+    wrap.scale.setScalar(scale);
+    wrap.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+    env.add(wrap);
+    const glow = opts?.flame ?? opts?.light;
+    if (!glow) return;
+    const flame = makeFlame(glow.color, opts?.flame?.size ?? 0.05);
+    flame.position.set(x, glow.height, z);
+    flame.visible = opts?.flame !== undefined;
+    scene.add(flame);
+    let light: THREE.PointLight | null = null;
+    if (opts?.light) {
+      light = new THREE.PointLight(opts.light.color, opts.light.intensity, 6, 1.8);
+      light.position.set(x, opts.light.height, z);
+      registerLamp(light);
+    }
+    torches.push({ flame, light, seed: (torches.length * 29) % 100, base: opts?.light?.intensity ?? 2.6 });
+  };
+  // Hut dwellers' wall rings become log walls (Viking structures kit), the
+  // camp's ring its palisade, and each landmark's footprint its structure;
+  // the cells they cover get no ridge or scatter below. Homes, not current
+  // positions: the dweller strolls, the hut does not.
+  const hutHomes = outdoor
+    ? npcs.filter((n) => NPCS[n.npcId].dwelling === "hut").map((n) => n.home)
+    : [];
+  const walkableAt = (x: number, y: number) => isWalkable(map, x, y);
+  // Buildings are area rows in area cells; the surface is one map, so shift them.
+  const worldBuildings: BuildingDef[] = outdoor
+    ? AREA_ORDER.flatMap((id) => {
+        const o = surfaceLayout().offsets[id];
+        return (AREAS[id].buildings ?? []).map((b) => ({
+          ...b,
+          x0: b.x0 + o.x,
+          x1: b.x1 + o.x,
+          y0: b.y0 + o.y,
+          y1: b.y1 + o.y,
+          door: [b.door[0] + o.x, b.door[1] + o.y] as const,
+        }));
+      })
+    : [];
+  const walled = new Set<string>([
+    ...dressHuts(assets.kits, hutHomes, walkableAt, placeProp),
+    ...(outdoor ? dressPalisade(assets.kits, map.camps, walkableAt, placeProp) : []),
+    ...dressBuildings(assets.kits, worldBuildings, placeProp),
+  ]);
+  if (outdoor) {
+    for (const marker of map.markers) {
+      const landmark = LANDMARKS[marker.ch];
+      if (!landmark) continue;
+      for (const [dx, dy] of landmark.solid) walled.add(`${Math.floor(marker.x) + dx},${Math.floor(marker.y) + dy}`);
+    }
+    dressMarkers(assets.kits, map.markers, WILD_SET_PIECES, placeProp);
+  }
 
   const WALL_SCALE = { x: 0.25, y: 0.35, z: 0.35 };
   const FLOOR_SCALE = { x: 0.5, y: 0.45, z: 0.5 };
@@ -257,128 +439,119 @@ export function createScene(
       .filter((m) => m.ch === ">" || m.ch === "<")
       .map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
   );
+  const facades = new Map<string, THREE.Object3D[]>();
+  /** Brick facades on every edge of a wall cell that faces open floor. A
+   * hidden passage wears the cracked wall on every face: a tell for the watchful. */
+  const dressWallCell = (x: number, y: number): void => {
+    const key = `${x},${y}`;
+    for (const old of facades.get(key) ?? []) env.remove(old);
+    const roll = hash(x, y) % 10;
+    const piece = isSecret(map, x, y)
+      ? assets.dungeon.wall_cracked
+      : roll < 7
+        ? assets.dungeon.wall
+        : roll < 9
+          ? assets.dungeon.wall_cracked
+          : assets.dungeon.wall_broken;
+    const placed: THREE.Object3D[] = [];
+    const face = (px: number, pz: number, ry: number) =>
+      placed.push(tintPiece(placePiece(piece, px, pz, ry, WALL_SCALE), dpal!.wallTint));
+    if (isWalkable(map, x, y + 1)) face(x + 0.5, y + 1, 0);
+    if (isWalkable(map, x, y - 1)) face(x + 0.5, y, Math.PI);
+    if (isWalkable(map, x + 1, y)) face(x + 1, y + 0.5, -Math.PI / 2);
+    if (isWalkable(map, x - 1, y)) face(x, y + 0.5, Math.PI / 2);
+    facades.set(key, placed);
+  };
+  /** A stone floor tile, occasionally broken or weedy. */
+  const placeFloorTile = (x: number, y: number): void => {
+    const h = hash(x, y);
+    const roll = h % 23;
+    const piece = roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
+    tintPiece(placePiece(piece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE), dpal!.floorTint);
+  };
+  /** A found passage: its cells become floor and the walls beside them face it. */
+  let openPassage = (_cells: readonly Vec[]): void => {};
   if (!outdoor) {
     for (let y = 0; y < map.height; y++) {
       for (let x = 0; x < map.width; x++) {
-        const h = hash(x, y);
-        if (isWalkable(map, x, y)) {
-          if (stairCells.has(`${x},${y}`)) continue;
-          // Stone floor tile, occasionally broken or weedy
-          const roll = h % 23;
-          const floorPiece =
-            roll === 0 ? assets.dungeon.floor_broken : roll === 1 ? assets.dungeon.floor_weeds : assets.dungeon.floor;
-          tintPiece(
-            placePiece(floorPiece, x + 0.5, y + 0.5, ((h >> 3) % 4) * (Math.PI / 2), FLOOR_SCALE),
-            dpal!.floorTint,
-          );
-        } else {
-          // Brick facades on every edge that faces open floor
-          const wallRoll = h % 10;
-          const piece =
-            wallRoll < 7 ? assets.dungeon.wall : wallRoll < 9 ? assets.dungeon.wall_cracked : assets.dungeon.wall_broken;
-          if (isWalkable(map, x, y + 1)) tintPiece(placePiece(piece, x + 0.5, y + 1, 0, WALL_SCALE), dpal!.wallTint);
-          if (isWalkable(map, x, y - 1)) tintPiece(placePiece(piece, x + 0.5, y, Math.PI, WALL_SCALE), dpal!.wallTint);
-          if (isWalkable(map, x + 1, y)) tintPiece(placePiece(piece, x + 1, y + 0.5, -Math.PI / 2, WALL_SCALE), dpal!.wallTint);
-          if (isWalkable(map, x - 1, y)) tintPiece(placePiece(piece, x, y + 0.5, Math.PI / 2, WALL_SCALE), dpal!.wallTint);
-        }
+        if (!isWalkable(map, x, y)) dressWallCell(x, y);
+        else if (!stairCells.has(`${x},${y}`)) placeFloorTile(x, y);
       }
     }
+    openPassage = (cells) => {
+      const gone = new THREE.Matrix4().makeScale(0, 0, 0);
+      for (const c of cells) {
+        const key = `${c.x},${c.y}`;
+        for (const old of facades.get(key) ?? []) env.remove(old);
+        facades.delete(key);
+        const i = coreIndex.get(key);
+        if (i !== undefined && coreMesh) {
+          coreMesh.setMatrixAt(i, gone);
+          coreMesh.instanceMatrix.needsUpdate = true;
+        }
+        placeFloorTile(c.x, c.y);
+        fx.burst(c.x + 0.5, 0.5, c.y + 0.5, 0x7a6f66, 8, 1.8);
+      }
+      for (const c of cells) {
+        for (const [dx, dy] of DIRS) {
+          if (!isWalkable(map, c.x + dx, c.y + dy)) dressWallCell(c.x + dx, c.y + dy);
+        }
+      }
+    };
 
-    // --- Crypt dressing: coffins, bone piles, and columns along the walls ---
-    // Deterministic from the cell hash, hugging wall-adjacent floor so the
-    // walking lanes stay readable. Pure decoration — nothing here collides.
-    const markerCells = new Set(
-      map.markers.map((m) => `${Math.floor(m.x)},${Math.floor(m.y)}`),
-    );
-    const coffinBase = flatMat(0x453424, 1);
-    const coffinLid = flatMat(0x574433, 1);
-    const boneMat = flatMat(0xcfc4a8, 0.9);
-    const makeCoffin = (h: number): THREE.Group => {
-      const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.2, 0.4), coffinBase);
-      body.position.y = 0.1;
-      g.add(body);
-      // The head end is broader — two overlapping boxes fake the casket taper.
-      const shoulders = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.48), coffinBase);
-      shoulders.position.set(-0.12, 0.1, 0);
-      g.add(shoulders);
-      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.05, 0.44), coffinLid);
-      if (h % 5 === 0) {
-        // Ajar: the lid slid sideways, whatever rested inside long gone.
-        lid.position.set(0.1, 0.23, 0.14);
-        lid.rotation.z = 0.12;
-      } else {
-        lid.position.y = 0.22;
-      }
-      g.add(lid);
-      g.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) {
-          obj.castShadow = true;
-          obj.receiveShadow = true;
-        }
-      });
-      return g;
-    };
-    const makeBonePile = (h: number): THREE.Group => {
-      const g = new THREE.Group();
-      for (let i = 0; i < 3 + (h % 2); i++) {
-        const bit = new THREE.Mesh(new THREE.IcosahedronGeometry(0.05 + ((h >> i) % 3) * 0.015, 0), boneMat);
-        bit.position.set(((h >> (i * 2)) % 5 - 2) * 0.07, 0.04, ((h >> (i * 2 + 3)) % 5 - 2) * 0.07);
-        bit.castShadow = true;
-        g.add(bit);
-      }
-      const shard = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.24, 4), boneMat);
-      shard.rotation.set(Math.PI / 2, 0, (h % 628) / 100);
-      shard.position.y = 0.04;
-      g.add(shard);
-      return g;
-    };
-    const spawnX = map.spawn.x;
-    const spawnY = map.spawn.y;
-    for (let y = 0; y < map.height; y++) {
+    // --- Crypt dressing: Dungeon Pack props along the walls, picked by the
+    // cell hash from the families the style weights (biomes.ts), and the set
+    // pieces the generator's markers ask for (cryptDressing.ts). Pure
+    // decoration: nothing here collides. ---
+    // Set pieces and stairs keep a clear ring; monster spawns (lowercase) do not.
+    const clear = map.markers.filter((m) => !/[a-z]/.test(m.ch)).map((m) => ({ x: m.x, y: m.y }));
+    clear.push({ x: map.spawn.x, y: map.spawn.y });
+    const families = (Object.keys(dpal!.dressing) as DressingFamily[])
+      .map((f) => ({
+        weight: dpal!.dressing[f] ?? 0,
+        pieces: DUNGEON_DRESSING[f].filter((p) => kitNode(assets.kits, p.kit, p.node) !== null),
+      }))
+      .filter((f) => f.weight > 0 && f.pieces.length > 0);
+    const totalWeight = families.reduce((sum, f) => sum + f.weight, 0);
+    for (let y = 0; y < map.height && totalWeight > 0; y++) {
       for (let x = 0; x < map.width; x++) {
-        if (!isWalkable(map, x, y)) continue;
-        const key = `${x},${y}`;
-        if (stairCells.has(key) || markerCells.has(key)) continue;
-        if (Math.hypot(x + 0.5 - spawnX, y + 0.5 - spawnY) < 2.5) continue;
-        const nearWall =
-          !isWalkable(map, x, y + 1) ||
-          !isWalkable(map, x, y - 1) ||
-          !isWalkable(map, x + 1, y) ||
-          !isWalkable(map, x - 1, y);
-        if (!nearWall) continue;
+        if (!isWalkable(map, x, y) || stairCells.has(`${x},${y}`)) continue;
+        if (clear.some((c) => Math.hypot(x + 0.5 - c.x, y + 0.5 - c.y) < 2.5)) continue;
+        if (DIRS.every(([dx, dy]) => isWalkable(map, x + dx, y + dy))) continue;
         const h = hash(x, y);
-        const jx = x + 0.5 + ((h >> 9) % 5 - 2) * 0.06;
-        const jz = y + 0.5 + ((h >> 12) % 5 - 2) * 0.06;
-        // One in ~12 wall-hugging cells gets a prop; the style's weights pick
-        // which family, so warrens read rooty-bare and ossuaries read bone-choked.
-        const w = dpal!.dressing;
-        const total = w.coffins + w.bones + w.columns;
-        if (total === 0 || h % 12 !== 3) continue;
-        const roll = (h >> 4) % total;
-        if (roll < w.coffins) {
-          const coffin = makeCoffin(h);
-          coffin.position.set(jx, 0, jz);
-          coffin.rotation.y = ((h >> 4) % 4) * (Math.PI / 2) + ((h >> 7) % 20 - 10) * 0.02;
-          scene.add(coffin);
-        } else if (roll < w.coffins + w.bones) {
-          const bones = makeBonePile(h);
-          bones.position.set(jx, 0, jz);
-          scene.add(bones);
+        // One in nine wall-hugging cells gets a prop, so the walking lanes stay readable.
+        if (h % 9 !== 3) continue;
+        let roll = (h >> 4) % totalWeight;
+        const family = families.find((f) => (roll -= f.weight) < 0)!;
+        let piece = family.pieces[(h >> 8) % family.pieces.length]!;
+        // A wall piece needs a visible face right here; otherwise the family's floor pieces stand in.
+        const wall = wallToward(x, y);
+        if (piece.wall && (!wall || wall.dist !== 1 || wall.along)) {
+          const floorPieces = family.pieces.filter((p) => !p.wall);
+          if (floorPieces.length === 0) continue;
+          piece = floorPieces[(h >> 8) % floorPieces.length]!;
+        }
+        const node = kitNode(assets.kits, piece.kit, piece.node)!;
+        const opts: PlaceOpts = { y: piece.y, center: piece.center, flame: piece.flame };
+        if (piece.wall) {
+          const at = againstWall(wall!, x + 0.5, y + 0.5, 0, piece.flat);
+          placeProp(node, at.x, at.z, at.ry, piece.scale, opts);
         } else {
-          placePiece(assets.dungeon.column, x + 0.5, y + 0.5, ((h >> 5) % 4) * (Math.PI / 2), {
-            x: 0.3,
-            y: 0.34,
-            z: 0.3,
-          });
+          const jx = x + 0.5 + (((h >> 9) % 5) - 2) * 0.06;
+          const jz = y + 0.5 + (((h >> 12) % 5) - 2) * 0.06;
+          placeProp(node, jx, jz, ((h >> 5) % 4) * (Math.PI / 2) + (((h >> 7) % 20) - 10) * 0.02, piece.scale, opts);
         }
       }
     }
+    dressMarkers(assets.kits, map.markers, CRYPT_SET_PIECES, placeProp, wallToward);
   } else {
-    // --- Open ground: every region lays its own biome-tinted plane over its
-    // slice of the world, then instanced crags, dead pines and tufts in its
-    // own colors. Cell hashes stay keyed on world coordinates, so the scatter
-    // is the same wherever a region happens to sit in the layout. ---
+    // --- Open ground: every region lays its own textured plane over its
+    // slice of the world (bare dirt, with the odd grass tuft instanced on
+    // it), then instanced pines, standing stones and bushes from the Viking
+    // nature kit tinted for the biome, or primitive crags and cones when that
+    // kit is absent. Cell hashes stay keyed on world
+    // coordinates, so the scatter is the same wherever a region sits. ---
+    const baked = bakeScatter(assets.kits);
     const m = new THREE.Matrix4();
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
@@ -399,9 +572,13 @@ export function createScene(
     for (const areaId of AREA_ORDER) {
       const rect = areaRect(areaId);
       const pal = BIOME_PALETTES[AREAS[areaId].biome];
+      const batch = baked ? new ScatterBatch(baked, { foliage: pal.foliageTint, stone: pal.stoneTint }) : null;
       const rw = rect.x1 - rect.x0;
       const rh = rect.y1 - rect.y0;
-      const ground = new THREE.Mesh(new THREE.PlaneGeometry(rw, rh), flatMat(pal.ground, 1));
+      const ground = new THREE.Mesh(
+        groundGeometry(rw, rh, pal.groundTile),
+        groundMaterial(assets.ground[pal.groundTexture], assets.groundNormals[pal.groundTexture], pal),
+      );
       ground.rotation.x = -Math.PI / 2;
       ground.position.set(rect.x0 + rw / 2, 0, rect.y0 + rh / 2);
       ground.receiveShadow = true;
@@ -411,14 +588,13 @@ export function createScene(
       const rockMats: THREE.Matrix4[] = [];
       const pineMats: THREE.Matrix4[] = [];
       const trunkMats: THREE.Matrix4[] = [];
-      const tuftMats: THREE.Matrix4[] = [];
       for (let y = rect.y0; y < rect.y1; y++) {
         for (let x = rect.x0; x < rect.x1; x++) {
           const h = hash(x, y);
           const jx = x + 0.5 + ((h % 7) - 3) * 0.05;
           const jz = y + 0.5 + (((h >> 4) % 7) - 3) * 0.05;
           if (!isWalkable(map, x, y)) {
-            if (stairCells.has(`${x},${y}`)) continue;
+            if (stairCells.has(`${x},${y}`) || walled.has(`${x},${y}`)) continue;
             // Full-tile raised base under every blocked cell: contiguous
             // blockers merge into one continuous ridge, so barriers read as
             // terrain mass instead of scattered props on open ground.
@@ -433,13 +609,26 @@ export function createScene(
               x === rect.x0 || y === rect.y0 || x === rect.x1 - 1 || y === rect.y1 - 1;
             if (border || h % 5 < 3) {
               const s = 0.85 + ((h >> 6) % 45) / 100;
-              eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
-              m.compose(
-                pos.set(jx, bh + 0.22 * s, jz),
-                quat.setFromEuler(eul),
-                scl.set(s, s * 0.75, s),
-              );
-              rockMats.push(m.clone());
+              if (batch) {
+                // Kit stones are authored half-buried: seat them at ridge height, leaning a little.
+                eul.set(((h >> 2) % 6) / 25, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 25);
+                m.compose(pos.set(jx, bh, jz), quat.setFromEuler(eul), scl.set(s, s, s));
+                batch.add("rock", h >>> 10, m, x, y);
+              } else {
+                eul.set(((h >> 2) % 6) / 10, ((h >> 5) % 628) / 100, ((h >> 8) % 6) / 10);
+                m.compose(
+                  pos.set(jx, bh + 0.22 * s, jz),
+                  quat.setFromEuler(eul),
+                  scl.set(s, s * 0.75, s),
+                );
+                rockMats.push(m.clone());
+              }
+            } else if (batch) {
+              const s = 0.75 + ((h >> 6) % 55) / 100;
+              quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
+              m.compose(pos.set(jx, bh, jz), quat, scl.set(s, s, s));
+              // One copse cell in four grows a berry bush instead of a pine.
+              batch.add((h >>> 14) % 4 === 0 ? "bush" : "pine", h >>> 10, m, x, y);
             } else {
               const s = 0.75 + ((h >> 6) % 55) / 100;
               quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
@@ -448,20 +637,24 @@ export function createScene(
               m.compose(pos.set(jx, bh + 0.22, jz), quat, scl.set(1, 1, 1));
               trunkMats.push(m.clone());
             }
-          } else if (h % 11 === 0) {
+          } else if (batch && h % 19 === 0) {
+            // The odd tuft of grass on the bare ground; the dirt texture carries the rest.
             quat.setFromEuler(eul.set(0, ((h >> 5) % 628) / 100, 0));
             const s = 0.7 + ((h >> 7) % 60) / 100;
-            m.compose(pos.set(jx, 0.09 * s, jz), quat, scl.set(s, s, s));
-            tuftMats.push(m.clone());
+            m.compose(pos.set(jx, 0, jz), quat, scl.set(s, s, s));
+            batch.add("tuft", h >>> 10, m, x, y);
           }
         }
       }
       const baseColor = new THREE.Color(pal.rock).multiplyScalar(0.55).getHex();
       addInstanced(new THREE.BoxGeometry(1, 1, 1), baseColor, baseMats, true);
-      addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
-      addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
-      addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
-      addInstanced(new THREE.ConeGeometry(0.12, 0.2, 4), pal.tuft, tuftMats, false);
+      if (batch) {
+        batch.build(scene);
+      } else {
+        addInstanced(new THREE.IcosahedronGeometry(0.62, 0), pal.rock, rockMats, true);
+        addInstanced(new THREE.ConeGeometry(0.5, 1.7, 5), pal.pine, pineMats, true);
+        addInstanced(new THREE.CylinderGeometry(0.08, 0.12, 0.55, 5), pal.trunk, trunkMats, false);
+      }
     }
   }
 
@@ -502,7 +695,7 @@ export function createScene(
     // …and a cold glow breathes up out of it.
     const glow = new THREE.PointLight(0x6fb0d9, 2.4, 4.5, 1.7);
     glow.position.set(marker.x, 0.55, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
     stairGlows.push(glow);
   }
 
@@ -558,7 +751,7 @@ export function createScene(
     scene.add(beam);
     const glow = new THREE.PointLight(0xf5c877, 3.4, 5.5, 1.7);
     glow.position.set(marker.x, 1.4, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
     stairGlows.push(glow);
   }
 
@@ -580,12 +773,22 @@ export function createScene(
     padRings.push(ring);
     const glow = new THREE.PointLight(color, 2.5, 5, 1.8);
     glow.position.set(marker.x, 0.8, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
   }
+
+  // --- Camp dressing: Viking Realm props around the fixed markers (and inside
+  // huts) when that kit loaded; the primitive stand-ins below cover whichever
+  // markers it left ---
+  const dressed = dressCamp(
+    assets.kits,
+    [...map.markers, ...hutHomes.map((h) => ({ ch: HUT_MARKER, x: h.x, y: h.y }))],
+    placeProp,
+    wallToward,
+  );
 
   // --- Market stall (town): crates and a barrel beside the V marker ---
   for (const marker of map.markers) {
-    if (marker.ch !== "V") continue;
+    if (marker.ch !== "V" || dressed.has("V")) continue;
     placePieceLater.push(() => {
       placePiece(assets.dungeon.crates, marker.x + 0.9, marker.y + 0.3, 0.4, { x: 0.3, y: 0.3, z: 0.3 });
       placePiece(assets.dungeon.barrel, marker.x - 0.8, marker.y + 0.5, 0, { x: 0.3, y: 0.3, z: 0.3 });
@@ -606,18 +809,18 @@ export function createScene(
     });
     const glow = new THREE.PointLight(0xc9a84c, 1.2, 3.5, 1.8);
     glow.position.set(marker.x, 0.9, marker.y);
-    scene.add(glow);
+    registerLamp(glow);
   }
   // --- Candlelit shrine (town): a quiet glow beside the H marker ---
   for (const marker of map.markers) {
     if (marker.ch !== "H") continue;
     const shrineGlow = new THREE.PointLight(0xf5dfa0, 1.8, 4, 1.8);
     shrineGlow.position.set(marker.x, 1.1, marker.y);
-    scene.add(shrineGlow);
+    registerLamp(shrineGlow);
   }
   for (const fn of placePieceLater) fn();
 
-  // --- NPCs: one knight-model rig per entity, tinted so each reads apart ---
+  // --- NPCs: one villager rig per entity, tinted so each reads apart ---
   const NPC_TINTS: Record<NpcId, number> = {
     maren: 0x8a5a2c, // camp trader — warm leather
     sera: 0xd8cfc0, // camp healer — pale cloth
@@ -731,7 +934,6 @@ export function createScene(
   };
 
   // --- Torches: emissive flames, the first few carrying real light ---
-  const torches: { flame: THREE.Mesh; light: THREE.PointLight | null; seed: number }[] = [];
   for (let i = 0; i < torchSpots.length && i < 14; i++) {
     const spot = torchSpots[i]!;
     // Mounted sconce on the wall face, flame burning above it
@@ -739,61 +941,56 @@ export function createScene(
     sconce.position.set(spot.x, 0.75, spot.fy + 0.02);
     sconce.scale.setScalar(0.5);
     scene.add(sconce);
-    const flame = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.09, 0),
-      new THREE.MeshStandardMaterial({
-        color: 0xffb35c,
-        emissive: 0xff9030,
-        emissiveIntensity: 2.2,
-      }),
-    );
+    const flame = makeFlame(0xff9030, 0.09);
     flame.position.set(spot.x, 1.15, spot.fy + 0.08);
     scene.add(flame);
-    const light =
-      i < 8 ? new THREE.PointLight(0xff9a45, 3.2, 6.5, 1.8) : null;
-    if (light) {
-      light.position.set(spot.x, 1.2, spot.fy + 0.25);
-      scene.add(light);
-    }
-    torches.push({ flame, light, seed: (i * 37) % 100 });
+    // Every torch carries a lamp now that the pool, not the scene, pays for them.
+    const light = new THREE.PointLight(0xff9a45, 3.2, 6.5, 1.8);
+    light.position.set(spot.x, 1.2, spot.fy + 0.25);
+    registerLamp(light);
+    torches.push({ flame, light, seed: (i * 37) % 100, base: 2.6 });
   }
 
-  // --- Campfire (camp): stones, crossed logs, and a breathing flame ---
+  // --- Campfire (camp): a breathing flame over the kit's fire pit, or over
+  // primitive stones and crossed logs when the props kit is absent ---
   for (const marker of map.markers) {
     if (marker.ch !== "F") continue;
     const fire = new THREE.Group();
     fire.position.set(marker.x, 0, marker.y);
-    const stoneMat = flatMat(0x55524e, 1);
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
-      stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
-      stone.castShadow = true;
-      fire.add(stone);
-    }
-    const logMat = flatMat(0x3d2c1c, 1);
-    for (let i = 0; i < 3; i++) {
-      const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
-      log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
-      log.position.y = 0.12;
-      log.castShadow = true;
-      fire.add(log);
+    if (!dressed.has("F")) {
+      const stoneMat = flatMat(0x55524e, 1);
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2;
+        const stone = new THREE.Mesh(new THREE.IcosahedronGeometry(0.09 + (i % 3) * 0.02, 0), stoneMat);
+        stone.position.set(Math.cos(a) * 0.42, 0.05, Math.sin(a) * 0.42);
+        stone.castShadow = true;
+        fire.add(stone);
+      }
+      const logMat = flatMat(0x3d2c1c, 1);
+      for (let i = 0; i < 3; i++) {
+        const log = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.55, 5), logMat);
+        log.rotation.set(Math.PI / 2 - 0.5, 0, (i / 3) * Math.PI * 2);
+        log.position.y = 0.12;
+        log.castShadow = true;
+        fire.add(log);
+      }
     }
     const flame = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.16, 0),
       new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: 0xff8c28, emissiveIntensity: 2.4 }),
     );
-    flame.position.y = 0.32;
+    // The kit pit's logs top out at 0.56 (0.93 authored x 0.6 scale).
+    flame.position.y = dressed.has("F") ? 0.58 : 0.32;
     fire.add(flame);
     scene.add(fire);
     const light = new THREE.PointLight(0xff9a45, 5, 8, 1.7);
     light.position.set(marker.x, 1.1, marker.y);
-    scene.add(light);
+    registerLamp(light);
     // Riding the torch flicker keeps the fire breathing with everything else.
-    torches.push({ flame, light, seed: 43 });
+    torches.push({ flame, light, seed: 43, base: 2.6 });
   }
 
-  // --- Heroes: one animated KayKit barbarian per player standing in this zone ---
+  // --- Heroes: one animated hero rig per player standing in this zone ---
   interface HeroEntry {
     rig: HeroModelRig;
     /** Renderer-side displacement for lunges; sim position stays authoritative. */
@@ -818,9 +1015,12 @@ export function createScene(
     });
   };
 
-  const makeHero = (id: PlayerId): HeroEntry => {
-    const rig = makeHeroModelRig(assets);
+  let onFootstep: (() => void) | undefined;
+  const makeHero = (id: PlayerId, klass: Klass): HeroEntry => {
+    const rig = makeHeroModelRig(assets, klass);
     scene.add(rig.group);
+    // Only your own feet make a sound; the rig reports them off its walk cycle.
+    if (id === localId()) rig.footfall = () => onFootstep?.();
     let plate: HTMLDivElement | null = null;
     if (id !== localId()) {
       // Remote heroes wear their seat colour; the local one keeps its own look.
@@ -864,7 +1064,7 @@ export function createScene(
   };
   const groundItemVisuals = new Map<
     number,
-    { mesh: THREE.Mesh; label: HTMLDivElement; glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }
+    { mesh: THREE.Object3D; label: HTMLDivElement; glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }
   >();
   // Loot answers "is this better than what I'm wearing?" before it's touched:
   // a glyph before the name, judged against the local hero's current gear.
@@ -873,6 +1073,22 @@ export function createScene(
     worse: { text: "▼ ", css: "#d6675c" },
     mixed: { text: "◆ ", css: "#d9b85c" },
     same: { text: "= ", css: "#8c8578" },
+  };
+  /** A dropped potion: the Dungeon Pack's little bottle, its glass tinted and
+   * lit for what it restores, at a hand-sized scale. Null without the kit. */
+  const potionModel = (tint: { color: number; emissive: number }): THREE.Object3D | null => {
+    const src = kitNode(assets.kits, "dungeon_props", "Item_Potion_01");
+    if (!src) return null;
+    const model = cloneProp(src);
+    model.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.material instanceof THREE.MeshStandardMaterial) {
+        obj.material.color.set(tint.color).multiplyScalar(1.4);
+        obj.material.emissive.set(tint.emissive);
+        obj.material.emissiveIntensity = 0.45;
+      }
+    });
+    model.scale.setScalar(0.9);
+    return model;
   };
   const wearVerdict = (v: { glyph: HTMLSpanElement; verdict: UpgradeVerdict | null }, verdict: UpgradeVerdict | null) => {
     if (verdict === v.verdict) return;
@@ -901,8 +1117,9 @@ export function createScene(
   };
   const healthBars = new Map<number, { wrap: HTMLDivElement; fill: HTMLDivElement }>();
 
-  // --- Hover tooltip: name + what it is, following the cursor ---
-  // Static area indicators (stairs, pads, gates) share the tooltip via cursor proximity.
+  // --- Hover plate: name + what it is, pinned to the screen's bottom right
+  // (above the belt, below the toasts) so it never covers the fight ---
+  // Static area indicators (stairs, pads, gates) share the plate via cursor proximity.
   const AREA_INFO: Record<string, { name: string; role: string }> = {
     ">": { name: "Stairwell", role: "Descends deeper into the barrow" },
     "<": { name: "Stairs Up", role: "Climbs back toward daylight" },
@@ -913,7 +1130,7 @@ export function createScene(
     .map((m) => ({ pos: { x: m.x, y: m.y }, ...AREA_INFO[m.ch]! }));
   const tooltip = document.createElement("div");
   tooltip.style.cssText =
-    "position:absolute;display:none;transform:translate(-50%,-130%);background:rgba(8,8,10,.82);padding:3px 8px;white-space:nowrap;text-align:center;text-shadow:0 1px 2px #000;border:1px solid rgba(200,190,160,.25);";
+    "position:absolute;display:none;right:16px;bottom:16px;background:rgba(8,8,10,.82);padding:4px 10px;white-space:nowrap;text-align:right;text-shadow:0 1px 2px #000;border:1px solid rgba(200,190,160,.25);";
   const tooltipName = document.createElement("div");
   tooltipName.style.cssText = "color:#e8dfc8;font-size:12px;";
   const tooltipRole = document.createElement("div");
@@ -1104,6 +1321,13 @@ export function createScene(
   };
 
   return {
+    three: scene,
+    get onFootstep() {
+      return onFootstep;
+    },
+    set onFootstep(fn: (() => void) | undefined) {
+      onFootstep = fn;
+    },
     render(state, prevPositions, alpha) {
       const me = localPlayer(state);
       const frameDt = Math.min(0.1, (performance.now() - lastFrameNow) / 1000);
@@ -1120,7 +1344,7 @@ export function createScene(
       let py = me.pos.y;
       for (const p of allPlayers(state)) {
         if (p.zoneId !== me.zoneId) continue;
-        const entry = heroes.get(p.id) ?? makeHero(p.id);
+        const entry = heroes.get(p.id) ?? makeHero(p.id, p.klass);
         // A player who just arrived (or teleported) has no meaningful previous
         // position — snap rather than sliding across the whole map.
         const prev = prevPositions.get(p.id) ?? p.pos;
@@ -1150,7 +1374,7 @@ export function createScene(
         group.rotation.y = approachAngle(group.rotation.y, entry.targetYaw, frameDt * 14);
         // Death and revival play through animation clips, not a rotation hack.
         if (p.dead && !entry.wasDead) {
-          entry.rig.oneShot("Death_A", { hold: true });
+          entry.rig.oneShot("death", { hold: true });
         } else if (!p.dead && entry.wasDead) {
           entry.rig.release();
         }
@@ -1302,20 +1526,21 @@ export function createScene(
             health: { color: 0xc93a3a, emissive: 0xa02828 },
             mana: { color: 0x3a55c9, emissive: 0x2838a0 },
           } as const;
-          const mesh = new THREE.Mesh(
-            potion
-              ? new THREE.IcosahedronGeometry(0.11, 0)
-              : new THREE.OctahedronGeometry(0.14, 0),
-            new THREE.MeshStandardMaterial({
-              color: potion ? POTION_TINT[potion].color : colors.hex,
-              emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
-              emissiveIntensity: potion ? 0.8 : 0.55,
-              roughness: 0.4,
-              flatShading: true,
-            }),
-          );
-          mesh.position.set(gi.pos.x, 0.16, gi.pos.y);
-          scene.add(mesh);
+          const mesh = potion ? potionModel(POTION_TINT[potion]) : null;
+          const fallback =
+            mesh ??
+            new THREE.Mesh(
+              potion ? new THREE.IcosahedronGeometry(0.11, 0) : new THREE.OctahedronGeometry(0.14, 0),
+              new THREE.MeshStandardMaterial({
+                color: potion ? POTION_TINT[potion].color : colors.hex,
+                emissive: potion ? POTION_TINT[potion].emissive : colors.hex,
+                emissiveIntensity: potion ? 0.8 : 0.55,
+                roughness: 0.4,
+                flatShading: true,
+              }),
+            );
+          fallback.position.set(gi.pos.x, mesh ? 0.02 : 0.16, gi.pos.y);
+          scene.add(fallback);
           const label = document.createElement("div");
           const glyph = document.createElement("span");
           glyph.style.cssText = "font-weight:700;";
@@ -1327,7 +1552,7 @@ export function createScene(
             onItemClick?.(id);
           });
           overlay.appendChild(label);
-          v = { mesh, label, glyph, verdict: null };
+          v = { mesh: fallback, label, glyph, verdict: null };
           groundItemVisuals.set(gi.id, v);
         }
         // Gear changes only on a tick, so the verdict only needs re-judging then.
@@ -1400,11 +1625,11 @@ export function createScene(
       for (const pc of zoneOf(state, me).playerCorpses.values()) {
         let v = playerCorpseVisuals.get(pc.id);
         if (!v) {
-          const rig = makeHeroModelRig(assets);
+          const rig = makeHeroModelRig(assets, state.players.get(pc.playerId)?.klass ?? "warrior");
           rig.setEquipment(pc.equipment);
           tintRig(rig.group, playerTint(pc.playerId), 0.4);
           // The death clip ends face down; hold it so the body just lies there.
-          rig.oneShot("Death_A", { hold: true });
+          rig.oneShot("death", { hold: true });
           rig.group.position.set(pc.pos.x, 0, pc.pos.y);
           rig.group.rotation.y = (pc.id * 1.7) % (Math.PI * 2);
           scene.add(rig.group);
@@ -1488,8 +1713,9 @@ export function createScene(
           0.25 * Math.sin(now / 90 + torch.seed) +
           0.12 * Math.sin(now / 41 + torch.seed * 3);
         torch.flame.scale.setScalar(0.85 + flicker * 0.25);
-        if (torch.light) torch.light.intensity = 2.6 * flicker + 0.8;
+        if (torch.light) torch.light.intensity = torch.base * flicker + 0.8;
       }
+      updateLamps(px, py);
 
       const shakeOff = fx.update();
       camera.position.set(px + camOffset.x + shakeOff.x, camOffset.y, py + camOffset.z + shakeOff.z);
@@ -1707,8 +1933,6 @@ export function createScene(
         tooltipName.textContent = tip.name;
         tooltipRole.textContent = tip.role;
         stylePlate(tip.accent ?? null);
-        tooltip.style.left = `${px}px`;
-        tooltip.style.top = `${py}px`;
         tooltip.style.display = "block";
       } else {
         tooltip.style.display = "none";
@@ -1722,7 +1946,7 @@ export function createScene(
         case "monster_windup": {
           // The boss telegraphs: a taunt, a growing blood ring, a darkening body.
           const rig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
-          rig?.oneShot?.("Taunt");
+          rig?.oneShot?.("taunt");
           if (rig) fx.flash(rig.group, 0x7a1010, event.ticks * 40);
           ring(event.pos, 2.0, 0xc03030, event.ticks * 40);
           break;
@@ -1812,7 +2036,7 @@ export function createScene(
             const mesh = rig.group;
             if (rig.oneShot) {
               // Play the death clip in place, keep the mixer running, then sink away.
-              rig.oneShot("Death_A", { hold: true });
+              rig.oneShot("death", { hold: true });
               const start = performance.now();
               fx.tween(1400, (t) => {
                 rig.animate!(start + t * 1400, 0, 0);
@@ -1830,6 +2054,10 @@ export function createScene(
           }
           monsterFxOffsets.delete(event.id);
           fx.burst(event.pos.x, 0.5, event.pos.y, 0x6a2a2a, 10, 2.6);
+          break;
+        }
+        case "secret_found": {
+          openPassage(event.cells);
           break;
         }
         case "breakable_broken": {
@@ -1865,59 +2093,59 @@ export function createScene(
             if (event.playerId === localId()) fx.shake(amount);
           };
           if (event.skill === "cleave") {
-            caster?.oneShot("2H_Melee_Attack_Spin", { timeScale: 1.5 });
+            caster?.oneShot("attackSpin", { timeScale: 1.5 });
             ring(event.pos, 1.8, 0xd9dde8, 240);
             shake(0.08);
           } else if (event.skill === "warcry") {
-            caster?.oneShot("Cheer", { timeScale: 1.4 });
+            caster?.oneShot("cheer", { timeScale: 1.4 });
             ring(event.pos, 2.6, 0x6a9ad1, 500);
           } else if (event.skill === "leap") {
             // The leap's own motion spike must not cancel its jump clip.
-            caster?.oneShot("Jump_Full_Short", { timeScale: 1.3, cancelOnMove: false });
+            caster?.oneShot("jump", { timeScale: 1.3, cancelOnMove: false });
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6); // takeoff kick-up
           } else if (event.skill === "charge") {
             // The rush itself renders as running; just kick up dust at the start line.
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 6, 1.6);
             shake(0.06);
           } else if (event.skill === "crush") {
-            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.5 });
+            caster?.oneShot("attackChop", { timeScale: 1.5 });
             shake(0.12);
           } else if (event.skill === "stomp") {
-            caster?.oneShot("2H_Melee_Attack_Slice", { timeScale: 1.4 });
+            caster?.oneShot("attackSlice", { timeScale: 1.4 });
             ring(event.pos, 2.2, 0xb5a582, 300);
             fx.burst(event.pos.x, 0.15, event.pos.y, 0x8a8478, 10, 2.2);
             shake(0.16);
           } else if (event.skill === "deathblow") {
-            caster?.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.7 });
+            caster?.oneShot("attackChop", { timeScale: 1.7 });
             if (event.at) fx.burst(event.at.x, 0.5, event.at.y, 0xc03030, 14, 2.8);
             shake(0.2);
           } else if (event.skill === "fireball") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.4 });
+            caster?.oneShot("cast", { timeScale: 1.4 });
             shake(0.08); // the blast itself arrives as an `exploded` event
           } else if (event.skill === "soulchain") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6 });
+            caster?.oneShot("cast", { timeScale: 1.6 });
             ring(event.pos, 1.6, 0x9ad1f5, 220);
             shake(0.08);
           } else if (event.skill === "firebolt") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            caster?.oneShot("cast", { timeScale: 1.5 });
             if (event.at) boltFlight(event.pos, event.at, 0xffd27a, 0xe8722c);
             shake(0.06);
           } else if (event.skill === "frostbolt") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.5 });
+            caster?.oneShot("cast", { timeScale: 1.5 });
             if (event.at) boltFlight(event.pos, event.at, 0xd8f4ff, 0x7fc8f5);
             shake(0.06);
           } else if (event.skill === "weaken" || event.skill === "slow" || event.skill === "doom") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            caster?.oneShot("cast", { timeScale: 1.3 });
             if (event.at) ring(event.at, 2.5, 0xb07cf0, 360);
           } else if (event.skill === "frostnova") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.3 });
+            caster?.oneShot("cast", { timeScale: 1.3 });
             ring(event.pos, 2.5, 0x9ad8e8, 320);
             shake(0.1);
           } else if (event.skill === "focus") {
-            caster?.oneShot("Cheer", { timeScale: 1.4 });
+            caster?.oneShot("cheer", { timeScale: 1.4 });
             ring(event.pos, 2.2, 0xb08ad1, 500);
           } else if (event.skill === "blink") {
-            caster?.oneShot("Spellcast_Shoot", { timeScale: 1.6, cancelOnMove: false });
+            caster?.oneShot("cast", { timeScale: 1.6, cancelOnMove: false });
             // pos is the departure point, at the arrival — face the direction traveled.
             const to = event.at ?? event.pos;
             if (casterEntry) {
@@ -1937,7 +2165,7 @@ export function createScene(
           break;
         }
         case "charge_hit": {
-          heroOf(event.playerId)?.rig.oneShot("2H_Melee_Attack_Chop", { timeScale: 1.6 });
+          heroOf(event.playerId)?.rig.oneShot("attackChop", { timeScale: 1.6 });
           fx.burst(event.pos.x, 0.3, event.pos.y, 0xd9dde8, 10, 2.2);
           if (event.playerId === localId()) fx.shake(0.14);
           break;

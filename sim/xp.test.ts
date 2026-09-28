@@ -99,7 +99,7 @@ describe("xp and leveling", () => {
 describe("xp split", () => {
   test("solo killer gets full xp", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
     state.events.push({
       type: "monster_died",
       id: 1,
@@ -116,8 +116,8 @@ describe("xp split", () => {
 
   test("two players in range split with party bonus", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
-    const p1 = joinPlayer(state, { id: 1 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
+    const p1 = joinPlayer(state, { id: 1, start: "surface" });
     p1.pos = { ...p0.pos };
     state.events.push({
       type: "monster_died",
@@ -137,9 +137,9 @@ describe("xp split", () => {
 
   test("killer is included even when out of radius; distant non-killers are not", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 }); // killer, far away
-    const p1 = joinPlayer(state, { id: 1 }); // bystander, adjacent
-    const p2 = joinPlayer(state, { id: 2 }); // far away, not killer
+    const p0 = joinPlayer(state, { id: 0, start: "surface" }); // killer, far away
+    const p1 = joinPlayer(state, { id: 1, start: "surface" }); // bystander, adjacent
+    const p2 = joinPlayer(state, { id: 2, start: "surface" }); // far away, not killer
     const killPos = { x: 0, y: 0 };
     p0.pos = { x: 30, y: 0 };
     p1.pos = { x: 1, y: 0 };
@@ -163,8 +163,8 @@ describe("xp split", () => {
 
   test("players in other zones never share", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
-    const p1 = joinPlayer(state, { id: 1 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
+    const p1 = joinPlayer(state, { id: 1, start: "surface" });
     p0.zoneId = "dungeon:barrow:1";
     // p1 stays in camp
     state.events.push({
@@ -184,8 +184,8 @@ describe("xp split", () => {
 
   test("null killer (explosion chain): everyone in radius splits", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
-    const p1 = joinPlayer(state, { id: 1 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
+    const p1 = joinPlayer(state, { id: 1, start: "surface" });
     p1.pos = { ...p0.pos };
     state.events.push({
       type: "monster_died",
@@ -227,7 +227,7 @@ describe("xp falloff", () => {
 
   test("an out-leveled kill grants reduced xp", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
     p0.level = 12;
     state.events.push({
       type: "monster_died",
@@ -245,8 +245,8 @@ describe("xp falloff", () => {
 
   test("falloff is per recipient: the low-level partner keeps the full share", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
-    const p1 = joinPlayer(state, { id: 1 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
+    const p1 = joinPlayer(state, { id: 1, start: "surface" });
     p0.level = 18;
     p1.level = 3;
     p1.pos = { ...p0.pos };
@@ -278,7 +278,7 @@ describe("high-level taper", () => {
 
   test("a level-40 player's gains are halved at the grant", () => {
     const state = createGame(1);
-    const p0 = joinPlayer(state, { id: 0 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
     p0.level = 40;
     p0.xp = xpForLevel(40);
     grantXp(state, p0, 100);

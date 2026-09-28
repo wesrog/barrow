@@ -117,7 +117,7 @@ describe("capstone synergies", () => {
 describe("cleave", () => {
   test("hits every monster in reach and spends mana", () => {
     // Seed chosen so both 95%-capped hit rolls land; determinism keeps it stable.
-    const state = createGameOn(2, arena());
+    const state = createGameOn(3, arena());
     readyPlayer(state);
     learn(state, "cleave");
     const a = spawnAt(state, "skitter", { x: 2.2, y: 1.5 });

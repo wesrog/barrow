@@ -68,6 +68,7 @@ import {
   applyTalkNpcInput, applyAcceptQuestInput, applyTurnInQuestInput, npcSystem, questProgressSystem,
 } from "./systems/quests";
 import { npcWanderSystem } from "./systems/npcs";
+import { secretSystem } from "./systems/secrets";
 import { applySmashInput, breakSystem } from "./breakables";
 import { applyCharacter } from "./save";
 
@@ -76,6 +77,14 @@ export const TICK_RATE = 25;
 const PLAYER_SPEED = 4.5 / TICK_RATE; // cells per tick
 
 export { ensureDungeonFloor, ensureSurface } from "./world";
+
+/**
+ * Where every arriving player stands first: the camp on the moors, with the
+ * barrow's mouth a walk away. A dungeon zone here would drop them straight
+ * into the fight; the camp stays the checkpoint either way, so death and the
+ * stairs up lead there.
+ */
+export const START_ZONE: ZoneId = "surface";
 
 /** Move a player to a zone's spawn; clears path/targets/pendingStrike. */
 export function travel(state: GameState, p: Player, to: ZoneId): void {
@@ -334,6 +343,8 @@ export function joinPlayer(state: GameState, join: PlayerJoin): Player {
   };
   state.players.set(join.id, p);
   if (join.character) applyCharacter(state, join.id, join.character);
+  const start = join.start ?? START_ZONE;
+  if (start !== "surface") travel(state, p, start);
   state.events.push({ type: "player_joined", playerId: join.id });
   return p;
 }
@@ -419,6 +430,7 @@ export function step(state: GameState, frame: Frame): void {
     // Leaping and charging players neither walk nor trip floor triggers until they stop.
     const grounded = () => acting().filter((p) => !p.leap && !p.charge);
     movementSystem(grounded());
+    secretSystem(state, zone, grounded());
     regionSystem(state, zone, grounded());
     safeGroundArrivalSystem(state, zone, grounded());
     waypointSystem(state, zone, grounded());

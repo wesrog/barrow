@@ -1,7 +1,9 @@
 import { AREAS, type AreaDef, type AreaExit } from "./areas";
 import { DUNGEONS } from "./dungeons";
 import { mapFromStrings, type MapMarker, type ZoneMap } from "./map";
-import { NPCS, NPC_IDS } from "./npcs";
+import { buildingCentre, buildingInterior, buildingRing } from "./buildings";
+import { placeLandmarks } from "./landmarks";
+import { HUT_RADIUS, NPCS, NPC_IDS, hutRing } from "./npcs";
 import type { Rng } from "./rng";
 
 /** No monster pack lands within this many cells of an NPC's home — a cleared
@@ -24,6 +26,10 @@ export const MARKER_TYPES: Record<string, string> = {
   v: "veil_screamer",
   n: "crown_sentinel",
 };
+
+/** Cells of quiet ground between the palisade and the nearest monster pack, and the nearest landmark. */
+export const PACK_MARGIN = 6;
+export const LANDMARK_MARGIN = 10;
 
 /** The camp's display name — a region of the moors, not a zone of its own. */
 export const CAMP_TITLE = "The Camp";
@@ -221,16 +227,18 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
     if (n.dwelling !== "hut") continue;
     const nx = Math.floor(n.pos.x);
     const ny = Math.floor(n.pos.y);
-    const doorY = ny + (gate.y >= ny ? 2 : -2);
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== 2) continue;
-        const x = nx + dx;
-        const y = ny + dy;
-        if (x < 0 || x >= w || y < 0 || y >= h) continue;
-        cells[idx(x, y)] = x === nx && y === doorY ? 1 : 0;
-      }
+    const doorY = ny + (gate.y >= ny ? HUT_RADIUS : -HUT_RADIUS);
+    for (const { x, y } of hutRing(n.pos)) {
+      if (x < 0 || x >= w || y < 0 || y >= h) continue;
+      cells[idx(x, y)] = x === nx && y === doorY ? 1 : 0;
     }
+  }
+
+  // Buildings on safe ground: floor inside, walls on the ring, one door.
+  // Stamped with the huts, after every carve, for the same reason.
+  for (const b of def.buildings ?? []) {
+    for (const c of buildingInterior(b)) cells[idx(c.x, c.y)] = 1;
+    for (const c of buildingRing(b)) cells[idx(c.x, c.y)] = c.x === b.door[0] && c.y === b.door[1] ? 1 : 0;
   }
 
   // Seal off any pocket cut away from the trail network.
@@ -256,6 +264,7 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
   // or an NPC's clearing. The scatter retries until the full pack budget is
   // placed, so clearings shift packs elsewhere — they never shrink the count.
   const markers: MapMarker[] = fixed.map((m) => ({ ...m }));
+  for (const b of def.buildings ?? []) markers.push({ ch: b.ch, ...buildingCentre(b) });
   const taken = new Set<number>();
   const nearNpcHome = (x: number, y: number) =>
     npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING);
@@ -301,6 +310,8 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
     if (!reachable.has(key) || taken.has(key)) continue;
     if (inSafe(x + 0.5, y + 0.5)) continue;
     if (Math.hypot(x + 0.5 - def.spawn.x, y + 0.5 - def.spawn.y) < 10) continue;
+    // Nothing lurks right outside the palisade: the road out of the gate stays quiet.
+    if (safe && x >= safe.x0 - PACK_MARGIN && x < safe.x1 + PACK_MARGIN && y >= safe.y0 - PACK_MARGIN && y < safe.y1 + PACK_MARGIN) continue;
     if (nearNpcHome(x, y)) continue;
     taken.add(key);
     markers.push({
@@ -309,6 +320,23 @@ export function areaZone(rng: Rng, def: AreaDef, extraMarkers: MapMarker[] = [])
       y: y + 0.5,
     });
     placed++;
+  }
+
+  // Landmarks last, so their rolls come after everything the layout already
+  // had. Each keeps clear of the spawn, safe ground, NPC clearings, the exit
+  // mouths and every fixed feature, and walls its footprint only where the
+  // region stays connected.
+  if (def.landmarks) {
+    const mouths = def.exits.map((e) => exitMouth(def, e));
+    const keepClear = (x: number, y: number): boolean =>
+      Math.hypot(x + 0.5 - def.spawn.x, y + 0.5 - def.spawn.y) < 12 ||
+      (safe !== undefined && x >= safe.x0 - LANDMARK_MARGIN && x < safe.x1 + LANDMARK_MARGIN && y >= safe.y0 - LANDMARK_MARGIN && y < safe.y1 + LANDMARK_MARGIN) ||
+      npcHomes.some((n) => Math.hypot(x + 0.5 - n.pos.x, y + 0.5 - n.pos.y) < NPC_CLEARING + 4) ||
+      mouths.some((mo) => Math.hypot(x + 0.5 - mo.x, y + 0.5 - mo.y) < 8) ||
+      fixed.some((m) => Math.hypot(x + 0.5 - m.x, y + 0.5 - m.y) < 8);
+    markers.push(
+      ...placeLandmarks(rng, def.landmarks, { cells, width: w, height: h, reachable, taken, keepClear, spawnTable: def.spawnTable }, def.spawn),
+    );
   }
 
   return { width: w, height: h, cells, spawn: { ...def.spawn }, markers, camps: safe ? [{ ...safe }] : [] };

@@ -63,7 +63,7 @@ describe("quest tables", () => {
 describe("accept and turn in", () => {
   test("accept requires the giver in range and the chain satisfied", () => {
     const state = createGame(2);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     stepSolo(state, { acceptQuest: "moor_wights" }); // far from maren
     expect(p.quests.moor_wights).toBeUndefined();
     nearNpc(state, p, "maren");
@@ -76,7 +76,7 @@ describe("accept and turn in", () => {
 
   test("turn-in pays gold and xp and marks done", () => {
     const state = createGame(2);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     nearNpc(state, p, "maren");
     stepSolo(state, { acceptQuest: "moor_wights" });
     p.quests.moor_wights!.count = 8;
@@ -93,7 +93,7 @@ describe("accept and turn in", () => {
 
   test("item rewards land in the pack, or at the feet when it is full", () => {
     const state = createGame(2);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     deliverQuestReward(state, p, { item: { baseId: "hatchet", rarity: "magic" } });
     expect(p.inventory.entries.some((e) => e.item.baseId === "hatchet")).toBe(true);
     // Pack the grid solid with 1x1 potions, then reward again: it hits the floor.
@@ -107,7 +107,7 @@ describe("accept and turn in", () => {
 
   test("a promised unique reward is guaranteed even at level 1", () => {
     const state = createGame(2);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     expect(p.level).toBe(1);
     deliverQuestReward(state, p, QUESTS.barrow_lord.reward);
     const item = p.inventory.entries.find((e) => e.item.baseId === "grave_scythe");
@@ -118,8 +118,8 @@ describe("accept and turn in", () => {
 describe("objective progress off the event stream", () => {
   test("kill quests count party kills in your zone, not elsewhere", () => {
     const state = createGame(3);
-    const p0 = joinPlayer(state, { id: 0 });
-    const p1 = joinPlayer(state, { id: 1 });
+    const p0 = joinPlayer(state, { id: 0, start: "surface" });
+    const p1 = joinPlayer(state, { id: 1, start: "surface" });
     p0.quests.moor_wights = { stage: "active", count: 0 };
     p1.quests.moor_wights = { stage: "active", count: 0 };
     const surface = getZone(state, "surface");
@@ -135,7 +135,7 @@ describe("objective progress off the event stream", () => {
 
   test("kill counts cap at the objective and only tick while active", () => {
     const state = createGame(3);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.moor_wights = { stage: "active", count: 8 };
     const surface = getZone(state, "surface");
     const m = spawnMonster(state, surface, "shambler", { x: p.pos.x + 1, y: p.pos.y });
@@ -146,7 +146,7 @@ describe("objective progress off the event stream", () => {
 
   test("reach objectives complete from where the player stands", () => {
     const state = createGame(3);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.find_redfen = { stage: "active", count: 0 };
     p.pos = { x: 64.5, y: 45.5 }; // inside the redfen boundary
     p.region = "redfen"; // as regionSystem would stamp on crossing
@@ -156,7 +156,7 @@ describe("objective progress off the event stream", () => {
 
   test("talk objectives complete on npc_talk", () => {
     const state = createGame(3);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.meet_betha = { stage: "active", count: 0 };
     nearNpc(state, p, "betha");
     const betha = [...getZone(state, "surface").npcs.values()].find((n) => n.npcId === "betha")!;
@@ -167,7 +167,7 @@ describe("objective progress off the event stream", () => {
 
   test("active collect quests make matching kills drop the quest item", () => {
     const state = createGame(4);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.grave_moss = { stage: "active", count: 0 };
     const surface = getZone(state, "surface");
     // chance is 0.5 — kill until one drops; bounded so a broken roll fails loudly
@@ -183,7 +183,7 @@ describe("objective progress off the event stream", () => {
 
   test("no quest, no moss — and a full collection stops dropping more", () => {
     const state = createGame(4);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     const surface = getZone(state, "surface");
     for (let i = 0; i < 40; i++) {
       const m = spawnMonster(state, surface, "shambler", { x: p.pos.x + 2, y: p.pos.y });
@@ -195,7 +195,7 @@ describe("objective progress off the event stream", () => {
 
   test("quest items cannot be sold or equipped and are worth nothing", () => {
     const state = createGame(4);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     const item = rollItem(state.rng, "grave_moss", 1, "normal");
     expect(itemValue(item)).toBe(0);
     placeItem(p.inventory, state.nextId++, item);
@@ -213,7 +213,7 @@ describe("objective progress off the event stream", () => {
 describe("campaign", () => {
   test("the campaign runs start to finish through inputs alone", () => {
     const state = createGame(9);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     const surface = getZone(state, "surface");
     const entity = (npcId: string) => [...surface.npcs.values()].find((n) => n.npcId === npcId)!;
     const talkAt = (npcId: string) => {
@@ -341,7 +341,7 @@ describe("campaign", () => {
 describe("save round-trip", () => {
   test("quest progress survives a save round-trip; junk is shed", () => {
     const state = createGame(6);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.moor_wights = { stage: "done", count: 8 };
     p.quests.grave_moss = { stage: "active", count: 0 };
     const raw = serializeCharacter(state, 0);
@@ -358,7 +358,7 @@ describe("save round-trip", () => {
       },
     });
     const state2 = createGame(6);
-    const p2 = joinPlayer(state2, { id: 0 });
+    const p2 = joinPlayer(state2, { id: 0, start: "surface" });
     expect(applyCharacter(state2, 0, tampered)).toBe(true);
     expect(p2.quests.moor_wights).toEqual({ stage: "done", count: 8 });
     expect(p2.quests.grave_moss).toBeUndefined(); // bad stage: dropped, restartable
@@ -369,11 +369,11 @@ describe("save round-trip", () => {
 
   test("a save from before shields loads with an empty shield slot", () => {
     const state = createGame(6);
-    joinPlayer(state, { id: 0 });
+    joinPlayer(state, { id: 0, start: "surface" });
     const raw = JSON.parse(serializeCharacter(state, 0));
     delete raw.equipment.shield; // pre-shield builds never wrote the key
     const state2 = createGame(6);
-    const p2 = joinPlayer(state2, { id: 0 });
+    const p2 = joinPlayer(state2, { id: 0, start: "surface" });
     expect(applyCharacter(state2, 0, JSON.stringify(raw))).toBe(true);
     expect(p2.equipment.shield).toBeNull();
   });
@@ -382,7 +382,7 @@ describe("save round-trip", () => {
 describe("champion-kill quests", () => {
   test("champion-kill objectives ignore ordinary kills of the same type", () => {
     const state = createGame(1);
-    const p = joinPlayer(state, { id: 0 });
+    const p = joinPlayer(state, { id: 0, start: "surface" });
     p.quests.fen_hollow_depths = { stage: "active", count: 0 };
     travel(state, p, "dungeon:fen_hollow:2");
     const zone = getZone(state, "dungeon:fen_hollow:2");

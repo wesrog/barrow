@@ -2,18 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { createRng } from "./rng";
 import { generateDungeonFloor } from "./dungeon-gen";
 import { DUNGEONS, DUNGEON_ORDER, DUNGEON_STYLES } from "./dungeons";
-import { isWalkable, type ZoneMap } from "./map";
+import { isSecret, isWalkable, type ZoneMap } from "./map";
 
-/** Flood-fill from spawn; returns the set of reachable cell keys "x,y". */
-function reachableFrom(map: ZoneMap): Set<string> {
+/** Flood-fill from spawn; returns the set of reachable cell keys "x,y".
+ * Secret runs count as open when asked, since a player walking past opens them. */
+function reachableFrom(map: ZoneMap, throughSecrets = false): Set<string> {
   const seen = new Set<string>();
   const queue = [{ x: Math.floor(map.spawn.x), y: Math.floor(map.spawn.y) }];
   seen.add(`${queue[0]!.x},${queue[0]!.y}`);
+  const open = (x: number, y: number) => isWalkable(map, x, y) || (throughSecrets && isSecret(map, x, y));
   while (queue.length > 0) {
     const { x, y } = queue.pop()!;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const k = `${x + dx},${y + dy}`;
-      if (seen.has(k) || !isWalkable(map, x + dx, y + dy)) continue;
+      if (seen.has(k) || !open(x + dx, y + dy)) continue;
       seen.add(k);
       queue.push({ x: x + dx, y: y + dy });
     }
@@ -31,7 +33,7 @@ describe("generateDungeonFloor", () => {
           const style = DUNGEON_STYLES[def.style];
           expect(map.width).toBe(style.width);
           expect(map.height).toBe(style.height);
-          const reach = reachableFrom(map);
+          const reach = reachableFrom(map, true);
           const chars = map.markers.map((m) => m.ch);
           expect(chars).toContain("<");
           if (floor < def.floors) {
@@ -45,6 +47,13 @@ describe("generateDungeonFloor", () => {
           for (const m of map.markers) {
             expect(reach.has(`${Math.floor(m.x)},${Math.floor(m.y)}`)).toBe(true);
           }
+          // Everything but the hidden runs is reachable without opening them.
+          const plain = reachableFrom(map);
+          for (const m of map.markers) {
+            const onSecret = isSecret(map, Math.floor(m.x), Math.floor(m.y));
+            if (!onSecret) expect(plain.has(`${Math.floor(m.x)},${Math.floor(m.y)}`)).toBe(true);
+          }
+          if (style.halls.count > 0) expect(chars.filter((c) => c === "R").length).toBeGreaterThan(0);
           // Spawn is walkable and beside the up-stairs, not on them.
           const up = map.markers.find((m) => m.ch === "<")!;
           expect(isWalkable(map, Math.floor(map.spawn.x), Math.floor(map.spawn.y))).toBe(true);
@@ -66,7 +75,9 @@ describe("generateDungeonFloor", () => {
     const def = DUNGEONS.barrow;
     const map = generateDungeonFloor(createRng(3), def, 1);
     const packs = map.markers.filter((m) => def.spawnTable.includes(m.ch));
+    const style = DUNGEON_STYLES[def.style];
     expect(packs.length).toBeGreaterThan(0);
-    expect(packs.length).toBeLessThanOrEqual(DUNGEON_STYLES[def.style].packs);
+    // The roaming budget, plus each hall's crowd and the ritual circle's three.
+    expect(packs.length).toBeLessThanOrEqual(style.packs + style.halls.count * style.halls.pack + 3);
   });
 });

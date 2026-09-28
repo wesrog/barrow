@@ -1,3 +1,5 @@
+import { buildingRing } from "./buildings";
+import { PACK_MARGIN } from "./zone";
 import { describe, expect, test } from "bun:test";
 import { AREAS, isAreaId } from "./areas";
 import { areaZone } from "./zone";
@@ -138,19 +140,27 @@ describe("organic landmass", () => {
           expect(fraction).toBeLessThan(0.75);
         });
 
-        test(`seed ${seed}: safe ground interior is all floor, monster packs outside it`, () => {
+        test(`seed ${seed}: safe ground interior is all floor but building walls, monster packs outside it`, () => {
           const safe = def.safe;
           if (!safe) return; // wild regions have no safe ground at all
           const map = areaZone(createRng(seed), def);
+          const walls = new Set(
+            (def.buildings ?? []).flatMap((b) =>
+              buildingRing(b)
+                .filter((c) => c.x !== b.door[0] || c.y !== b.door[1])
+                .map((c) => c.y * map.width + c.x),
+            ),
+          );
           for (let y = safe.y0; y < safe.y1; y++) {
             for (let x = safe.x0; x < safe.x1; x++) {
-              expect(map.cells[y * map.width + x]).toBe(1);
+              expect(map.cells[y * map.width + x]).toBe(walls.has(y * map.width + x) ? 0 : 1);
             }
           }
           for (const m of map.markers) {
             if (!def.spawnTable.includes(m.ch)) continue;
-            const inSafe = m.x >= safe.x0 && m.x < safe.x1 && m.y >= safe.y0 && m.y < safe.y1;
-            expect(inSafe).toBe(false);
+            const nearSafe =
+              m.x >= safe.x0 - PACK_MARGIN && m.x < safe.x1 + PACK_MARGIN && m.y >= safe.y0 - PACK_MARGIN && m.y < safe.y1 + PACK_MARGIN;
+            expect(nearSafe).toBe(false);
           }
         });
       }

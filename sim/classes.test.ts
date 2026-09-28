@@ -236,7 +236,7 @@ describe("blink", () => {
 });
 
 describe("character saves with identity", () => {
-  test("a fresh witch save applies name, class, stats, and a staff", () => {
+  test("a fresh witch save applies name, class, stats, and a wand", () => {
     const state = createGameOn(1, arena());
     const ok = applyCharacter(state, 0, newCharacterRaw("Mira", "witch"));
     expect(ok).toBe(true);
@@ -244,7 +244,7 @@ describe("character saves with identity", () => {
     expect(p.name).toBe("Mira");
     expect(p.klass).toBe("witch");
     expect(p.maxMana).toBe(CLASS_STATS.witch.maxMana);
-    expect(p.equipment.weapon?.baseId).toBe("gnarled_staff");
+    expect(p.equipment.weapon?.baseId).toBe("bone_wand");
   });
 
   test("serialize round-trips name and class", () => {

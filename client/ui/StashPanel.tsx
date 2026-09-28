@@ -2,26 +2,13 @@ import { localPlayer } from "../local";
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { STASH_H, STASH_W } from "../../sim/character";
-import { BASES, potionKind } from "../../sim/items/bases";
+import { BASES } from "../../sim/items/bases";
 import type { Item } from "../../sim/items/generate";
 import type { GameState } from "../../sim/state";
-import { ItemHoverDetail, RARITY_CSS } from "./ItemHoverDetail";
-import { ItemIcon } from "./ItemIcon";
+import { ItemHoverDetail } from "./ItemHoverDetail";
+import { CELL, ItemSlot } from "./ItemSlot";
 import { PanelChrome } from "./PanelChrome";
 import { SortButton } from "./SortButton";
-
-const CELL = 32;
-
-// Potion icons tint by what they restore, not rarity (mirrors InventoryPanel).
-const POTION_CSS: Record<"health" | "mana", string> = {
-  health: "#d05c5c",
-  mana: "#6b8fe8",
-};
-
-function iconColor(item: Item): string {
-  const kind = potionKind(item.baseId);
-  return kind ? POTION_CSS[kind] : RARITY_CSS[item.rarity]!;
-}
 
 const panelStyle: CSSProperties = {
   position: "absolute",
@@ -79,18 +66,20 @@ export function StashPanel({
           width: STASH_W * CELL,
           height: STASH_H * CELL,
           background:
-            "repeating-linear-gradient(0deg, #201d26 0 1px, transparent 1px 32px)," +
-            "repeating-linear-gradient(90deg, #201d26 0 1px, transparent 1px 32px)," +
+            `repeating-linear-gradient(0deg, #201d26 0 1px, transparent 1px ${CELL}px),` +
+            `repeating-linear-gradient(90deg, #201d26 0 1px, transparent 1px ${CELL}px),` +
             "#16141a",
           border: "1px solid #2c2833",
         }}
       >
         {p.stash.entries.map((e) => {
           const base = BASES[e.item.baseId]!;
-          const color = RARITY_CSS[e.item.rarity]!;
           return (
-            <div
+            <ItemSlot
               key={e.id}
+              item={e.item}
+              width={base.w * CELL - 2}
+              height={base.h * CELL - 2}
               onClick={() => {
                 setHovered(null);
                 onTake(e.id);
@@ -98,27 +87,8 @@ export function StashPanel({
               onMouseEnter={() => setHovered(e.item)}
               onMouseLeave={() => setHovered(null)}
               title="click to take back"
-              style={{
-                position: "absolute",
-                left: e.x * CELL + 1,
-                top: e.y * CELL + 1,
-                width: base.w * CELL - 3,
-                height: base.h * CELL - 3,
-                background: "rgba(38,34,46,.9)",
-                border: `1px solid ${color}`,
-                borderRadius: 2,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <ItemIcon
-                baseId={e.item.baseId}
-                color={iconColor(e.item)}
-                size={Math.min(base.w, base.h) * CELL - 8}
-              />
-            </div>
+              style={{ position: "absolute", left: e.x * CELL + 1, top: e.y * CELL + 1, cursor: "pointer" }}
+            />
           );
         })}
       </div>

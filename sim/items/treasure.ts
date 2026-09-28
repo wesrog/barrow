@@ -120,11 +120,16 @@ export function rollDrop(rng: Rng, tcId: string, mlvl: number, opts: DropOpts = 
   const tc = TREASURE_CLASSES[tcId];
   if (!tc) throw new Error(`unknown treasure class: ${tcId}`);
 
-  // Filter each entry to bases the monster level can drop.
+  // Filter each entry to bases the monster level can drop. A rarity floor
+  // means gear: potions and quest items have no rarity to raise.
+  const gearOnly = opts.minRarity !== undefined;
   const entries = tc.entries
     .map((e) => ({
       weight: e.weight,
-      baseIds: e.baseIds.filter((id) => BASES[id]!.levelReq <= mlvl),
+      baseIds: e.baseIds.filter((id) => {
+        const base = BASES[id]!;
+        return base.levelReq <= mlvl && (!gearOnly || (base.slot !== "potion" && base.slot !== "quest"));
+      }),
     }))
     .filter((e) => e.baseIds.length > 0);
 

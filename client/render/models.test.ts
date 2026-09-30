@@ -72,7 +72,30 @@ describe("instantiateKit", () => {
   });
 });
 
-import { makeHeroModelRig } from "./modelRigs";
+import { makeHeroModelRig, monsterAttackClips, ONE_HANDED_SWINGS, TWO_HANDED_SWINGS, UNARMED_SWINGS } from "./modelRigs";
+import type { ClipId } from "./rigSpec";
+
+/** Over many swings: every pick is from the pool, all of it shows up, and none repeats the one before. */
+function expectVaried(next: () => ClipId, pool: readonly ClipId[]): void {
+  const seen = new Set<ClipId>();
+  let last: ClipId | null = null;
+  for (let i = 0; i < 60; i++) {
+    const clip = next();
+    expect(pool).toContain(clip);
+    expect(clip).not.toBe(last);
+    seen.add(clip);
+    last = clip;
+  }
+  expect(seen.size).toBe(pool.length);
+}
+
+describe("monster swings", () => {
+  test("armed monsters have several swings to vary between", () => {
+    expect(monsterAttackClips("shambler").length).toBeGreaterThan(1);
+    expect(monsterAttackClips("cairn_wight").length).toBeGreaterThan(1);
+    expect(monsterAttackClips("gravespit")).toEqual(["cast"]);
+  });
+});
 import type { GameAssets } from "./models";
 import type { Item } from "../../sim/items/generate";
 
@@ -160,19 +183,19 @@ describe("Synty hero", () => {
     expect(mantle.position.y).toBeCloseTo(0.2);
     expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    // Every weapon takes the flat one-handed slice unless its row says otherwise.
-    expect(hero.attackClip()).toBe("attack1h");
+    // One-handers draw from their pool of swings and never repeat one back to back.
+    expectVaried(() => hero.attackClip(), ONE_HANDED_SWINGS);
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
-    // Two-handers included.
-    expect(hero.attackClip()).toBe("attack1h");
+    // Two-handers sweep and thrust with both hands on the haft.
+    expectVaried(() => hero.attackClip(), TWO_HANDED_SWINGS);
     // A two-hander hides the shield even though the slot still holds one.
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();
 
     hero.setEquipment(BARE);
-    // Bare hands throw a punch.
-    expect(hero.attackClip()).toBe("attackUnarmed");
+    // Bare hands punch with either fist or kick.
+    expectVaried(() => hero.attackClip(), UNARMED_SWINGS);
     expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
   });
 
@@ -204,6 +227,100 @@ describe("Synty hero", () => {
     const hero = makeHeroModelRig(assets, "warrior");
     expect(hero.currentClip()).toBe("Idle");
     expect(hero.clipNames()).toContain("Run_F");
+  });
+
+  test("stands in a two-handed guard while holding a two-handed melee weapon", () => {
+    const assets = fakeHeroAssets();
+    const tracks = ["Root", "Hips", "Head"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "2H_Melee_Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    const settle = (speed = 0) => {
+      for (let t = 0; t < 10; t++) hero.animate(1000 + t * 50, 0, speed);
+    };
+    hero.setEquipment({ ...BARE, weapon: gearItem("war_maul") });
+    settle();
+    expect(hero.currentClip()).toBe("2H_Melee_Idle");
+    // Running swings the arms with the legs whatever is held.
+    settle(4.5);
+    expect(hero.currentClip()).toBe("Running_B");
+    hero.setEquipment({ ...BARE, weapon: gearItem("rusted_blade") });
+    settle();
+    expect(hero.currentClip()).toBe("Idle");
+  });
+
+  test("runs leaning in with the arms tucked, and stands straight again", () => {
+    const assets = fakeHeroAssets();
+    const tracks = ["Root", "Hips", "Head", "Shoulder_L", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    // Arms straight out to the sides, hands one unit past the shoulders.
+    const handL = hero.group.getObjectByName("Hand_L")!;
+    const handR = hero.group.getObjectByName("Hand_R")!;
+    hero.group.getObjectByName("Shoulder_L")!.position.x = 0.2;
+    hero.group.getObjectByName("Shoulder_R")!.position.x = -0.2;
+    handL.position.x = 1;
+    handR.position.x = -1;
+    hero.group.getObjectByName("Head")!.position.y = 0.5;
+    let now = 1000;
+    const heights = (speed: number) => {
+      for (let t = 0; t < 20; t++) hero.animate((now += 50), 0, speed);
+      hero.group.updateMatrixWorld(true);
+      const shoulder = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3()).y;
+      return [handL.getWorldPosition(new THREE.Vector3()).y - shoulder, handR.getWorldPosition(new THREE.Vector3()).y - shoulder];
+    };
+    const [runL, runR] = heights(4.5);
+    expect(hero.currentClip()).toBe("Running_B");
+    // Both hands drop the same way (22 degrees over a one-unit arm, at the hero's scale).
+    expect(runL).toBeLessThan(-0.2);
+    expect(runR).toBeCloseTo(runL);
+    // Many frames in, the turn has not piled up.
+    expect(heights(4.5)[0]).toBeCloseTo(runL);
+    // The chest leans into the stride, carrying the head out ahead of the hips; the head tips back up part way.
+    const hips = hero.group.getObjectByName("Hips")!.getWorldPosition(new THREE.Vector3());
+    expect(hero.group.getObjectByName("Head")!.getWorldPosition(new THREE.Vector3()).z).toBeGreaterThan(hips.z + 0.01);
+    const tilt = (name: string) => new THREE.Vector3(0, 1, 0).applyQuaternion(hero.group.getObjectByName(name)!.getWorldQuaternion(new THREE.Quaternion())).z;
+    expect(tilt("Spine_02")).toBeGreaterThan(0.2);
+    expect(tilt("Head")).toBeLessThan(tilt("Spine_02"));
+    // And the arms come a little forward of the shoulders rather than straight out.
+    const shoulderZ = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3()).z;
+    expect(handL.getWorldPosition(new THREE.Vector3()).z).toBeGreaterThan(shoulderZ);
+    const [idleL] = heights(0);
+    expect(idleL).toBeCloseTo(0);
+    expect(tilt("Spine_02")).toBeCloseTo(0);
+  });
+
+  test("shortens a run's backswing: an elbow thrown behind the back comes partway forward", () => {
+    const assets = fakeHeroAssets();
+    const still = [0, 0, 0, 1, 0, 0, 0, 1];
+    // The left arm swung back and out: +X (its rest direction) turned 60 degrees toward -Z.
+    const back = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 3).toArray();
+    const tracks = [
+      ...["Root", "Hips", "Head", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], still)),
+      new THREE.QuaternionKeyframeTrack("Shoulder_L.quaternion", [0, 1], [...back, ...back]),
+    ];
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    hero.group.getObjectByName("Hand_L")!.position.x = 1;
+    let now = 1000;
+    for (let t = 0; t < 20; t++) hero.animate((now += 50), 0, 4.5);
+    hero.group.updateMatrixWorld(true);
+    const shoulder = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3());
+    const arm = hero.group.getObjectByName("Hand_L")!.getWorldPosition(new THREE.Vector3()).sub(shoulder);
+    // As swung, 0.87 of the arm's length is behind the shoulder; well under that now, and still behind.
+    expect(arm.z / arm.length()).toBeGreaterThan(-0.8);
+    expect(arm.z).toBeLessThan(0);
+    // Behind the back the tuck mostly lets go (the full 22 degrees would leave 0.46 of the length out
+    // to the side), so the elbow stays out beside the hip rather than crossing in over it.
+    expect(arm.x / arm.length()).toBeGreaterThan(0.49);
   });
 
   test("says which kit is missing instead of drawing nothing", () => {

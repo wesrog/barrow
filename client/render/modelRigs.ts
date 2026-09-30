@@ -14,6 +14,7 @@ import {
 } from "./models";
 import { applyGripAdjust, captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement, type GripAdjust } from "./gear";
 import {
+  gaitSpeedRef,
   SYNTY_DUNGEON_RIG,
   SYNTY_GOBLIN_RIG,
   SYNTY_HUMAN_RIG,
@@ -44,6 +45,8 @@ export interface ModelRig extends Rig {
   currentClip(): string | null;
   /** Every clip name this rig can play. */
   clipNames(): string[];
+  /** One swing from a pool, never the one this rig picked last, so strings of attacks vary. */
+  pick(pool: readonly ClipId[]): ClipId;
   /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
   footfall?: () => void;
   /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms),
@@ -59,7 +62,7 @@ export interface HeroModelRig extends ModelRig {
    * points off the body's facing, so the scene can turn the body until the barrel lines up
    * with the shot. Null otherwise. */
   aimOffset(): number | null;
-  /** Clip for a basic attack with the current weapon. */
+  /** Clip for a basic attack with the current weapon: a different swing from the last where it has several. */
   attackClip(): ClipId;
 }
 
@@ -81,6 +84,14 @@ function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.07): voi
   });
 }
 
+/** An arm the gait repose moves: its upper bone, elbow (the child toward the hand) and hand; side +1 left. */
+interface PosedArm {
+  upper: THREE.Object3D;
+  elbow: THREE.Object3D;
+  hand: THREE.Object3D;
+  side: number;
+}
+
 class AnimRig implements ModelRig {
   group: THREE.Group;
   readonly family: RigFamily;
@@ -92,6 +103,23 @@ class AnimRig implements ModelRig {
   private stance: { name: string; until: number; from: number } | null = null;
   private idleName: string | undefined;
   private walkName: string | undefined;
+  /** Cells per second at which the gait clip plays at 1x. */
+  private walkRef: number;
+  /** How the gait is reposed on top of the clip (angles in radians), or null for as authored. */
+  private walkPose: { lean: number; headUp: number; elbowBend: number; tuck: number; forward: number; easeBack: number; tuckBehind: number } | null;
+  /** The bones the repose moves, with the clip's own local rotations saved while it is applied,
+   * so the next update starts clean. */
+  private posed: {
+    chest: THREE.Object3D | null;
+    head: THREE.Object3D | null;
+    arms: PosedArm[];
+    saved: Map<THREE.Object3D, THREE.Quaternion>;
+  } | null = null;
+  private static readonly bodyQ = new THREE.Quaternion();
+  private static readonly tmpQ = new THREE.Quaternion();
+  private static readonly handQ = new THREE.Quaternion();
+  private static readonly reachTmp = new THREE.Vector3();
+  private static readonly shoulderTmp = new THREE.Vector3();
   footfall?: () => void;
   /** Footfall detection: each shin's last world height and direction of travel. */
   private feet: { bone: THREE.Object3D; y: number; dy: number }[] | null = null;
@@ -105,7 +133,39 @@ class AnimRig implements ModelRig {
     this.idleName = this.clipName(idle) ?? this.clipName("idle");
     // A family without the requested gait walks normally rather than freezing.
     this.walkName = this.clipName(walk) ?? this.clipName("walk");
+    const gait = this.clipName(walk) ? walk : "walk";
+    this.walkRef = gaitSpeedRef(spec, gait);
+    const pose = spec.gaitPose?.[gait];
+    const rad = THREE.MathUtils.degToRad;
+    this.walkPose = pose
+      ? {
+          lean: rad(pose.lean ?? 0),
+          headUp: pose.headUp ?? 0,
+          elbowBend: rad(pose.elbowBend ?? 0),
+          tuck: rad(pose.tuck ?? 0),
+          forward: rad(pose.forward ?? 0),
+          easeBack: pose.easeBack ?? 0,
+          tuckBehind: pose.tuckBehind ?? 1,
+        }
+      : null;
     if (this.idleName) this.play(this.idleName);
+  }
+
+  private lastPick: ClipId | null = null;
+
+  pick(pool: readonly ClipId[]): ClipId {
+    const fresh = pool.length > 1 ? pool.filter((c) => c !== this.lastPick) : pool;
+    // Prefer swings this rig can actually play; a missing one would stand still.
+    const playable = fresh.filter((c) => this.clipName(c));
+    const from = playable.length > 0 ? playable : fresh;
+    const clip = from[Math.floor(Math.random() * from.length)]!;
+    this.lastPick = clip;
+    return clip;
+  }
+
+  /** Stand in another idle from now on (a two-handed guard); the next still frame fades to it. */
+  setIdle(idle: ClipId): void {
+    this.idleName = this.clipName(idle) ?? this.clipName("idle");
   }
 
   /** The first name for a semantic clip that this instance actually has. */
@@ -191,13 +251,108 @@ class AnimRig implements ModelRig {
         if (action && action.time < this.stance.from) action.time = this.stance.from;
       } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
-        if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));
+        if (action) action.timeScale = Math.max(0.6, Math.min(3, speed / this.walkRef));
       } else if (this.idleName) {
         this.play(this.idleName);
       }
     }
+    this.restorePose();
     this.inst.mixer.update(dt);
+    this.reposeGait();
     if (this.footfall) this.trackFootfalls(speed);
+  }
+
+  /** Turn a bone by a world-space rotation: world' = turn * world, so local' = parentWorld^-1 * turn * parentWorld * local. */
+  private static turnInWorld(bone: THREE.Object3D, turn: THREE.Quaternion): void {
+    const parentQ = bone.parent ? bone.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
+    bone.quaternion.premultiply(parentQ.clone().invert().multiply(turn).multiply(parentQ));
+    bone.updateWorldMatrix(false, true);
+  }
+
+  /** A rotation about one of the body's own axes (the character group's), as a world-space turn. */
+  private static bodyTurn(x: number, y: number, z: number, angle: number): THREE.Quaternion {
+    return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(x, y, z).applyQuaternion(AnimRig.bodyQ), angle);
+  }
+
+  /**
+   * Repose the body while the gait plays, as much as its clip is weighted in
+   * (fading with it into a swing or the idle). The chest pitches forward into
+   * the stride and the head takes some of that back. The upper arms turn in
+   * toward the body about its forward axis and are carried forward about its
+   * side axis, a set amount plus a share of however far the elbow swings
+   * behind the shoulder; the in-turn lets go as the arm goes back, so the
+   * elbow passes beside the hip. The hands keep the clip's rotation relative
+   * to the leaning body, then the forearms bend up at the elbow and carry the
+   * fists (and what they hold) up with them. The mixer skips writing a bone
+   * whose value has not changed, so the clip's rotations are put back before
+   * each update (restorePose) rather than trusted to be rewritten.
+   */
+  private reposeGait(): void {
+    const pose = this.walkPose;
+    if (!pose || !this.walkName) return;
+    const walk = this.inst.actions.get(this.walkName);
+    // A faded-out action keeps its last weight once the mixer drops it; only a running one counts.
+    const weight = walk?.isRunning() ? walk.getEffectiveWeight() : 0;
+    if (weight <= 0) return;
+    if (!this.posed) {
+      const arms: PosedArm[] = [];
+      for (const [upperRole, handRole, side] of [["upperArmL", "handL", 1], ["upperArmR", "handR", -1]] as const) {
+        const upper = this.bone(upperRole);
+        const hand = this.bone(handRole);
+        if (!upper || !hand) continue;
+        // The elbow: the bone below the upper arm on the way to the hand.
+        let elbow: THREE.Object3D = hand;
+        while (elbow.parent && elbow.parent !== upper) elbow = elbow.parent;
+        if (elbow.parent !== upper) continue;
+        arms.push({ upper, elbow, hand, side });
+      }
+      this.posed = { chest: this.bone("chest"), head: this.bone("head"), arms, saved: new Map() };
+    }
+    const { chest, head, arms, saved } = this.posed;
+    const save = (bone: THREE.Object3D) => {
+      if (!saved.has(bone)) saved.set(bone, bone.quaternion.clone());
+    };
+    this.group.updateWorldMatrix(true, true);
+    this.group.getWorldQuaternion(AnimRig.bodyQ);
+    // About the side (+X) axis a positive turn tips an upright bone forward, a hanging one back.
+    if (chest && pose.lean !== 0) {
+      save(chest);
+      AnimRig.turnInWorld(chest, AnimRig.bodyTurn(1, 0, 0, pose.lean * weight));
+      if (head && pose.headUp !== 0) {
+        save(head);
+        AnimRig.turnInWorld(head, AnimRig.bodyTurn(1, 0, 0, -pose.lean * pose.headUp * weight));
+      }
+    }
+    for (const arm of arms) {
+      if (!arm.upper.parent) continue;
+      save(arm.upper);
+      save(arm.hand);
+      arm.hand.getWorldQuaternion(AnimRig.handQ);
+      // How far the elbow swings behind the shoulder, in the body's frame (positive: forward).
+      const reach = arm.elbow.getWorldPosition(AnimRig.reachTmp).sub(arm.upper.getWorldPosition(AnimRig.shoulderTmp));
+      reach.applyQuaternion(AnimRig.tmpQ.copy(AnimRig.bodyQ).invert());
+      const behind = Math.max(0, -Math.atan2(reach.z, -reach.y));
+      const forward = pose.forward + pose.easeBack * behind;
+      // The tuck lets go as the elbow goes back, down to its `tuckBehind` share 45 degrees behind.
+      const tuck = pose.tuck * THREE.MathUtils.lerp(1, pose.tuckBehind, Math.min(1, behind / (Math.PI / 4)));
+      // In toward the body about its forward (+Z) axis (a negative turn takes the left arm, +X,
+      // down; a positive one the right), then forward about its side axis.
+      const turn = AnimRig.bodyTurn(0, 0, 1, -arm.side * tuck * weight).premultiply(AnimRig.bodyTurn(1, 0, 0, -forward * weight));
+      AnimRig.turnInWorld(arm.upper, turn);
+      // Give the hand back its world rotation from the clip (the lean included).
+      const handParentQ = arm.hand.parent!.getWorldQuaternion(new THREE.Quaternion());
+      arm.hand.quaternion.copy(handParentQ.invert().multiply(AnimRig.handQ));
+      if (pose.elbowBend !== 0) {
+        save(arm.elbow);
+        AnimRig.turnInWorld(arm.elbow, AnimRig.bodyTurn(1, 0, 0, -pose.elbowBend * weight));
+      }
+    }
+  }
+
+  private restorePose(): void {
+    if (!this.posed) return;
+    for (const [bone, q] of this.posed.saved) bone.quaternion.copy(q);
+    this.posed.saved.clear();
   }
 
   /**
@@ -258,6 +413,11 @@ function makeOrbModel(): THREE.Group {
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
+
+/** Swing pools: attacks draw from these so a fight doesn't loop one motion. */
+export const ONE_HANDED_SWINGS: readonly ClipId[] = ["attack1h", "attackDiagonal1h", "attackChop1h"];
+export const TWO_HANDED_SWINGS: readonly ClipId[] = ["attackSlice", "attackStab2h"];
+export const UNARMED_SWINGS: readonly ClipId[] = ["attackUnarmed", "attackUnarmedB", "attackKick"];
 
 /** Shared by both hero families: rarity glow on held weapons is a touch stronger than on armor. */
 const WEAPON_GLOW = 0.08;
@@ -499,13 +659,17 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       const look = SYNTY_WEAPONS[eq.weapon.baseId] ?? SYNTY_WEAPONS.rusted_blade!;
       twoHanded = look.twoHanded;
       swing = look.swing ?? "slice";
-      const model = heldModel(kits, look.kit, look.node);
+      // A two-handed melee weapon rests across the body with both hands on the haft;
+      // the crossbow keeps the plain idle its resting seat was tuned in.
+      rig.setIdle(twoHanded && swing !== "shoot" ? "idle2h" : "idle");
+      const slot = look.hand === "l" ? "l" : "r";
+      // Rolled so the edge leads the swing; the crossbow keeps the roll its tuned seat was set on.
+      const model = heldModel(kits, look.kit, look.node, look.adjust ? undefined : slot);
       if (model) {
         // The wrapper holds one upright model; lifting it moves the grip down the shaft.
         if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
-      const slot = look.hand === "l" ? "l" : "r";
       rig.attach(slot, model);
       if (slot === "l") rig.attach("r", null);
       held = model
@@ -515,14 +679,19 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       twoHanded = false;
       held = null;
       rig.attach("r", null);
+      rig.setIdle("idle");
     }
   };
-  // Every armed swing is the flat one-handed slice, two-handers included
-  // (the two-handed chop read as a windmill on the Viking), unless a weapon's
-  // row asks for the chop; bare hands throw a punch. Skills pick their own
-  // clips.
-  hero.attackClip = () =>
-    !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  // Each weapon kind has a pool of swings and never repeats one back to back:
+  // one-handers slice flat, cut diagonally and chop; two-handers sweep and
+  // thrust from their guard (the two-handed chop read as a windmill on the
+  // Viking, so it stays out); bare hands punch with either fist or kick.
+  // Skills pick their own clips.
+  hero.attackClip = () => {
+    if (!armed) return rig.pick(UNARMED_SWINGS);
+    if (swing === "shoot") return "shoot";
+    return rig.pick(twoHanded ? TWO_HANDED_SWINGS : ONE_HANDED_SWINGS);
+  };
   const axis = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   hero.aimOffset = () => {
@@ -625,16 +794,17 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   if (!inst) throw new Error(`Monster "${typeId}" needs the ${look.kit} kit and a clip kit; run bun run assets:synty.`);
   const rig = new AnimRig(inst, RIG_SPECS[look.rig], look.idle, look.walk);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[look.rig], look.weapon));
+  if (look.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[look.rig], look.weapon, "r"));
   if (look.tint !== undefined) tintRig(rig.group, look.tint);
   return rig;
 }
 
-/** Attack clip for a monster swing. */
-export function monsterAttackClip(typeId: string): ClipId {
-  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer") return "cast";
-  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel") return "attackSlice";
+/** The swings a monster type draws from; its rig picks one, never the last. */
+export function monsterAttackClips(typeId: string): readonly ClipId[] {
+  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer") return ["cast"];
+  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel") return TWO_HANDED_SWINGS;
+  // Beasts and brutes claw and pound with both fists; no kicks.
   if (typeId === "skitter" || typeId === "fen_howler" || typeId === "cinder_shade" || typeId === "ember_hulk")
-    return "attackUnarmed";
-  return "slash";
+    return ["attackUnarmed", "attackUnarmedB"];
+  return ["slash", "attackDiagonal1h", "attackChop1h"];
 }

@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { CLIP_KITS, MONSTER_LOOKS, WEAPON_KITS } from "./modelRigs";
 import { KIT_URLS, type KitName } from "./models";
-import { SYNTY_DUNGEON_RIG, SYNTY_GOBLIN_RIG, SYNTY_HUMAN_RIG, type ClipId, type RigSpec } from "./rigSpec";
+import { gaitSpeedRef, SYNTY_DUNGEON_RIG, SYNTY_GOBLIN_RIG, SYNTY_HUMAN_RIG, type ClipId, type RigSpec } from "./rigSpec";
 
 const CLIP_IDS: ClipId[] = [
-  "idle", "idleCombat", "walk", "shamble", "run", "attack1h", "slash", "attack2h", "attackUnarmed",
+  "idle", "idleCombat", "idle2h", "walk", "shamble", "run", "attack1h", "attackDiagonal1h", "slash", "attack2h", "attackStab2h", "attackUnarmed", "attackUnarmedB", "attackKick",
   "attackSpin", "attackChop", "attackSlice", "cast", "castRaise", "cheer", "jump", "taunt", "death",
 ];
 
@@ -21,6 +21,19 @@ describe("rig specs", () => {
     for (const id of CLIP_IDS) {
       for (const spec of Object.values(SYNTY_SPECS)) expect(candidates(spec, id).length).toBeGreaterThan(0);
     }
+  });
+
+  test("humans run on the clip whose arms swing against the legs", () => {
+    // KayKit's Running_A holds both fists out in front, still; Running_B pumps them.
+    expect(candidates(SYNTY_HUMAN_RIG, "run")[0]).toBe("Running_B");
+    expect(candidates(SYNTY_DUNGEON_RIG, "run")[0]).toBe("Running_B");
+  });
+
+  test("a gait's speed reference can differ from the walk's", () => {
+    // Running_B strides as far as Running_A but over a 1.07 s cycle, not 0.8 s.
+    expect(gaitSpeedRef(SYNTY_HUMAN_RIG, "run")).toBeCloseTo(2.25);
+    expect(gaitSpeedRef(SYNTY_HUMAN_RIG, "walk")).toBe(SYNTY_HUMAN_RIG.walkSpeedRef);
+    expect(gaitSpeedRef(SYNTY_GOBLIN_RIG, "run")).toBe(SYNTY_GOBLIN_RIG.walkSpeedRef);
   });
 });
 

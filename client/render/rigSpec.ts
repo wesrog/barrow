@@ -8,6 +8,8 @@
 export type ClipId =
   | "idle"
   | "idleCombat"
+  /** Both hands on a two-handed weapon's haft, the blade across the body. */
+  | "idle2h"
   | "walk"
   /** The slow undead shuffle; families without one fall back to walk. */
   | "shamble"
@@ -15,10 +17,17 @@ export type ClipId =
   | "attack1h"
   /** The one-handed chop: the hero's swing with a sword or knife in hand. */
   | "attackChop1h"
+  /** A one-handed cut from high to low, alternated with the flat slice. */
+  | "attackDiagonal1h"
   /** A flat one-handed cut, the monsters' default swing. */
   | "slash"
   | "attack2h"
+  /** A two-handed thrust, alternated with the two-handed slice. */
+  | "attackStab2h"
   | "attackUnarmed"
+  /** The other fist, and a kick: variety for bare-handed fighters. */
+  | "attackUnarmedB"
+  | "attackKick"
   | "attackSpin"
   | "attackChop"
   | "attackSlice"
@@ -68,20 +77,55 @@ export interface RigSpec {
   grip: { r: Grip; l: Grip };
   /** Cells per second at which the walk clip plays at 1x. */
   walkSpeedRef: number;
+  /** Per-gait overrides of walkSpeedRef, for gaits that cover ground at another rate. */
+  gaitSpeedRefs?: Partial<Record<ClipId, number>>;
+  /** How a gait is reposed on top of its clip (KayKit's chibi runs upright with its arms wide
+   * and its elbows swinging far back; on a human that reads as skipping, not charging). */
+  gaitPose?: Partial<Record<ClipId, GaitPose>>;
+}
+
+export interface GaitPose {
+  /** Degrees the chest pitches forward into the stride. */
+  lean?: number;
+  /** Share (0 to 1) of the lean the head takes back, so the eyes stay on what is ahead. */
+  headUp?: number;
+  /** Degrees the forearms bend up at the elbow, bringing the fists up in front. */
+  elbowBend?: number;
+  /** Degrees the upper arms turn in toward the body, about its forward axis. */
+  tuck?: number;
+  /** Degrees the upper arms are carried forward, about the body's side axis. */
+  forward?: number;
+  /** Share (0 to 1) of an elbow's swing behind the shoulder taken back out, so the backswing stays short. */
+  easeBack?: number;
+  /** Share (0 to 1) of the tuck kept once an elbow swings well behind the shoulder: a tucked arm
+   * behind the back crosses in over the backside, so the tuck lets go as the arm goes back. */
+  tuckBehind?: number;
+}
+
+/** Cells per second at which a gait clip plays at 1x on this rig. */
+export function gaitSpeedRef(spec: RigSpec, gait: ClipId): number {
+  return spec.gaitSpeedRefs?.[gait] ?? spec.walkSpeedRef;
 }
 
 /** The KayKit suite's clip names, as retargeted onto the Synty rigs (kaykit_clips kits). */
 const KAYKIT_CLIPS = {
   idle: "Idle",
   idleCombat: "Idle_Combat",
+  idle2h: "2H_Melee_Idle",
   walk: "Walking_A",
   shamble: "Walking_D_Skeletons",
-  run: "Running_A",
+  // Running_B pumps each arm against its leg; Running_A holds both fists out
+  // in front, still, which reads as a figure carrying something unseen.
+  run: "Running_B",
   attack1h: "1H_Melee_Attack_Slice_Horizontal",
   attackChop1h: "1H_Melee_Attack_Chop",
+  attackDiagonal1h: "1H_Melee_Attack_Slice_Diagonal",
   slash: "1H_Melee_Attack_Slice_Horizontal",
   attack2h: "2H_Melee_Attack_Chop",
+  attackStab2h: "2H_Melee_Attack_Stab",
   attackUnarmed: "Unarmed_Melee_Attack_Punch_A",
+  attackUnarmedB: "Unarmed_Melee_Attack_Punch_B",
+  attackKick: "Unarmed_Melee_Attack_Kick",
   attackSpin: "2H_Melee_Attack_Spin",
   attackChop: "2H_Melee_Attack_Chop",
   attackSlice: "2H_Melee_Attack_Slice",
@@ -125,14 +169,19 @@ const SYNTY_GRIP = {
 const GOBLIN_FALLBACKS: Record<ClipId, string> = {
   idle: "Idle_Standing",
   idleCombat: "Idle_Fidget_Menacing",
+  idle2h: "Idle_Standing",
   walk: "Walk_F",
   shamble: "Walk_F",
   run: "Run_F",
   attack1h: "Idle_Fidget_Swipe",
   attackChop1h: "Idle_Fidget_Swipe",
+  attackDiagonal1h: "Idle_Fidget_Swipe",
   slash: "Idle_Fidget_Swipe",
   attack2h: "Idle_Fidget_Swipe",
+  attackStab2h: "Idle_Fidget_Swipe",
   attackUnarmed: "Idle_Fidget_Swipe",
+  attackUnarmedB: "Idle_Fidget_Swipe",
+  attackKick: "Idle_Fidget_Swipe",
   attackSpin: "Idle_Fidget_Swipe",
   attackChop: "Idle_Fidget_Swipe",
   attackSlice: "Idle_Fidget_Swipe",
@@ -155,6 +204,17 @@ function withFallbacks(preferred: Partial<Record<ClipId, string>>): Record<ClipI
   return out;
 }
 
+/**
+ * KayKit's Running_B strides as far per step as Running_A did at walkSpeedRef 3,
+ * but over a 1.07 s cycle instead of 0.8 s, so it plays at 1x for 3 * 0.8 / 1.07
+ * cells per second; the feet keep their grip on the ground at any speed.
+ */
+const KAYKIT_RUN_SPEED_REF = 2.25;
+/** Running_B runs upright, swings the arms well clear of the body even after the converter's relax
+ * turn, and drives the elbows far behind the back. The run leans into its stride with the head up,
+ * the arms pulled in and forward, and the fists pumped up in front: a charge, not a jog. */
+const KAYKIT_RUN_POSE: GaitPose = { lean: 14, headUp: 0.6, elbowBend: 25, tuck: 22, forward: 10, easeBack: 0.55, tuckBehind: 0.25 };
+
 /** Humans on the Synty rig (Vikings): the KayKit suite retargeted, goblin clips as backup. */
 export const SYNTY_HUMAN_RIG: RigSpec = {
   family: "synty",
@@ -162,6 +222,8 @@ export const SYNTY_HUMAN_RIG: RigSpec = {
   bones: SYNTY_BONES,
   grip: SYNTY_GRIP,
   walkSpeedRef: 3,
+  gaitSpeedRefs: { run: KAYKIT_RUN_SPEED_REF },
+  gaitPose: { run: KAYKIT_RUN_POSE },
 };
 
 /** Goblins keep their own hunched idle and gait; swings, casts and deaths come from the KayKit copies. */
@@ -205,4 +267,6 @@ export const SYNTY_DUNGEON_RIG: RigSpec = {
     l: { rotation: [-Math.PI / 2, 0, 0], position: [0.1, 0, 0] },
   },
   walkSpeedRef: 3,
+  gaitSpeedRefs: { run: KAYKIT_RUN_SPEED_REF },
+  gaitPose: { run: KAYKIT_RUN_POSE },
 };

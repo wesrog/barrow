@@ -251,6 +251,39 @@ describe("Synty hero", () => {
     expect(hero.currentClip()).toBe("Idle");
   });
 
+  test("tucks the arms in toward the body while running, not while standing", () => {
+    const assets = fakeHeroAssets();
+    const tracks = ["Root", "Hips", "Head", "Shoulder_L", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    // Arms straight out to the sides, hands one unit past the shoulders.
+    const handL = hero.group.getObjectByName("Hand_L")!;
+    const handR = hero.group.getObjectByName("Hand_R")!;
+    hero.group.getObjectByName("Shoulder_L")!.position.x = 0.2;
+    hero.group.getObjectByName("Shoulder_R")!.position.x = -0.2;
+    handL.position.x = 1;
+    handR.position.x = -1;
+    let now = 1000;
+    const heights = (speed: number) => {
+      for (let t = 0; t < 20; t++) hero.animate((now += 50), 0, speed);
+      hero.group.updateMatrixWorld(true);
+      const shoulder = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3()).y;
+      return [handL.getWorldPosition(new THREE.Vector3()).y - shoulder, handR.getWorldPosition(new THREE.Vector3()).y - shoulder];
+    };
+    const [runL, runR] = heights(4.5);
+    expect(hero.currentClip()).toBe("Running_B");
+    // Both hands drop the same way (sin 22 degrees over a one-unit arm, at the hero's scale).
+    expect(runL).toBeLessThan(-0.2);
+    expect(runR).toBeCloseTo(runL);
+    // Many frames in, the turn has not piled up.
+    expect(heights(4.5)[0]).toBeCloseTo(runL);
+    const [idleL] = heights(0);
+    expect(idleL).toBeCloseTo(0);
+  });
+
   test("says which kit is missing instead of drawing nothing", () => {
     const assets = fakeHeroAssets();
     assets.kits = {};

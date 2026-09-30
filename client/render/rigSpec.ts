@@ -248,4 +248,5 @@ export const SYNTY_DUNGEON_RIG: RigSpec = {
   },
   walkSpeedRef: 3,
   gaitSpeedRefs: { run: KAYKIT_RUN_SPEED_REF },
+  armTuck: { run: KAYKIT_RUN_ARM_TUCK },
 };

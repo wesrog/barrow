@@ -65,6 +65,15 @@ function weaponEdge(game: GameState): WeaponEdge {
   return (weapon && BASES[weapon.baseId]?.edge) ?? "blunt";
 }
 
+/** Does the local hero shoot rather than swing? */
+function isBow(game: GameState): boolean {
+  const weapon = localPlayer(game).equipment.weapon;
+  return !!weapon && BASES[weapon.baseId]?.reach !== undefined;
+}
+
+/** Floating "miss" text, either way round: pale, so it never reads as damage. */
+const MISS_COLOR = "#c9c3b4";
+
 function onCampGround(game: GameState): boolean {
   const p = localPlayer(game);
   return p.zoneId === "surface" && inRect(worldCampRect("overworld"), p.pos);
@@ -489,10 +498,27 @@ function Game({
               scene.addDamageNumber(localPlayer(game).pos, String(e.amount), "#e05252");
               play("hurt");
               break;
+            case "player_missed": {
+              // Like a hit, a missed bolt waits for the bolt to arrive; a missed
+              // blade cuts air, so it gets the whoosh a landed blow doesn't.
+              const bow = isBow(game);
+              const edge = weaponEdge(game);
+              const land = () => {
+                scene.addDamageNumber(e.pos, "miss", MISS_COLOR);
+                if (!bow) play("swing", undefined, edge);
+              };
+              const wait = scene.impactDelay(e.id);
+              if (wait > 0) setTimeout(land, wait);
+              else land();
+              break;
+            }
+            case "monster_missed":
+              scene.addDamageNumber(localPlayer(game).pos, "miss", MISS_COLOR);
+              play("swing", undefined, "blunt");
+              break;
             case "player_swing": {
               // A bow's basic attack is a shot: the release, never a whoosh.
-              const weapon = localPlayer(game).equipment.weapon;
-              if (weapon && BASES[weapon.baseId]?.reach !== undefined) {
+              if (isBow(game)) {
                 play("shoot");
                 break;
               }

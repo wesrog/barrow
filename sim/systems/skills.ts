@@ -67,7 +67,7 @@ import {
   type SkillId,
 } from "../skills";
 import { zoneOf, type GameState, type Player, type PlayerInput, type ZoneState } from "../state";
-import { computeHitChance, hitMonster, rollDamage, traceArrow } from "./combat";
+import { computeHitChance, hitMonster, missed, rollDamage, traceArrow } from "./combat";
 import { recomputePlayerStats } from "./inventory";
 import { applyDebuff, pruneDebuffs, type DebuffKind } from "../debuffs";
 import { breakProp, type Breakable } from "../breakables";
@@ -364,6 +364,8 @@ export function applyCastInput(state: GameState, p: Player, input: PlayerInput):
         if (state.rng.next() < computeHitChance(p.attackRating, m.defense)) {
           const amount = rollSkillDamage(state, p, mult);
           hitMonster(state, zone, m, p, amount, "physical");
+        } else {
+          missed(state, zone, p, m);
         }
       }
       state.events.push({

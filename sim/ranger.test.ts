@@ -153,6 +153,22 @@ describe("shooting", () => {
     expect(arrow!.to.x).toBeGreaterThan(p.pos.x + 6);
   });
 
+  test("a shot that strikes a monster but fails its roll announces the miss", () => {
+    const state = createGameOn(1, open());
+    ranger(state);
+    const p = player(state);
+    const m = spawnAt(state, "skitter", { x: p.pos.x + 5, y: p.pos.y });
+    m.life = m.maxLife = 1000000;
+    m.defense = 1e9;
+    m.aggro = 0;
+    let misses = 0;
+    for (let i = 0; i < 200; i++) {
+      stepSolo(state, { attack: m.id });
+      for (const e of state.events) if (e.type === "player_missed" && e.id === m.id) misses++;
+    }
+    expect(misses).toBeGreaterThan(3);
+  });
+
   test("a shot that finds nothing flies its full reach, and stops at a wall", () => {
     const state = createGameOn(1, open());
     ranger(state);

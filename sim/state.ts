@@ -196,6 +196,10 @@ export type SimEvent =
   | { type: "monster_aggro"; id: number; typeId: string; pos: Vec; zone: ZoneId }
   | { type: "player_hit"; playerId: PlayerId; amount: number }
   | { type: "monster_hit"; id: number; amount: number; element: Element; pos: Vec; zone: ZoneId }
+  /** A player's blow or arrow reached monster `id` and missed it (a failed roll, or it slipped out of reach). */
+  | { type: "player_missed"; playerId: PlayerId; id: number; pos: Vec; zone: ZoneId }
+  /** Monster `id` swung at a player and missed; `pos` is the player's. */
+  | { type: "monster_missed"; id: number; playerId: PlayerId; pos: Vec; zone: ZoneId }
   | {
       type: "monster_died";
       id: number;

@@ -118,6 +118,8 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
     if (hit && state.rng.next() < computeHitChance(p.attackRating, hit.defense)) {
       const amount = Math.max(1, Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)));
       hitMonster(state, zone, hit, p, amount, "physical");
+    } else if (hit) {
+      missed(state, zone, p, hit);
     }
     return;
   }
@@ -125,6 +127,7 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
   if (strike.target !== null) {
     const m = zone.monsters.get(strike.target);
     if (m && basicReaches(zone, p, m.pos, 1.35)) target = m;
+    else if (m) return missed(state, zone, p, m); // it slipped out of reach mid-swing
   } else {
     // Swing-in-place: whatever is nearest within reach when the blade lands.
     let bestD = Infinity;
@@ -143,7 +146,14 @@ function resolvePlayerStrike(state: GameState, zone: ZoneState, p: Player): void
       Math.floor(rollDamage(state.rng, p.dmgMin, p.dmgMax) * damageMultiplier(state, p)),
     );
     hitMonster(state, zone, target, p, amount, "physical");
+  } else {
+    missed(state, zone, p, target);
   }
+}
+
+/** A player's attack reached a monster and failed to land. */
+export function missed(state: GameState, zone: ZoneState, p: Player, m: Monster): void {
+  state.events.push({ type: "player_missed", playerId: p.id, id: m.id, pos: { ...m.pos }, zone: zone.id });
 }
 
 export function rollDamage(rng: Rng, min: number, max: number): number {
@@ -376,6 +386,8 @@ export function monsterAiSystem(state: GameState, zone: ZoneState, players: Play
         );
         p.life -= amount;
         state.events.push({ type: "player_hit", playerId: p.id, amount });
+      } else {
+        state.events.push({ type: "monster_missed", id: m.id, playerId: p.id, pos: { ...p.pos }, zone: zone.id });
       }
       continue;
     }

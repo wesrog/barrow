@@ -416,6 +416,81 @@ describe("contact frames", () => {
   });
 });
 
+describe("misses", () => {
+  test("a swing that fails its to-hit roll announces the miss on its target", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    m.defense = 1e9; // hit chance floors at 5%
+    let misses = 0;
+    for (let i = 0; i < 200; i++) {
+      stepSolo(game, { attack: m.id });
+      for (const e of game.events) {
+        if (e.type !== "player_missed") continue;
+        misses++;
+        expect(e.id).toBe(m.id);
+        expect(e.playerId).toBe(player(game).id);
+        expect(e.pos).toEqual(m.pos);
+        expect(game.events.some((h) => h.type === "monster_hit" && h.id === m.id)).toBe(false);
+      }
+    }
+    expect(misses).toBeGreaterThan(5);
+  });
+
+  test("a sure hit never announces a miss", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    m.life = 1000000;
+    m.defense = 0; // hit chance caps at 95%, so a handful of swings mostly land
+    player(game).attackRating = 1e9;
+    let hits = 0;
+    let misses = 0;
+    for (let i = 0; i < 200; i++) {
+      stepSolo(game, { attack: m.id });
+      hits += game.events.filter((e) => e.type === "monster_hit").length;
+      misses += game.events.filter((e) => e.type === "player_missed").length;
+    }
+    expect(hits).toBeGreaterThan(misses * 5);
+  });
+
+  test("a target that escapes mid-swing is missed", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    let swung = false;
+    for (let i = 0; i < 30 && !swung; i++) {
+      stepSolo(game, i === 0 ? { attack: m.id } : {});
+      if (game.events.some((e) => e.type === "player_swing")) swung = true;
+    }
+    m.pos = { x: 9.5, y: 3.5 };
+    let missed = false;
+    for (let i = 0; i < 10; i++) {
+      stepSolo(game, {});
+      if (game.events.some((e) => e.type === "player_missed" && e.id === m.id)) missed = true;
+    }
+    expect(missed).toBe(true);
+  });
+
+  test("a monster's blow that fails its roll announces the miss on its victim", () => {
+    const game = createGameOn(1, arena());
+    const m = spawnAt(game, "shambler", { x: 2.2, y: 1.5 });
+    const p = player(game);
+    p.defense = 1e9;
+    let misses = 0;
+    for (let i = 0; i < 400; i++) {
+      p.life = p.maxLife;
+      stepSolo(game, {});
+      for (const e of game.events) {
+        if (e.type !== "monster_missed") continue;
+        misses++;
+        expect(e.id).toBe(m.id);
+        expect(e.playerId).toBe(p.id);
+        expect(e.pos).toEqual(p.pos);
+      }
+    }
+    expect(misses).toBeGreaterThan(5);
+  });
+});
+
 describe("dropSpot", () => {
   test("leaves the scattered point alone when its own cell is walkable", () => {
     const floor: [number, number][] = [];

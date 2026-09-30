@@ -14,6 +14,7 @@ import {
 } from "./models";
 import { applyGripAdjust, captureRestInverses, gripInto, heldModel, wearPiece, wornPlacement, type GripAdjust } from "./gear";
 import {
+  gaitSpeedRef,
   SYNTY_DUNGEON_RIG,
   SYNTY_GOBLIN_RIG,
   SYNTY_HUMAN_RIG,
@@ -92,6 +93,8 @@ class AnimRig implements ModelRig {
   private stance: { name: string; until: number; from: number } | null = null;
   private idleName: string | undefined;
   private walkName: string | undefined;
+  /** Cells per second at which the gait clip plays at 1x. */
+  private walkRef: number;
   footfall?: () => void;
   /** Footfall detection: each shin's last world height and direction of travel. */
   private feet: { bone: THREE.Object3D; y: number; dy: number }[] | null = null;
@@ -105,7 +108,13 @@ class AnimRig implements ModelRig {
     this.idleName = this.clipName(idle) ?? this.clipName("idle");
     // A family without the requested gait walks normally rather than freezing.
     this.walkName = this.clipName(walk) ?? this.clipName("walk");
+    this.walkRef = gaitSpeedRef(spec, this.clipName(walk) ? walk : "walk");
     if (this.idleName) this.play(this.idleName);
+  }
+
+  /** Stand in another idle from now on (a two-handed guard); the next still frame fades to it. */
+  setIdle(idle: ClipId): void {
+    this.idleName = this.clipName(idle) ?? this.clipName("idle");
   }
 
   /** The first name for a semantic clip that this instance actually has. */
@@ -191,7 +200,7 @@ class AnimRig implements ModelRig {
         if (action && action.time < this.stance.from) action.time = this.stance.from;
       } else if (speed > 0.4 && this.walkName) {
         const action = this.play(this.walkName);
-        if (action) action.timeScale = Math.max(0.6, Math.min(2.4, speed / this.spec.walkSpeedRef));
+        if (action) action.timeScale = Math.max(0.6, Math.min(3, speed / this.walkRef));
       } else if (this.idleName) {
         this.play(this.idleName);
       }
@@ -430,6 +439,8 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   let twoHanded = false;
   let armed = false;
   let swing: "chop" | "slice" | "shoot" = "slice";
+  /** Alternates one-handed swings between the flat slice and the diagonal cut. */
+  let nextDiagonal = false;
   /** The held weapon and its seat: the grip, its tuned adjustments, and which pose it sits in now. */
   let held: {
     model: THREE.Object3D;
@@ -499,6 +510,9 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       const look = SYNTY_WEAPONS[eq.weapon.baseId] ?? SYNTY_WEAPONS.rusted_blade!;
       twoHanded = look.twoHanded;
       swing = look.swing ?? "slice";
+      // A two-handed melee weapon rests across the body with both hands on the haft;
+      // the crossbow keeps the plain idle its resting seat was tuned in.
+      rig.setIdle(twoHanded && swing !== "shoot" ? "idle2h" : "idle");
       const model = heldModel(kits, look.kit, look.node);
       if (model) {
         // The wrapper holds one upright model; lifting it moves the grip down the shaft.
@@ -515,14 +529,21 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       twoHanded = false;
       held = null;
       rig.attach("r", null);
+      rig.setIdle("idle");
     }
   };
-  // Every armed swing is the flat one-handed slice, two-handers included
-  // (the two-handed chop read as a windmill on the Viking), unless a weapon's
-  // row asks for the chop; bare hands throw a punch. Skills pick their own
-  // clips.
-  hero.attackClip = () =>
-    !armed ? "attackUnarmed" : swing === "shoot" ? "shoot" : swing === "chop" ? "attackChop1h" : "attack1h";
+  // One-handers alternate the flat slice and the diagonal cut unless a weapon's
+  // row asks for the chop; two-handers sweep the two-handed slice from their
+  // guard (the two-handed chop read as a windmill on the Viking); bare hands
+  // throw a punch. Skills pick their own clips.
+  hero.attackClip = () => {
+    if (!armed) return "attackUnarmed";
+    if (swing === "shoot") return "shoot";
+    if (twoHanded) return "attackSlice";
+    if (swing === "chop") return "attackChop1h";
+    nextDiagonal = !nextDiagonal;
+    return nextDiagonal ? "attack1h" : "attackDiagonal1h";
+  };
   const axis = new THREE.Vector3();
   const quat = new THREE.Quaternion();
   hero.aimOffset = () => {

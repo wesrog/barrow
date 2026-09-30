@@ -160,12 +160,14 @@ describe("Synty hero", () => {
     expect(mantle.position.y).toBeCloseTo(0.2);
     expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    // Every weapon takes the flat one-handed slice unless its row says otherwise.
+    // One-handers alternate the flat slice and the diagonal cut, so a string of swings doesn't repeat.
+    expect(hero.attackClip()).toBe("attack1h");
+    expect(hero.attackClip()).toBe("attackDiagonal1h");
     expect(hero.attackClip()).toBe("attack1h");
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
-    // Two-handers included.
-    expect(hero.attackClip()).toBe("attack1h");
+    // Two-handers sweep with both hands on the haft.
+    expect(hero.attackClip()).toBe("attackSlice");
     // A two-hander hides the shield even though the slot still holds one.
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();
@@ -204,6 +206,28 @@ describe("Synty hero", () => {
     const hero = makeHeroModelRig(assets, "warrior");
     expect(hero.currentClip()).toBe("Idle");
     expect(hero.clipNames()).toContain("Run_F");
+  });
+
+  test("stands in a two-handed guard while holding a two-handed melee weapon", () => {
+    const assets = fakeHeroAssets();
+    const tracks = ["Root", "Hips", "Head"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "2H_Melee_Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    const settle = (speed = 0) => {
+      for (let t = 0; t < 10; t++) hero.animate(1000 + t * 50, 0, speed);
+    };
+    hero.setEquipment({ ...BARE, weapon: gearItem("war_maul") });
+    settle();
+    expect(hero.currentClip()).toBe("2H_Melee_Idle");
+    // Running swings the arms with the legs whatever is held.
+    settle(4.5);
+    expect(hero.currentClip()).toBe("Running_B");
+    hero.setEquipment({ ...BARE, weapon: gearItem("rusted_blade") });
+    settle();
+    expect(hero.currentClip()).toBe("Idle");
   });
 
   test("says which kit is missing instead of drawing nothing", () => {

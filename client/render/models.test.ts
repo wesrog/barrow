@@ -251,7 +251,7 @@ describe("Synty hero", () => {
     expect(hero.currentClip()).toBe("Idle");
   });
 
-  test("tucks the arms in toward the body while running, not while standing", () => {
+  test("runs leaning in with the arms tucked, and stands straight again", () => {
     const assets = fakeHeroAssets();
     const tracks = ["Root", "Hips", "Head", "Shoulder_L", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], [0, 0, 0, 1, 0, 0, 0, 1]));
     assets.kits.goblin_kaykit_clips = {
@@ -266,6 +266,7 @@ describe("Synty hero", () => {
     hero.group.getObjectByName("Shoulder_R")!.position.x = -0.2;
     handL.position.x = 1;
     handR.position.x = -1;
+    hero.group.getObjectByName("Head")!.position.y = 0.5;
     let now = 1000;
     const heights = (speed: number) => {
       for (let t = 0; t < 20; t++) hero.animate((now += 50), 0, speed);
@@ -280,15 +281,18 @@ describe("Synty hero", () => {
     expect(runR).toBeCloseTo(runL);
     // Many frames in, the turn has not piled up.
     expect(heights(4.5)[0]).toBeCloseTo(runL);
-    // The fists keep the clip's world rotation (every bone here rests unrotated), so a held weapon points as animated.
-    const bodyQ = hero.group.getWorldQuaternion(new THREE.Quaternion());
-    expect(handL.getWorldQuaternion(new THREE.Quaternion()).angleTo(bodyQ)).toBeCloseTo(0);
-    expect(handR.getWorldQuaternion(new THREE.Quaternion()).angleTo(bodyQ)).toBeCloseTo(0);
+    // The chest leans into the stride, carrying the head out ahead of the hips; the head tips back up part way.
+    const hips = hero.group.getObjectByName("Hips")!.getWorldPosition(new THREE.Vector3());
+    expect(hero.group.getObjectByName("Head")!.getWorldPosition(new THREE.Vector3()).z).toBeGreaterThan(hips.z + 0.01);
+    const tilt = (name: string) => new THREE.Vector3(0, 1, 0).applyQuaternion(hero.group.getObjectByName(name)!.getWorldQuaternion(new THREE.Quaternion())).z;
+    expect(tilt("Spine_02")).toBeGreaterThan(0.2);
+    expect(tilt("Head")).toBeLessThan(tilt("Spine_02"));
     // And the arms come a little forward of the shoulders rather than straight out.
     const shoulderZ = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3()).z;
     expect(handL.getWorldPosition(new THREE.Vector3()).z).toBeGreaterThan(shoulderZ);
     const [idleL] = heights(0);
     expect(idleL).toBeCloseTo(0);
+    expect(tilt("Spine_02")).toBeCloseTo(0);
   });
 
   test("shortens a run's backswing: an elbow thrown behind the back comes partway forward", () => {

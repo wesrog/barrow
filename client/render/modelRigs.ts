@@ -84,6 +84,14 @@ function applyRarityGlow(obj: THREE.Object3D, item: Item, intensity = 0.07): voi
   });
 }
 
+/** An arm the gait repose moves: its upper bone, elbow (the child toward the hand) and hand; side +1 left. */
+interface PosedArm {
+  upper: THREE.Object3D;
+  elbow: THREE.Object3D;
+  hand: THREE.Object3D;
+  side: number;
+}
+
 class AnimRig implements ModelRig {
   group: THREE.Group;
   readonly family: RigFamily;
@@ -97,16 +105,19 @@ class AnimRig implements ModelRig {
   private walkName: string | undefined;
   /** Cells per second at which the gait clip plays at 1x. */
   private walkRef: number;
-  /** How the gait's arms are reposed on top of the clip (radians), or null for as authored. */
-  private walkArms: { tuck: number; forward: number; easeBack: number; tuckBehind: number } | null;
-  /** Each arm's upper bone, elbow (its child toward the hand) and hand, with the clip's own
-   * local rotations saved while a repose is applied, so the next update starts clean. */
-  private arms: { upper: THREE.Object3D; elbow: THREE.Object3D; hand: THREE.Object3D; side: number; saved: [THREE.Quaternion, THREE.Quaternion] | null }[] | null = null;
+  /** How the gait is reposed on top of the clip (angles in radians), or null for as authored. */
+  private walkPose: { lean: number; headUp: number; elbowBend: number; tuck: number; forward: number; easeBack: number; tuckBehind: number } | null;
+  /** The bones the repose moves, with the clip's own local rotations saved while it is applied,
+   * so the next update starts clean. */
+  private posed: {
+    chest: THREE.Object3D | null;
+    head: THREE.Object3D | null;
+    arms: PosedArm[];
+    saved: Map<THREE.Object3D, THREE.Quaternion>;
+  } | null = null;
   private static readonly bodyQ = new THREE.Quaternion();
-  private static readonly turnQ = new THREE.Quaternion();
   private static readonly tmpQ = new THREE.Quaternion();
   private static readonly handQ = new THREE.Quaternion();
-  private static readonly axisTmp = new THREE.Vector3();
   private static readonly reachTmp = new THREE.Vector3();
   private static readonly shoulderTmp = new THREE.Vector3();
   footfall?: () => void;
@@ -124,9 +135,19 @@ class AnimRig implements ModelRig {
     this.walkName = this.clipName(walk) ?? this.clipName("walk");
     const gait = this.clipName(walk) ? walk : "walk";
     this.walkRef = gaitSpeedRef(spec, gait);
-    const pose = spec.armPose?.[gait];
+    const pose = spec.gaitPose?.[gait];
     const rad = THREE.MathUtils.degToRad;
-    this.walkArms = pose ? { tuck: rad(pose.tuck ?? 0), forward: rad(pose.forward ?? 0), easeBack: pose.easeBack ?? 0, tuckBehind: pose.tuckBehind ?? 1 } : null;
+    this.walkPose = pose
+      ? {
+          lean: rad(pose.lean ?? 0),
+          headUp: pose.headUp ?? 0,
+          elbowBend: rad(pose.elbowBend ?? 0),
+          tuck: rad(pose.tuck ?? 0),
+          forward: rad(pose.forward ?? 0),
+          easeBack: pose.easeBack ?? 0,
+          tuckBehind: pose.tuckBehind ?? 1,
+        }
+      : null;
     if (this.idleName) this.play(this.idleName);
   }
 
@@ -235,31 +256,46 @@ class AnimRig implements ModelRig {
         this.play(this.idleName);
       }
     }
-    this.restoreArms();
+    this.restorePose();
     this.inst.mixer.update(dt);
-    this.reposeArms();
+    this.reposeGait();
     if (this.footfall) this.trackFootfalls(speed);
   }
 
+  /** Turn a bone by a world-space rotation: world' = turn * world, so local' = parentWorld^-1 * turn * parentWorld * local. */
+  private static turnInWorld(bone: THREE.Object3D, turn: THREE.Quaternion): void {
+    const parentQ = bone.parent ? bone.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
+    bone.quaternion.premultiply(parentQ.clone().invert().multiply(turn).multiply(parentQ));
+    bone.updateWorldMatrix(false, true);
+  }
+
+  /** A rotation about one of the body's own axes (the character group's), as a world-space turn. */
+  private static bodyTurn(x: number, y: number, z: number, angle: number): THREE.Quaternion {
+    return new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(x, y, z).applyQuaternion(AnimRig.bodyQ), angle);
+  }
+
   /**
-   * Repose the upper arms while the gait plays, as much as its clip is weighted
-   * in (fading with it into a swing or the idle): turned in toward the body
-   * about its forward axis, and carried forward about its side axis, a set
-   * amount plus a share of however far the elbow swings behind the shoulder.
-   * The hands keep the clip's world rotation, so the fist and whatever it holds
-   * point where the animation meant. The mixer skips writing a bone whose value
-   * has not changed, so the clip's rotations are put back before each update
-   * (restoreArms) rather than trusted to be rewritten.
+   * Repose the body while the gait plays, as much as its clip is weighted in
+   * (fading with it into a swing or the idle). The chest pitches forward into
+   * the stride and the head takes some of that back. The upper arms turn in
+   * toward the body about its forward axis and are carried forward about its
+   * side axis, a set amount plus a share of however far the elbow swings
+   * behind the shoulder; the in-turn lets go as the arm goes back, so the
+   * elbow passes beside the hip. The hands keep the clip's rotation relative
+   * to the leaning body, then the forearms bend up at the elbow and carry the
+   * fists (and what they hold) up with them. The mixer skips writing a bone
+   * whose value has not changed, so the clip's rotations are put back before
+   * each update (restorePose) rather than trusted to be rewritten.
    */
-  private reposeArms(): void {
-    const pose = this.walkArms;
+  private reposeGait(): void {
+    const pose = this.walkPose;
     if (!pose || !this.walkName) return;
     const walk = this.inst.actions.get(this.walkName);
     // A faded-out action keeps its last weight once the mixer drops it; only a running one counts.
     const weight = walk?.isRunning() ? walk.getEffectiveWeight() : 0;
     if (weight <= 0) return;
-    if (!this.arms) {
-      this.arms = [];
+    if (!this.posed) {
+      const arms: PosedArm[] = [];
       for (const [upperRole, handRole, side] of [["upperArmL", "handL", 1], ["upperArmR", "handR", -1]] as const) {
         const upper = this.bone(upperRole);
         const hand = this.bone(handRole);
@@ -268,46 +304,55 @@ class AnimRig implements ModelRig {
         let elbow: THREE.Object3D = hand;
         while (elbow.parent && elbow.parent !== upper) elbow = elbow.parent;
         if (elbow.parent !== upper) continue;
-        this.arms.push({ upper, elbow, hand, side, saved: null });
+        arms.push({ upper, elbow, hand, side });
       }
+      this.posed = { chest: this.bone("chest"), head: this.bone("head"), arms, saved: new Map() };
     }
+    const { chest, head, arms, saved } = this.posed;
+    const save = (bone: THREE.Object3D) => {
+      if (!saved.has(bone)) saved.set(bone, bone.quaternion.clone());
+    };
     this.group.updateWorldMatrix(true, true);
     this.group.getWorldQuaternion(AnimRig.bodyQ);
-    for (const arm of this.arms) {
-      const parent = arm.upper.parent;
-      if (!parent) continue;
-      arm.saved = [arm.upper.quaternion.clone(), arm.hand.quaternion.clone()];
+    // About the side (+X) axis a positive turn tips an upright bone forward, a hanging one back.
+    if (chest && pose.lean !== 0) {
+      save(chest);
+      AnimRig.turnInWorld(chest, AnimRig.bodyTurn(1, 0, 0, pose.lean * weight));
+      if (head && pose.headUp !== 0) {
+        save(head);
+        AnimRig.turnInWorld(head, AnimRig.bodyTurn(1, 0, 0, -pose.lean * pose.headUp * weight));
+      }
+    }
+    for (const arm of arms) {
+      if (!arm.upper.parent) continue;
+      save(arm.upper);
+      save(arm.hand);
       arm.hand.getWorldQuaternion(AnimRig.handQ);
       // How far the elbow swings behind the shoulder, in the body's frame (positive: forward).
       const reach = arm.elbow.getWorldPosition(AnimRig.reachTmp).sub(arm.upper.getWorldPosition(AnimRig.shoulderTmp));
       reach.applyQuaternion(AnimRig.tmpQ.copy(AnimRig.bodyQ).invert());
-      const pitch = Math.atan2(reach.z, -reach.y);
-      const behind = Math.max(0, -pitch);
+      const behind = Math.max(0, -Math.atan2(reach.z, -reach.y));
       const forward = pose.forward + pose.easeBack * behind;
       // The tuck lets go as the elbow goes back, down to its `tuckBehind` share 45 degrees behind.
       const tuck = pose.tuck * THREE.MathUtils.lerp(1, pose.tuckBehind, Math.min(1, behind / (Math.PI / 4)));
-      // The turn in world terms: in toward the body about its forward (+Z) axis (a negative turn
-      // takes the left arm, +X, down; a positive one the right), then forward about its side (+X) axis.
-      AnimRig.turnQ.setFromAxisAngle(AnimRig.axisTmp.set(0, 0, 1).applyQuaternion(AnimRig.bodyQ), -arm.side * tuck * weight);
-      AnimRig.tmpQ.setFromAxisAngle(AnimRig.axisTmp.set(1, 0, 0).applyQuaternion(AnimRig.bodyQ), -forward * weight);
-      AnimRig.turnQ.premultiply(AnimRig.tmpQ);
-      // world' = turn * world, so local' = parentWorld^-1 * turn * parentWorld * local.
-      const parentQ = parent.getWorldQuaternion(new THREE.Quaternion());
-      arm.upper.quaternion.premultiply(AnimRig.tmpQ.copy(parentQ).invert().multiply(AnimRig.turnQ).multiply(parentQ));
-      // Give the hand back its world rotation from the clip.
-      arm.upper.updateWorldMatrix(false, true);
+      // In toward the body about its forward (+Z) axis (a negative turn takes the left arm, +X,
+      // down; a positive one the right), then forward about its side axis.
+      const turn = AnimRig.bodyTurn(0, 0, 1, -arm.side * tuck * weight).premultiply(AnimRig.bodyTurn(1, 0, 0, -forward * weight));
+      AnimRig.turnInWorld(arm.upper, turn);
+      // Give the hand back its world rotation from the clip (the lean included).
       const handParentQ = arm.hand.parent!.getWorldQuaternion(new THREE.Quaternion());
       arm.hand.quaternion.copy(handParentQ.invert().multiply(AnimRig.handQ));
+      if (pose.elbowBend !== 0) {
+        save(arm.elbow);
+        AnimRig.turnInWorld(arm.elbow, AnimRig.bodyTurn(1, 0, 0, -pose.elbowBend * weight));
+      }
     }
   }
 
-  private restoreArms(): void {
-    for (const arm of this.arms ?? []) {
-      if (!arm.saved) continue;
-      arm.upper.quaternion.copy(arm.saved[0]);
-      arm.hand.quaternion.copy(arm.saved[1]);
-      arm.saved = null;
-    }
+  private restorePose(): void {
+    if (!this.posed) return;
+    for (const [bone, q] of this.posed.saved) bone.quaternion.copy(q);
+    this.posed.saved.clear();
   }
 
   /**

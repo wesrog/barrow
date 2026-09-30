@@ -154,7 +154,10 @@ HUD. The renderer reads sim state; it never reaches into sim internals to mutate
   translation that centres an offset mesh, so place them inside a wrapper group rather than
   overwriting their position. `gear.ts` is the one path for held and worn kit pieces:
   `heldModel` measures a weapon's authored length axis from its bounds and turns it up +Y
-  (Viking swords and knives lie along +Z, nearly everything else +Y), shields get a half turn,
+  (Viking swords and knives lie along +Z, nearly everything else +Y), then, given the hand, rolls it
+  about that length so its head's farthest reach (an axe's edge, a blade's width) faces where the
+  fingers point, the way KayKit's own axes sit for the clips (a look with a tuned `adjust` keeps
+  its authored roll), shields get a half turn,
   a weapon look's `lift` slides the model up its shaft so a mid-pivoted piece is held by its
   butt end (the wands are the Dungeon Pack's gem staff at two fifths), `hand: "l"` puts a piece in
   the left fist, and `adjust` holds hand-tuned seats on top of the grip (`GripAdjust` in gear.ts:

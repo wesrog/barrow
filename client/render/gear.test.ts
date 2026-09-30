@@ -87,6 +87,29 @@ describe("heldModel and gripInto", () => {
     expect(held.parent).toBe(socket);
   });
 
+  test("rolls an axe so its edge faces where the fingers point, in either hand", () => {
+    // Authored the Viking way: haft along +Z, the head's edge sticking out toward +Y near the far end.
+    const kits = fakeKits();
+    const axe = new THREE.Group();
+    axe.name = "Wep_Axe_Test";
+    axe.add(piece("haft", [0.05, 0.05, 1], [0, 0, 0.5]), piece("head", [0.04, 0.3, 0.16], [0, 0.12, 0.88]));
+    kits.viking_weapons!.scene.add(axe);
+    const edgeOf = (held: THREE.Object3D) => {
+      held.updateMatrixWorld(true);
+      return new THREE.Box3().setFromObject(held.getObjectByName("head")!).getCenter(new THREE.Vector3());
+    };
+    // Right fingers run along the hand's -X, left along +X; the grip turns only about X, so the wrapper keeps them.
+    const right = edgeOf(heldModel(kits, "viking_weapons", "Wep_Axe_Test", "r")!);
+    expect(right.x).toBeLessThan(-0.05);
+    expect(Math.abs(right.z)).toBeLessThan(0.02);
+    expect(right.y).toBeGreaterThan(0.7);
+    const left = edgeOf(heldModel(kits, "viking_weapons", "Wep_Axe_Test", "l")!);
+    expect(left.x).toBeGreaterThan(0.05);
+    // Without a hand the piece keeps its authored roll (the crossbow's tuned seat relies on it).
+    const plain = edgeOf(heldModel(kits, "viking_weapons", "Wep_Axe_Test")!);
+    expect(Math.abs(plain.x)).toBeLessThan(0.02);
+  });
+
   test("gives shields the outward half turn instead", () => {
     const held = heldModel(fakeKits(), "viking_weapons", "Wep_Shield_Set_01")!;
     expect((held.children[0] as THREE.Object3D).rotation.y).toBeCloseTo(Math.PI);

@@ -584,13 +584,14 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       // A two-handed melee weapon rests across the body with both hands on the haft;
       // the crossbow keeps the plain idle its resting seat was tuned in.
       rig.setIdle(twoHanded && swing !== "shoot" ? "idle2h" : "idle");
-      const model = heldModel(kits, look.kit, look.node);
+      const slot = look.hand === "l" ? "l" : "r";
+      // Rolled so the edge leads the swing; the crossbow keeps the roll its tuned seat was set on.
+      const model = heldModel(kits, look.kit, look.node, look.adjust ? undefined : slot);
       if (model) {
         // The wrapper holds one upright model; lifting it moves the grip down the shaft.
         if (look.lift) model.children[0]!.position.y += look.lift / (look.scale ?? 1);
         applyRarityGlow(model, eq.weapon, WEAPON_GLOW);
       }
-      const slot = look.hand === "l" ? "l" : "r";
       rig.attach(slot, model);
       if (slot === "l") rig.attach("r", null);
       held = model
@@ -715,7 +716,7 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   if (!inst) throw new Error(`Monster "${typeId}" needs the ${look.kit} kit and a clip kit; run bun run assets:synty.`);
   const rig = new AnimRig(inst, RIG_SPECS[look.rig], look.idle, look.walk);
   rig.group.scale.setScalar(look.scale);
-  if (look.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[look.rig], look.weapon));
+  if (look.weapon) rig.attach("r", heldModel(assets.kits, WEAPON_KITS[look.rig], look.weapon, "r"));
   if (look.tint !== undefined) tintRig(rig.group, look.tint);
   return rig;
 }

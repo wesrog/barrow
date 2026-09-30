@@ -60,10 +60,64 @@ export function isShieldNode(node: string): boolean {
 }
 
 /**
- * A kit piece ready for a grip: cloned, its length turned up +Y (a shield:
- * faced outward), inside a wrapper the grip may pose. Null when the kit lacks it.
+ * Which way a piece's head sticks out from its length, in the upright frame
+ * (length along +Y): the vertex farthest from the axis over the far two fifths
+ * of the length, flattened onto XZ. An axe's edge reaches farther than its
+ * poll, a blade's width runs across; null for a piece round in section.
  */
-export function heldModel(kits: Kits, kit: KitName, node: string): THREE.Object3D | null {
+export function headDirection(model: THREE.Object3D): THREE.Vector3 | null {
+  // Measured in the frame of whatever holds the model (its wrapper), where the length runs up +Y.
+  model.updateMatrixWorld(true);
+  const frameInverse = model.parent ? model.parent.matrixWorld.clone().invert() : new THREE.Matrix4();
+  const points: THREE.Vector3[] = [];
+  model.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const pos = obj.geometry.getAttribute("position");
+    if (!pos) return;
+    const m = frameInverse.clone().multiply(obj.matrixWorld);
+    for (let i = 0; i < pos.count; i++) points.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m));
+  });
+  if (points.length === 0) return null;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of points) {
+    min = Math.min(min, p.y);
+    max = Math.max(max, p.y);
+  }
+  const from = min + 0.6 * (max - min);
+  let best: THREE.Vector3 | null = null;
+  let reach = 0;
+  for (const p of points) {
+    if (p.y < from) continue;
+    const r = Math.hypot(p.x, p.z);
+    if (r > reach) {
+      reach = r;
+      best = new THREE.Vector3(p.x, 0, p.z);
+    }
+  }
+  return best && reach > 1e-4 ? best.normalize() : null;
+}
+
+/**
+ * The turn about +Y, in quarter turns, that brings a head direction onto the
+ * fingers of the hand (-X for the right, +X for the left, in every rig's
+ * grip frame). Held that way the edge leads a swing, as the clips were
+ * authored for (measured on KayKit's own axes: edge toward the fingertips).
+ */
+export function edgeRoll(head: THREE.Vector3, hand: "r" | "l"): number {
+  const angle = (v: { x: number; z: number }) => Math.atan2(-v.z, v.x);
+  const target = hand === "r" ? { x: -1, z: 0 } : { x: 1, z: 0 };
+  const turn = angle(target) - angle(head);
+  return Math.round(turn / (Math.PI / 2)) * (Math.PI / 2);
+}
+
+/**
+ * A kit piece ready for a grip: cloned, its length turned up +Y (a shield:
+ * faced outward), inside a wrapper the grip may pose. Given the hand it goes
+ * in, a weapon is also rolled about its length so its edge faces the way the
+ * fingers point. Null when the kit lacks it.
+ */
+export function heldModel(kits: Kits, kit: KitName, node: string, hand?: "r" | "l"): THREE.Object3D | null {
   const parts = kitMeshes(kits, kit, node);
   if (!parts || parts.length === 0) return null;
   const model = new THREE.Group();
@@ -84,6 +138,10 @@ export function heldModel(kits: Kits, kit: KitName, node: string): THREE.Object3
   const wrapper = new THREE.Group();
   wrapper.name = `held:${node}`;
   wrapper.add(model);
+  if (hand && !isShieldNode(node)) {
+    const head = headDirection(model);
+    if (head) model.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), edgeRoll(head, hand)));
+  }
   return wrapper;
 }
 

@@ -110,10 +110,11 @@ function holdItem(assets: GameAssets, live: Live, slot: Hand, option: GearOption
   if (!option) return;
   const socket = slot === "r" ? live.entry.inst.handSlotR : live.entry.inst.handSlotL;
   if (!socket) return;
-  const obj = heldModel(assets.kits, option.kit, option.node);
+  // Seated as the game seats it: edge toward the fingers, unless a tuned seat keeps the authored roll.
+  const seat = weaponSeatFor(option.kit, option.node);
+  const obj = heldModel(assets.kits, option.kit, option.node, seat?.adjust ? undefined : slot);
   if (!obj) return;
   gripInto(socket, live.entry.spec.grip[slot], obj);
-  const seat = weaponSeatFor(option.kit, option.node);
   const far = heldFarEnd(obj);
   const marker = new THREE.Mesh(MARKER_GEO, MARKER_MAT);
   marker.renderOrder = 10;

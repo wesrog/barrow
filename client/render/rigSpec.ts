@@ -22,7 +22,12 @@ export type ClipId =
   /** A flat one-handed cut, the monsters' default swing. */
   | "slash"
   | "attack2h"
+  /** A two-handed thrust, alternated with the two-handed slice. */
+  | "attackStab2h"
   | "attackUnarmed"
+  /** The other fist, and a kick: variety for bare-handed fighters. */
+  | "attackUnarmedB"
+  | "attackKick"
   | "attackSpin"
   | "attackChop"
   | "attackSlice"
@@ -96,7 +101,10 @@ const KAYKIT_CLIPS = {
   attackDiagonal1h: "1H_Melee_Attack_Slice_Diagonal",
   slash: "1H_Melee_Attack_Slice_Horizontal",
   attack2h: "2H_Melee_Attack_Chop",
+  attackStab2h: "2H_Melee_Attack_Stab",
   attackUnarmed: "Unarmed_Melee_Attack_Punch_A",
+  attackUnarmedB: "Unarmed_Melee_Attack_Punch_B",
+  attackKick: "Unarmed_Melee_Attack_Kick",
   attackSpin: "2H_Melee_Attack_Spin",
   attackChop: "2H_Melee_Attack_Chop",
   attackSlice: "2H_Melee_Attack_Slice",
@@ -149,7 +157,10 @@ const GOBLIN_FALLBACKS: Record<ClipId, string> = {
   attackDiagonal1h: "Idle_Fidget_Swipe",
   slash: "Idle_Fidget_Swipe",
   attack2h: "Idle_Fidget_Swipe",
+  attackStab2h: "Idle_Fidget_Swipe",
   attackUnarmed: "Idle_Fidget_Swipe",
+  attackUnarmedB: "Idle_Fidget_Swipe",
+  attackKick: "Idle_Fidget_Swipe",
   attackSpin: "Idle_Fidget_Swipe",
   attackChop: "Idle_Fidget_Swipe",
   attackSlice: "Idle_Fidget_Swipe",

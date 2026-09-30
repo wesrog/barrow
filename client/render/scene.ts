@@ -38,7 +38,7 @@ import type { Rig } from "./rigs";
 import {
   makeHeroModelRig,
   makeMonsterModelRig,
-  monsterAttackClip,
+  monsterAttackClips,
   type HeroModelRig,
   type ModelRig,
 } from "./modelRigs";
@@ -2222,7 +2222,7 @@ export function createScene(
         case "monster_swing": {
           const swingRig = monsterRigs.get(event.id) as (Rig & Partial<ModelRig>) | undefined;
           const typeId = zoneOf(state, localPlayer(state)).monsters.get(event.id)?.typeId;
-          if (typeId) swingRig?.oneShot?.(monsterAttackClip(typeId), { timeScale: 1.4 });
+          if (typeId && swingRig?.oneShot && swingRig.pick) swingRig.oneShot(swingRig.pick(monsterAttackClips(typeId)), { timeScale: 1.4 });
           if (event.ranged) {
             const glob = new THREE.Mesh(
               new THREE.IcosahedronGeometry(0.09, 0),

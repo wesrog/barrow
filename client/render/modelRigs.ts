@@ -45,6 +45,8 @@ export interface ModelRig extends Rig {
   currentClip(): string | null;
   /** Every clip name this rig can play. */
   clipNames(): string[];
+  /** One swing from a pool, never the one this rig picked last, so strings of attacks vary. */
+  pick(pool: readonly ClipId[]): ClipId;
   /** Called once per footfall while the walk cycle plays, when set (the local hero's steps). */
   footfall?: () => void;
   /** Hold a stance clip (the crossbow raised) instead of the idle until `until` (performance.now ms),
@@ -60,7 +62,7 @@ export interface HeroModelRig extends ModelRig {
    * points off the body's facing, so the scene can turn the body until the barrel lines up
    * with the shot. Null otherwise. */
   aimOffset(): number | null;
-  /** Clip for a basic attack with the current weapon. */
+  /** Clip for a basic attack with the current weapon: a different swing from the last where it has several. */
   attackClip(): ClipId;
 }
 
@@ -110,6 +112,18 @@ class AnimRig implements ModelRig {
     this.walkName = this.clipName(walk) ?? this.clipName("walk");
     this.walkRef = gaitSpeedRef(spec, this.clipName(walk) ? walk : "walk");
     if (this.idleName) this.play(this.idleName);
+  }
+
+  private lastPick: ClipId | null = null;
+
+  pick(pool: readonly ClipId[]): ClipId {
+    const fresh = pool.length > 1 ? pool.filter((c) => c !== this.lastPick) : pool;
+    // Prefer swings this rig can actually play; a missing one would stand still.
+    const playable = fresh.filter((c) => this.clipName(c));
+    const from = playable.length > 0 ? playable : fresh;
+    const clip = from[Math.floor(Math.random() * from.length)]!;
+    this.lastPick = clip;
+    return clip;
   }
 
   /** Stand in another idle from now on (a two-handed guard); the next still frame fades to it. */
@@ -267,6 +281,11 @@ function makeOrbModel(): THREE.Group {
 function flatMat(color: number, roughness = 0.8): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
 }
+
+/** Swing pools: attacks draw from these so a fight doesn't loop one motion. */
+export const ONE_HANDED_SWINGS: readonly ClipId[] = ["attack1h", "attackDiagonal1h", "attackChop1h"];
+export const TWO_HANDED_SWINGS: readonly ClipId[] = ["attackSlice", "attackStab2h"];
+export const UNARMED_SWINGS: readonly ClipId[] = ["attackUnarmed", "attackUnarmedB", "attackKick"];
 
 /** Shared by both hero families: rarity glow on held weapons is a touch stronger than on armor. */
 const WEAPON_GLOW = 0.08;
@@ -439,8 +458,6 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
   let twoHanded = false;
   let armed = false;
   let swing: "chop" | "slice" | "shoot" = "slice";
-  /** Alternates one-handed swings between the flat slice and the diagonal cut. */
-  let nextDiagonal = false;
   /** The held weapon and its seat: the grip, its tuned adjustments, and which pose it sits in now. */
   let held: {
     model: THREE.Object3D;
@@ -532,17 +549,15 @@ function makeSyntyHero(inst: CharacterInstance, kits: Kits): HeroModelRig {
       rig.setIdle("idle");
     }
   };
-  // One-handers alternate the flat slice and the diagonal cut unless a weapon's
-  // row asks for the chop; two-handers sweep the two-handed slice from their
-  // guard (the two-handed chop read as a windmill on the Viking); bare hands
-  // throw a punch. Skills pick their own clips.
+  // Each weapon kind has a pool of swings and never repeats one back to back:
+  // one-handers slice flat, cut diagonally and chop; two-handers sweep and
+  // thrust from their guard (the two-handed chop read as a windmill on the
+  // Viking, so it stays out); bare hands punch with either fist or kick.
+  // Skills pick their own clips.
   hero.attackClip = () => {
-    if (!armed) return "attackUnarmed";
+    if (!armed) return rig.pick(UNARMED_SWINGS);
     if (swing === "shoot") return "shoot";
-    if (twoHanded) return "attackSlice";
-    if (swing === "chop") return "attackChop1h";
-    nextDiagonal = !nextDiagonal;
-    return nextDiagonal ? "attack1h" : "attackDiagonal1h";
+    return rig.pick(twoHanded ? TWO_HANDED_SWINGS : ONE_HANDED_SWINGS);
   };
   const axis = new THREE.Vector3();
   const quat = new THREE.Quaternion();
@@ -651,11 +666,12 @@ export function makeMonsterModelRig(assets: GameAssets, typeId: string): Rig & P
   return rig;
 }
 
-/** Attack clip for a monster swing. */
-export function monsterAttackClip(typeId: string): ClipId {
-  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer") return "cast";
-  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel") return "attackSlice";
+/** The swings a monster type draws from; its rig picks one, never the last. */
+export function monsterAttackClips(typeId: string): readonly ClipId[] {
+  if (typeId === "gravespit" || typeId === "bog_maw" || typeId === "veil_screamer") return ["cast"];
+  if (typeId === "barrow_lord" || typeId === "cairn_wight" || typeId === "crown_sentinel") return TWO_HANDED_SWINGS;
+  // Beasts and brutes claw and pound with both fists; no kicks.
   if (typeId === "skitter" || typeId === "fen_howler" || typeId === "cinder_shade" || typeId === "ember_hulk")
-    return "attackUnarmed";
-  return "slash";
+    return ["attackUnarmed", "attackUnarmedB"];
+  return ["slash", "attackDiagonal1h", "attackChop1h"];
 }

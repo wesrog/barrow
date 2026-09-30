@@ -72,7 +72,30 @@ describe("instantiateKit", () => {
   });
 });
 
-import { makeHeroModelRig } from "./modelRigs";
+import { makeHeroModelRig, monsterAttackClips, ONE_HANDED_SWINGS, TWO_HANDED_SWINGS, UNARMED_SWINGS } from "./modelRigs";
+import type { ClipId } from "./rigSpec";
+
+/** Over many swings: every pick is from the pool, all of it shows up, and none repeats the one before. */
+function expectVaried(next: () => ClipId, pool: readonly ClipId[]): void {
+  const seen = new Set<ClipId>();
+  let last: ClipId | null = null;
+  for (let i = 0; i < 60; i++) {
+    const clip = next();
+    expect(pool).toContain(clip);
+    expect(clip).not.toBe(last);
+    seen.add(clip);
+    last = clip;
+  }
+  expect(seen.size).toBe(pool.length);
+}
+
+describe("monster swings", () => {
+  test("armed monsters have several swings to vary between", () => {
+    expect(monsterAttackClips("shambler").length).toBeGreaterThan(1);
+    expect(monsterAttackClips("cairn_wight").length).toBeGreaterThan(1);
+    expect(monsterAttackClips("gravespit")).toEqual(["cast"]);
+  });
+});
 import type { GameAssets } from "./models";
 import type { Item } from "../../sim/items/generate";
 
@@ -160,21 +183,19 @@ describe("Synty hero", () => {
     expect(mantle.position.y).toBeCloseTo(0.2);
     expect(chest.children.filter((c) => c instanceof THREE.Mesh).length).toBe(1);
     expect(hero.group.getObjectByName("Shoulder_L")!.children.filter((c) => c instanceof THREE.Mesh).length).toBe(0);
-    // One-handers alternate the flat slice and the diagonal cut, so a string of swings doesn't repeat.
-    expect(hero.attackClip()).toBe("attack1h");
-    expect(hero.attackClip()).toBe("attackDiagonal1h");
-    expect(hero.attackClip()).toBe("attack1h");
+    // One-handers draw from their pool of swings and never repeat one back to back.
+    expectVaried(() => hero.attackClip(), ONE_HANDED_SWINGS);
 
     hero.setEquipment({ ...BARE, weapon: gearItem("war_maul"), shield: gearItem("plank_buckler") });
-    // Two-handers sweep with both hands on the haft.
-    expect(hero.attackClip()).toBe("attackSlice");
+    // Two-handers sweep and thrust with both hands on the haft.
+    expectVaried(() => hero.attackClip(), TWO_HANDED_SWINGS);
     // A two-hander hides the shield even though the slot still holds one.
     expect(hero.group.getObjectByName("Hand_L")!.getObjectByName("Wep_Shield_Set_02")).toBeFalsy();
     expect(hero.group.getObjectByName("Head")!.getObjectByName("Attach_Helmet_01")).toBeFalsy();
 
     hero.setEquipment(BARE);
-    // Bare hands throw a punch.
-    expect(hero.attackClip()).toBe("attackUnarmed");
+    // Bare hands punch with either fist or kick.
+    expectVaried(() => hero.attackClip(), UNARMED_SWINGS);
     expect(hero.group.getObjectByName("Hand_R")!.children.length).toBe(0);
   });
 

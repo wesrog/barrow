@@ -5,7 +5,7 @@ import { KIT_URLS, type KitName } from "./models";
 import { gaitSpeedRef, SYNTY_DUNGEON_RIG, SYNTY_GOBLIN_RIG, SYNTY_HUMAN_RIG, type ClipId, type RigSpec } from "./rigSpec";
 
 const CLIP_IDS: ClipId[] = [
-  "idle", "idleCombat", "idle2h", "walk", "shamble", "run", "attack1h", "attackDiagonal1h", "slash", "attack2h", "attackUnarmed",
+  "idle", "idleCombat", "idle2h", "walk", "shamble", "run", "attack1h", "attackDiagonal1h", "slash", "attack2h", "attackStab2h", "attackUnarmed", "attackUnarmedB", "attackKick",
   "attackSpin", "attackChop", "attackSlice", "cast", "castRaise", "cheer", "jump", "taunt", "death",
 ];
 

@@ -275,13 +275,45 @@ describe("Synty hero", () => {
     };
     const [runL, runR] = heights(4.5);
     expect(hero.currentClip()).toBe("Running_B");
-    // Both hands drop the same way (sin 22 degrees over a one-unit arm, at the hero's scale).
+    // Both hands drop the same way (22 degrees over a one-unit arm, at the hero's scale).
     expect(runL).toBeLessThan(-0.2);
     expect(runR).toBeCloseTo(runL);
     // Many frames in, the turn has not piled up.
     expect(heights(4.5)[0]).toBeCloseTo(runL);
+    // The fists keep the clip's world rotation (every bone here rests unrotated), so a held weapon points as animated.
+    const bodyQ = hero.group.getWorldQuaternion(new THREE.Quaternion());
+    expect(handL.getWorldQuaternion(new THREE.Quaternion()).angleTo(bodyQ)).toBeCloseTo(0);
+    expect(handR.getWorldQuaternion(new THREE.Quaternion()).angleTo(bodyQ)).toBeCloseTo(0);
+    // And the arms come a little forward of the shoulders rather than straight out.
+    const shoulderZ = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3()).z;
+    expect(handL.getWorldPosition(new THREE.Vector3()).z).toBeGreaterThan(shoulderZ);
     const [idleL] = heights(0);
     expect(idleL).toBeCloseTo(0);
+  });
+
+  test("shortens a run's backswing: an elbow thrown behind the back comes partway forward", () => {
+    const assets = fakeHeroAssets();
+    const still = [0, 0, 0, 1, 0, 0, 0, 1];
+    // The left arm swung straight back: +X (its rest direction) turned onto -Z.
+    const back = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2).toArray();
+    const tracks = [
+      ...["Root", "Hips", "Head", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], still)),
+      new THREE.QuaternionKeyframeTrack("Shoulder_L.quaternion", [0, 1], [...back, ...back]),
+    ];
+    assets.kits.goblin_kaykit_clips = {
+      scene: new THREE.Group(),
+      animations: ["Idle", "Running_B"].map((name) => new THREE.AnimationClip(name, 1, tracks)),
+    } as unknown as GameAssets["kits"]["goblin_kaykit_clips"];
+    const hero = makeHeroModelRig(assets, "warrior");
+    hero.group.getObjectByName("Hand_L")!.position.x = 1;
+    let now = 1000;
+    for (let t = 0; t < 20; t++) hero.animate((now += 50), 0, 4.5);
+    hero.group.updateMatrixWorld(true);
+    const shoulder = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3());
+    const arm = hero.group.getObjectByName("Hand_L")!.getWorldPosition(new THREE.Vector3()).sub(shoulder);
+    // Straight back would be all of the arm's length behind; well under that now, and still behind.
+    expect(arm.z / arm.length()).toBeGreaterThan(-0.8);
+    expect(arm.z).toBeLessThan(0);
   });
 
   test("says which kit is missing instead of drawing nothing", () => {

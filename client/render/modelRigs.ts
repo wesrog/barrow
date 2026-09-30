@@ -97,12 +97,18 @@ class AnimRig implements ModelRig {
   private walkName: string | undefined;
   /** Cells per second at which the gait clip plays at 1x. */
   private walkRef: number;
-  /** Radians the upper arms turn in toward the body while the gait plays. */
-  private walkTuck: number;
-  private arms: { bone: THREE.Object3D; side: number; applied: THREE.Quaternion | null }[] | null = null;
-  private static readonly tuckQ = new THREE.Quaternion();
-  private static readonly parentQ = new THREE.Quaternion();
-  private static readonly tuckAxis = new THREE.Vector3();
+  /** How the gait's arms are reposed on top of the clip (radians), or null for as authored. */
+  private walkArms: { tuck: number; forward: number; easeBack: number } | null;
+  /** Each arm's upper bone, elbow (its child toward the hand) and hand, with the clip's own
+   * local rotations saved while a repose is applied, so the next update starts clean. */
+  private arms: { upper: THREE.Object3D; elbow: THREE.Object3D; hand: THREE.Object3D; side: number; saved: [THREE.Quaternion, THREE.Quaternion] | null }[] | null = null;
+  private static readonly bodyQ = new THREE.Quaternion();
+  private static readonly turnQ = new THREE.Quaternion();
+  private static readonly tmpQ = new THREE.Quaternion();
+  private static readonly handQ = new THREE.Quaternion();
+  private static readonly axisTmp = new THREE.Vector3();
+  private static readonly reachTmp = new THREE.Vector3();
+  private static readonly shoulderTmp = new THREE.Vector3();
   footfall?: () => void;
   /** Footfall detection: each shin's last world height and direction of travel. */
   private feet: { bone: THREE.Object3D; y: number; dy: number }[] | null = null;
@@ -118,7 +124,9 @@ class AnimRig implements ModelRig {
     this.walkName = this.clipName(walk) ?? this.clipName("walk");
     const gait = this.clipName(walk) ? walk : "walk";
     this.walkRef = gaitSpeedRef(spec, gait);
-    this.walkTuck = THREE.MathUtils.degToRad(spec.armTuck?.[gait] ?? 0);
+    const pose = spec.armPose?.[gait];
+    const rad = THREE.MathUtils.degToRad;
+    this.walkArms = pose ? { tuck: rad(pose.tuck ?? 0), forward: rad(pose.forward ?? 0), easeBack: pose.easeBack ?? 0 } : null;
     if (this.idleName) this.play(this.idleName);
   }
 
@@ -227,53 +235,75 @@ class AnimRig implements ModelRig {
         this.play(this.idleName);
       }
     }
-    this.untuckArms();
+    this.restoreArms();
     this.inst.mixer.update(dt);
-    this.tuckArms();
+    this.reposeArms();
     if (this.footfall) this.trackFootfalls(speed);
   }
 
   /**
-   * Turn the upper arms in toward the body about its forward axis, as much as
-   * the gait clip is weighted in (fading with it into a swing or the idle).
-   * The mixer skips writing a bone whose value has not changed, so the last
-   * turn is taken back off before each update (untuckArms) rather than trusted away.
+   * Repose the upper arms while the gait plays, as much as its clip is weighted
+   * in (fading with it into a swing or the idle): turned in toward the body
+   * about its forward axis, and carried forward about its side axis, a set
+   * amount plus a share of however far the elbow swings behind the shoulder.
+   * The hands keep the clip's world rotation, so the fist and whatever it holds
+   * point where the animation meant. The mixer skips writing a bone whose value
+   * has not changed, so the clip's rotations are put back before each update
+   * (restoreArms) rather than trusted to be rewritten.
    */
-  private tuckArms(): void {
-    if (this.walkTuck === 0 || !this.walkName) return;
+  private reposeArms(): void {
+    const pose = this.walkArms;
+    if (!pose || !this.walkName) return;
     const walk = this.inst.actions.get(this.walkName);
     // A faded-out action keeps its last weight once the mixer drops it; only a running one counts.
     const weight = walk?.isRunning() ? walk.getEffectiveWeight() : 0;
     if (weight <= 0) return;
     if (!this.arms) {
       this.arms = [];
-      for (const [role, side] of [["upperArmL", 1], ["upperArmR", -1]] as const) {
-        const bone = this.bone(role);
-        if (bone) this.arms.push({ bone, side, applied: null });
+      for (const [upperRole, handRole, side] of [["upperArmL", "handL", 1], ["upperArmR", "handR", -1]] as const) {
+        const upper = this.bone(upperRole);
+        const hand = this.bone(handRole);
+        if (!upper || !hand) continue;
+        // The elbow: the bone below the upper arm on the way to the hand.
+        let elbow: THREE.Object3D = hand;
+        while (elbow.parent && elbow.parent !== upper) elbow = elbow.parent;
+        if (elbow.parent !== upper) continue;
+        this.arms.push({ upper, elbow, hand, side, saved: null });
       }
     }
+    this.group.updateWorldMatrix(true, true);
+    this.group.getWorldQuaternion(AnimRig.bodyQ);
     for (const arm of this.arms) {
-      const { bone, side } = arm;
-      const parent = bone.parent;
+      const parent = arm.upper.parent;
       if (!parent) continue;
-      // The body's forward (+Z of the character group) in the parent bone's frame.
-      parent.updateWorldMatrix(true, false);
-      this.group.getWorldQuaternion(AnimRig.tuckQ);
-      const axis = AnimRig.tuckAxis.set(0, 0, 1).applyQuaternion(AnimRig.tuckQ);
-      parent.getWorldQuaternion(AnimRig.parentQ);
-      axis.applyQuaternion(AnimRig.parentQ.invert());
-      // About +Z a negative turn takes the left arm (+X) down, a positive one the right (-X).
-      AnimRig.tuckQ.setFromAxisAngle(axis, -side * this.walkTuck * weight);
-      bone.quaternion.premultiply(AnimRig.tuckQ);
-      arm.applied = (arm.applied ?? new THREE.Quaternion()).copy(AnimRig.tuckQ);
+      arm.saved = [arm.upper.quaternion.clone(), arm.hand.quaternion.clone()];
+      arm.hand.getWorldQuaternion(AnimRig.handQ);
+      // How far the elbow swings behind the shoulder, in the body's frame (positive: forward).
+      const reach = arm.elbow.getWorldPosition(AnimRig.reachTmp).sub(arm.upper.getWorldPosition(AnimRig.shoulderTmp));
+      reach.applyQuaternion(AnimRig.tmpQ.copy(AnimRig.bodyQ).invert());
+      const pitch = Math.atan2(reach.z, -reach.y);
+      const forward = pose.forward + pose.easeBack * Math.max(0, -pitch);
+      // The turn in world terms: in toward the body about its forward (+Z) axis (a negative turn
+      // takes the left arm, +X, down; a positive one the right), then forward about its side (+X) axis.
+      AnimRig.turnQ.setFromAxisAngle(AnimRig.axisTmp.set(0, 0, 1).applyQuaternion(AnimRig.bodyQ), -arm.side * pose.tuck * weight);
+      AnimRig.tmpQ.setFromAxisAngle(AnimRig.axisTmp.set(1, 0, 0).applyQuaternion(AnimRig.bodyQ), -forward * weight);
+      AnimRig.turnQ.premultiply(AnimRig.tmpQ);
+      // world' = turn * world, so local' = parentWorld^-1 * turn * parentWorld * local.
+      const parentQ = parent.getWorldQuaternion(new THREE.Quaternion());
+      arm.upper.quaternion.premultiply(AnimRig.tmpQ.copy(parentQ).invert().multiply(AnimRig.turnQ).multiply(parentQ));
+      // Give the hand back its world rotation from the clip.
+      arm.upper.updateWorldMatrix(false, true);
+      const handParentQ = arm.hand.parent!.getWorldQuaternion(new THREE.Quaternion());
+      arm.hand.quaternion.copy(handParentQ.invert().multiply(AnimRig.handQ));
     }
   }
 
-  private untuckArms(): void {
+  private restoreArms(): void {
     for (const arm of this.arms ?? []) {
-      if (!arm.applied) continue;
-      arm.bone.quaternion.premultiply(arm.applied.invert());
-      arm.applied = null;
+      if (!arm.saved) continue;
+      arm.upper.quaternion.copy(arm.saved[0]);
+      arm.hand.quaternion.copy(arm.saved[1]);
+      arm.saved = null;
     }
   }
 

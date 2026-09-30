@@ -79,9 +79,18 @@ export interface RigSpec {
   walkSpeedRef: number;
   /** Per-gait overrides of walkSpeedRef, for gaits that cover ground at another rate. */
   gaitSpeedRefs?: Partial<Record<ClipId, number>>;
-  /** Degrees the upper arms turn in toward the body, about its forward axis, while a gait plays
-   * (KayKit's chibi runs with its arms held wide; on a human that reads as flapping). */
-  armTuck?: Partial<Record<ClipId, number>>;
+  /** How a gait's upper arms are reposed on top of its clip (KayKit's chibi runs with its arms
+   * wide and swings the elbows far back; on a human that reads as flapping). */
+  armPose?: Partial<Record<ClipId, ArmPose>>;
+}
+
+export interface ArmPose {
+  /** Degrees the upper arms turn in toward the body, about its forward axis. */
+  tuck?: number;
+  /** Degrees the upper arms are carried forward, about the body's side axis. */
+  forward?: number;
+  /** Share (0 to 1) of an elbow's swing behind the shoulder taken back out, so the backswing stays short. */
+  easeBack?: number;
 }
 
 /** Cells per second at which a gait clip plays at 1x on this rig. */
@@ -192,8 +201,9 @@ function withFallbacks(preferred: Partial<Record<ClipId, string>>): Record<ClipI
  * cells per second; the feet keep their grip on the ground at any speed.
  */
 const KAYKIT_RUN_SPEED_REF = 2.25;
-/** Running_B swings the arms well clear of the body even after the converter's relax turn. */
-const KAYKIT_RUN_ARM_TUCK = 22;
+/** Running_B swings the arms well clear of the body even after the converter's relax turn, and
+ * drives the elbows far behind the back; the run's arms are pulled in and brought forward. */
+const KAYKIT_RUN_ARMS: ArmPose = { tuck: 22, forward: 8, easeBack: 0.45 };
 
 /** Humans on the Synty rig (Vikings): the KayKit suite retargeted, goblin clips as backup. */
 export const SYNTY_HUMAN_RIG: RigSpec = {
@@ -203,7 +213,7 @@ export const SYNTY_HUMAN_RIG: RigSpec = {
   grip: SYNTY_GRIP,
   walkSpeedRef: 3,
   gaitSpeedRefs: { run: KAYKIT_RUN_SPEED_REF },
-  armTuck: { run: KAYKIT_RUN_ARM_TUCK },
+  armPose: { run: KAYKIT_RUN_ARMS },
 };
 
 /** Goblins keep their own hunched idle and gait; swings, casts and deaths come from the KayKit copies. */
@@ -248,5 +258,5 @@ export const SYNTY_DUNGEON_RIG: RigSpec = {
   },
   walkSpeedRef: 3,
   gaitSpeedRefs: { run: KAYKIT_RUN_SPEED_REF },
-  armTuck: { run: KAYKIT_RUN_ARM_TUCK },
+  armPose: { run: KAYKIT_RUN_ARMS },
 };

@@ -91,6 +91,9 @@ export interface ArmPose {
   forward?: number;
   /** Share (0 to 1) of an elbow's swing behind the shoulder taken back out, so the backswing stays short. */
   easeBack?: number;
+  /** Share (0 to 1) of the tuck kept once an elbow swings well behind the shoulder: a tucked arm
+   * behind the back crosses in over the backside, so the tuck lets go as the arm goes back. */
+  tuckBehind?: number;
 }
 
 /** Cells per second at which a gait clip plays at 1x on this rig. */
@@ -203,7 +206,7 @@ function withFallbacks(preferred: Partial<Record<ClipId, string>>): Record<ClipI
 const KAYKIT_RUN_SPEED_REF = 2.25;
 /** Running_B swings the arms well clear of the body even after the converter's relax turn, and
  * drives the elbows far behind the back; the run's arms are pulled in and brought forward. */
-const KAYKIT_RUN_ARMS: ArmPose = { tuck: 22, forward: 8, easeBack: 0.45 };
+const KAYKIT_RUN_ARMS: ArmPose = { tuck: 22, forward: 10, easeBack: 0.55, tuckBehind: 0.25 };
 
 /** Humans on the Synty rig (Vikings): the KayKit suite retargeted, goblin clips as backup. */
 export const SYNTY_HUMAN_RIG: RigSpec = {

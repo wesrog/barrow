@@ -98,7 +98,7 @@ class AnimRig implements ModelRig {
   /** Cells per second at which the gait clip plays at 1x. */
   private walkRef: number;
   /** How the gait's arms are reposed on top of the clip (radians), or null for as authored. */
-  private walkArms: { tuck: number; forward: number; easeBack: number } | null;
+  private walkArms: { tuck: number; forward: number; easeBack: number; tuckBehind: number } | null;
   /** Each arm's upper bone, elbow (its child toward the hand) and hand, with the clip's own
    * local rotations saved while a repose is applied, so the next update starts clean. */
   private arms: { upper: THREE.Object3D; elbow: THREE.Object3D; hand: THREE.Object3D; side: number; saved: [THREE.Quaternion, THREE.Quaternion] | null }[] | null = null;
@@ -126,7 +126,7 @@ class AnimRig implements ModelRig {
     this.walkRef = gaitSpeedRef(spec, gait);
     const pose = spec.armPose?.[gait];
     const rad = THREE.MathUtils.degToRad;
-    this.walkArms = pose ? { tuck: rad(pose.tuck ?? 0), forward: rad(pose.forward ?? 0), easeBack: pose.easeBack ?? 0 } : null;
+    this.walkArms = pose ? { tuck: rad(pose.tuck ?? 0), forward: rad(pose.forward ?? 0), easeBack: pose.easeBack ?? 0, tuckBehind: pose.tuckBehind ?? 1 } : null;
     if (this.idleName) this.play(this.idleName);
   }
 
@@ -282,10 +282,13 @@ class AnimRig implements ModelRig {
       const reach = arm.elbow.getWorldPosition(AnimRig.reachTmp).sub(arm.upper.getWorldPosition(AnimRig.shoulderTmp));
       reach.applyQuaternion(AnimRig.tmpQ.copy(AnimRig.bodyQ).invert());
       const pitch = Math.atan2(reach.z, -reach.y);
-      const forward = pose.forward + pose.easeBack * Math.max(0, -pitch);
+      const behind = Math.max(0, -pitch);
+      const forward = pose.forward + pose.easeBack * behind;
+      // The tuck lets go as the elbow goes back, down to its `tuckBehind` share 45 degrees behind.
+      const tuck = pose.tuck * THREE.MathUtils.lerp(1, pose.tuckBehind, Math.min(1, behind / (Math.PI / 4)));
       // The turn in world terms: in toward the body about its forward (+Z) axis (a negative turn
       // takes the left arm, +X, down; a positive one the right), then forward about its side (+X) axis.
-      AnimRig.turnQ.setFromAxisAngle(AnimRig.axisTmp.set(0, 0, 1).applyQuaternion(AnimRig.bodyQ), -arm.side * pose.tuck * weight);
+      AnimRig.turnQ.setFromAxisAngle(AnimRig.axisTmp.set(0, 0, 1).applyQuaternion(AnimRig.bodyQ), -arm.side * tuck * weight);
       AnimRig.tmpQ.setFromAxisAngle(AnimRig.axisTmp.set(1, 0, 0).applyQuaternion(AnimRig.bodyQ), -forward * weight);
       AnimRig.turnQ.premultiply(AnimRig.tmpQ);
       // world' = turn * world, so local' = parentWorld^-1 * turn * parentWorld * local.

@@ -294,8 +294,8 @@ describe("Synty hero", () => {
   test("shortens a run's backswing: an elbow thrown behind the back comes partway forward", () => {
     const assets = fakeHeroAssets();
     const still = [0, 0, 0, 1, 0, 0, 0, 1];
-    // The left arm swung straight back: +X (its rest direction) turned onto -Z.
-    const back = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2).toArray();
+    // The left arm swung back and out: +X (its rest direction) turned 60 degrees toward -Z.
+    const back = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 3).toArray();
     const tracks = [
       ...["Root", "Hips", "Head", "Shoulder_R"].map((n) => new THREE.QuaternionKeyframeTrack(`${n}.quaternion`, [0, 1], still)),
       new THREE.QuaternionKeyframeTrack("Shoulder_L.quaternion", [0, 1], [...back, ...back]),
@@ -311,9 +311,12 @@ describe("Synty hero", () => {
     hero.group.updateMatrixWorld(true);
     const shoulder = hero.group.getObjectByName("Shoulder_L")!.getWorldPosition(new THREE.Vector3());
     const arm = hero.group.getObjectByName("Hand_L")!.getWorldPosition(new THREE.Vector3()).sub(shoulder);
-    // Straight back would be all of the arm's length behind; well under that now, and still behind.
+    // As swung, 0.87 of the arm's length is behind the shoulder; well under that now, and still behind.
     expect(arm.z / arm.length()).toBeGreaterThan(-0.8);
     expect(arm.z).toBeLessThan(0);
+    // Behind the back the tuck mostly lets go (the full 22 degrees would leave 0.46 of the length out
+    // to the side), so the elbow stays out beside the hip rather than crossing in over it.
+    expect(arm.x / arm.length()).toBeGreaterThan(0.49);
   });
 
   test("says which kit is missing instead of drawing nothing", () => {

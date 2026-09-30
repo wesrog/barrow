@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { isTwoHanded, slotForItem, type Equipment } from "../../sim/character";
 import { BASES, type Slot } from "../../sim/items/bases";
@@ -125,6 +126,22 @@ export function deltaLines(delta: StatDelta): { text: string; color: string }[] 
   return out;
 }
 
+/** The dark card both floating item views draw in. */
+const floatStyle: CSSProperties = {
+  position: "fixed",
+  background: "rgba(12, 11, 15, 0.96)",
+  border: "1px solid #3a3442",
+  borderRadius: 4,
+  padding: "8px 10px",
+  fontFamily: "ui-monospace, monospace",
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "#c9c2b8",
+  zIndex: 20,
+  pointerEvents: "none",
+  boxShadow: "0 8px 30px rgba(0,0,0,.7)",
+};
+
 /**
  * Floating tooltip near the cursor. Fixed-position and mouse-transparent so it
  * never affects layout — hover detail inside a centered panel would otherwise
@@ -136,25 +153,43 @@ export function ItemTooltip({ x, y, children }: { x: number; y: number; children
   // Portal to <body>: a transformed ancestor (e.g. a translate-centered panel)
   // would otherwise become the containing block for position: fixed.
   return createPortal(
-    <div
-      style={{
-        position: "fixed",
-        left,
-        top: Math.min(y + 12, window.innerHeight - 180),
-        width: w,
-        background: "rgba(12, 11, 15, 0.96)",
-        border: "1px solid #3a3442",
-        borderRadius: 4,
-        padding: "8px 10px",
-        fontFamily: "ui-monospace, monospace",
-        fontSize: 12,
-        lineHeight: 1.45,
-        color: "#c9c2b8",
-        zIndex: 20,
-        pointerEvents: "none",
-        boxShadow: "0 8px 30px rgba(0,0,0,.7)",
-      }}
-    >
+    <div style={{ ...floatStyle, left, top: Math.min(y + 12, window.innerHeight - 180), width: w }}>{children}</div>,
+    document.body,
+  );
+}
+
+/** Air kept between a flyout and the window's edges. */
+const FLYOUT_MARGIN = 16;
+
+/**
+ * Item card docked beside a panel, level with the hovered slot. Its height is
+ * measured, so a long item (mods, two compare blocks) slides up to stay whole
+ * on a short window instead of running off the bottom. Beside the panel rather
+ * than inside it, so hovering never resizes the panel under the cursor.
+ */
+export function ItemFlyout({
+  anchor,
+  beside,
+  children,
+}: {
+  /** The hovered slot's screen rect: the card lines up with its top. */
+  anchor: DOMRect;
+  /** The panel's screen rect: the card sits against its left edge. */
+  beside: DOMRect;
+  children: ReactNode;
+}) {
+  const w = 260;
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const h = ref.current?.offsetHeight ?? 0;
+    if (h !== height) setHeight(h);
+  });
+  const lowest = window.innerHeight - FLYOUT_MARGIN - height;
+  const top = Math.max(FLYOUT_MARGIN, Math.min(anchor.top, lowest));
+  const left = Math.max(FLYOUT_MARGIN, beside.left - 8 - w);
+  return createPortal(
+    <div ref={ref} style={{ ...floatStyle, boxSizing: "border-box", left, top, width: w }}>
       {children}
     </div>,
     document.body,

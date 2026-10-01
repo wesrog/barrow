@@ -931,10 +931,14 @@ export function registerSamples(manifest: Record<string, string | string[]>): vo
   }
 }
 
+/** The manifest names clips from the site root; a build served under a subpath
+ * (GitHub Pages, games.alexmeub.com/barrow/) must fetch them under it. */
+const SAMPLE_BASE = ((import.meta.env?.BASE_URL as string | undefined) ?? "/").replace(/\/$/, "");
+
 function decodeSample(c: AudioContext, url: string): void {
   if (sampleBuffers.has(url) || samplePending.has(url)) return;
   samplePending.add(url);
-  fetch(url)
+  fetch(SAMPLE_BASE + url)
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`${r.status} ${url}`))))
     .then((bytes) => c.decodeAudioData(bytes))
     .then((buf) => sampleBuffers.set(url, buf))
